@@ -1,5 +1,6 @@
 # Untracked directories
 **/__pycache__/**
+/wiki/**
 
 # Compiled Python files
 *.pyc
