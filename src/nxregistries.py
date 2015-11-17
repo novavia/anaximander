@@ -40,7 +40,8 @@ class NxRegistry(abc.ABC):
     those lines is required, then the structure needs to be copied.
     NxObjects can be featured in multiple NxRegistries, and for that purpose
     they carry a _nxregistries set attribute, which NxRegistry can access and
-    alter.
+    alter. However as a result an NxObject cannnot have multiple simultaneous
+    registrations in the same NxRegistry.
     """
 
     @xprops.cachedproperty
@@ -74,20 +75,25 @@ class NxTree(WeakValueDictionary, NxRegistry):
 
     NxTrees are meant to be used as relatively shallow, hierarchical object
     containers. Primary applications are class or instance registries,
-    instance caches and object indexes. A NxObject can only be found once in a
-    given NxTree. While this rule isn't enforced, doing otherwise may
-    alter the normal behavior of an NxTree. The NxTree implements roughly the
+    instance caches and object indexes. The NxTree implements roughly the
     same behavior as a defaultdict, where the default_factory produces further
     trees of the same type as the parent.
-    Because of its recursive nature, keys of an NxTree are generally tuples,
-    with each element of the tuple referring to the underlying dictionary
-    at a given depth. As a result, most accessor functions expect a *key
-    argument that would typically reference a tuple.
-    The NxTree uses weak references from parent to child nodes. In order to
-    keep the structure together, nodes -which may either be NxTrees or leaf
-    nodes, themselves either NxCells or an NxObject, hold strong references to
-    their parent node. This is implemented by restricting admissible value
-    assignments to either NxRegistries or NxObjects.
+    The terminology for NxTrees is as follows:
+    * A tree has levels corresponding to various depths.
+    * Key generally refers to a single key that enables access from one level
+    to the next. In order to span multiple levels, we use tuples of keys
+    which together form paths. However an exception to this rule is that
+    the built-in method keys actually return paths to the tree's values.
+    * Nodes refer exclusively to (path, value) pairs where value is another
+    NxTree -hence 'leaf nodes' are actually not considered nodes.
+    * Leaves refer to (path, value) pairs where value is not an NxTree.
+    * Branches refer to (key, value) pairs where value is an NxTree.
+    * Twigs refer to (key, value) pairs where value is not an NxTree.
+    * Basically, Nodes and Leaves are recursive properties while Branches
+    and Twigs are not.
+    The NxTree uses weak references to store its values. In order to
+    keep the structure together, values that are inserted hold strong
+    references to their parent node.
     """
 
     def __init__(self):
@@ -108,24 +114,21 @@ class NxTree(WeakValueDictionary, NxRegistry):
     # Regular dict method accessors
 
     def dictkeys(self):
-        return WeakValueDictionary.keys(self)
+        return dict(WeakValueDictionary.items(self)).keys()
 
     def dictvalues(self):
-        return WeakValueDictionary.values(self)
+        return dict(WeakValueDictionary.items(self)).values()
 
     def dictitems(self):
-        return WeakValueDictionary.items(self)
+        return dict(WeakValueDictionary.items(self)).items()
 
     # Administrative functions
 
     def child(self, key):
         """Creates a child tree of self with the same type from key.
 
-        Note that the key passed to this function must be of single depth,
-        that is, this function doesn't handle recursive insertions.
-
-        :param key: A key to be inserted in self
-        :returns: A child tree, after it's been inserted
+        :param key: A key to be inserted in self.
+        :returns: A child tree, after it's been inserted.
         """
         self[key] = child_ = type(self)()
         return child_
@@ -144,69 +147,70 @@ class NxTree(WeakValueDictionary, NxRegistry):
                 copy_[k] = v
         return copy_
 
-    # Tree accessors
+    def _effective_root(self):
+        """Returns the shallowest node with more than one branch / twig.
 
-    def children(self):
-        """Returns a key, value pair iterable of self's direct subtrees."""
-        return ((k, c) for k, c in self.dictitems() if isinstance(c, NxTree))
-
-    def terminations(self):
-        """Returns a key, value pair iterable of self's immediate objects."""
-        istermination = lambda v: not isinstance(v, NxTree)
-        return ((k, v) for k, v in self.dictitems() if istermination(v))
-
-    def items(self, *depths, _parent=None):
-        """Returns an iterable of key, obj pairs with self's content.
-
-        This function returns the keys and value of leaf nodes, either
-        across the entire tree, or for given depths.
-        _parent is only used in the recursion to stack higher-level keys.
-        :param depths: an optional sequence of integers representing tree depth
-        :returns: an iterable of (key, obj) tuples
+        The effective root is different from the root if the tree has
+        a single branch and no twigs.
         """
-        results = []
-        parent = _parent or tuple()
-        if not depths:
-            depths = [0]
-        depths = sorted(d -1 for d in depths)
-        if depths[0] == -1:
-            depths = depths[1:]
-            for k, v in self.dictitems():
-                if isinstance(v, NxTree):
-                    results.extend(v.items(*depths, _parent = parent + (k, )))
-                else:
-                    results.append((parent + (k,), v))
-        else:
-            for k, v in self.dictitems():
-                if isinstance(v, NxTree):
-                    results.extend(v.items(*depths, _parent = parent + (k, )))
-        return iter(results)
+        if len(self) == 1:
+            k, v = list(self.dictitems)[0]
+            if isinstance(v, NxTree):
+                path, root = v._effective_root(self)
+                return (k, ) + path, root
+        return (), self
 
-    def keys(self, *depths):
-        """Returns an iterable of keys to self's leaf nodes.
+    # Tree insertion and removal
 
-        This function returns the keys from the items method.
-        :param depths: an optional sequence of integers representing tree depth
-        :returns: an iterable of keys
+    def register(self, obj, *path):
+        """Registers obj with given insertion path.
+
+        :param obj: An NxObject or NxRegistry.
+        :param *path: A path as a sequence of keys.
         """
-        keys_, _ = zip(*self.items(*depths))
-        return keys_
-
-    def values(self, *depths):
-        """Returns an iterable of the values of self's leaf nodes.
-
-        This function returns the values from the items method.
-        :param depths: an optional sequence of integers representing tree depth
-        :returns: an iterable of values
-        """
-        _, values_ = zip(*self.items(*depths))
-        return values_
-
-    def __getitem__(self, key):
+        key, *path = path
+        if len(path) == 0:
+            self[key] = obj
+            return
         try:
-            return super().__getitem__(key)
+            self[key].register(obj, *path)
         except KeyError:
-            return self.__missing__(key)
+            self.child(key).register(obj, *path)
+
+    def discard(self, *path):
+        """Similar to a deletion, but with a recursive path.
+
+        Note however that discard does not throw an error if the path
+        does not exist.
+
+        :param *path: An optional path as a sequence of keys.
+        """
+        key,*path = path
+        if len(path) == 0:
+            del self[key]
+            return
+        try:
+            self[key].discard(*path)
+        except KeyError:
+            pass
+
+    def unregister(self, obj, *path):
+        """Unregisters obj at given insertion path.
+
+        If the supplied path is not featured, a KeyError is raised. If it
+        is found in the tree but points to an object other than obj, or to
+        multiple objects, a ValueError is raised.
+
+        :param obj: An NxObject or NxRegistry.
+        :param *path: A path as a sequence of keys.
+        :raises KeyError: if path is not found in self.
+        :raises ValueError: if the obj, path pairing is wrong or ambiguous.
+        """
+        val = self.fetch(*path)
+        if val == obj:
+            self.discard(*path)
+        else:
+            raise ValueError
 
     def __setitem__(self, key, val):
         if isinstance(val, NxRegistry):
@@ -226,17 +230,164 @@ class NxTree(WeakValueDictionary, NxRegistry):
         else:
             val._nxregistries.remove(self)
 
-    def __missing__(self, key):
-        return self.child(key)
+    # Tree accessors
 
+    def branches(self):
+        """Returns a key, value pair iterable of self's direct subtrees."""
+        return ((k, v) for k, v in self.dictitems() if isinstance(v, NxTree))
 
+    def twigs(self):
+        """Returns a key, value pair iterable of self's direct leaves."""
+        isterminal = lambda v: not isinstance(v, NxTree)
+        return ((k, v) for k, v in self.dictitems() if isterminal(v))
 
+    def _nodes(self, *depths, _path=None):
+        """Primitive for nodes."""
+        results = []
+        path = _path or tuple()
+        if not depths:
+            depths = [0]
+        depths = sorted(d -1 for d in depths)
+        if depths[0] == -1:
+            depths = depths[1:]
+            for k, v in self.branches():
+                results.append((path + (k, ), v))
+                results.extend(v._nodes(*depths, _path = path + (k, )))
+        else:
+            for k, v in self.branches():
+                results.extend(v._nodes(*depths, _path = path + (k, )))
+        return iter(results)
 
+    def nodes(self, *depths):
+        """Returns an iterable of (path, tree) tuples found in self.
+
+        This function returns all of the tree's nodes, optionally
+        restricted to given depths. The depth of the root is set to -1 by
+        convention, and the root won't be returned by nodes.
+        :param *depths: optional sequence of integers representing tree depth.
+        :returns: an iterable of path, tree tuples.
+        """
+        return self._nodes(*depths)
+
+    def _random_key_subset(self, *path):
+        """Returns a copy of nodes and leaves whose path is a superset of path.
+
+        :param path: an optional path specification. Omissions of parts of
+            the path are tolerated.
+        :returns: a tree copy of the same type as self.
+        """
+        if not path:
+            result = self.copy()
+        else:
+            result = type(self)()
+            for k, v in self.dictitems():
+                if k == path[0]:
+                    if isinstance(v, NxTree):
+                        child = v._random_key_subset(*path[1:])
+                        if child: result[k] = child
+                    else:
+                        result[k] = v
+                elif isinstance(v, NxTree):
+                    child = v._random_key_subset(*path)
+                    if child: result[k] = child
+        return result
+
+    def _leaves(self, _path=None):
+        """Primitive for leaves."""
+        results = []
+        path = _path or tuple()
+        for k, v in self.dictitems():
+            if isinstance(v, NxTree):
+                results.extend(v._leaves(_path = path + (k, )))
+            else:
+                results.append((path + (k, ), v))
+        return iter(results)
+
+    def leaves(self, *path):
+        """Returns an iterable of path, object pairs, subset by *path.
+
+        Leaves returns terminal objects and their accessor path. The optional
+        *path specifies elements of the path, and only objects whose path
+        is a subset thereof will be returned.
+
+        :param *path: an optional path specification. Omissions of parts of
+            the path are tolerated.
+        :returns: an iterable of (path, value) items.
+        """
+        return self._random_key_subset(*path)._leaves()
+
+    def items(self):
+        """Returns an iterable of path, object pairs from self's leaves."""
+        return dict(self._leaves()).items()
+
+    def keys(self):
+        """Returns an iterable of paths to self's leaves."""
+        return dict(self._leaves()).keys()
+
+    def values(self):
+        """Returns an iterable of the values of self's leaves."""
+        return dict(self._leaves()).values()
+
+    def fetch(self, *path):
+        """Returns a single item from path or raises an exception.
+
+        Path does not need to be fully specified, i.e. an item whose path
+        is a superset of the supplied path can be returned. However if no
+        such item is found, a KeyError is raised. If on the other hand
+        multiple items meet the path condition, a ValueError is raised.
+
+        :param *path: an optional path specification. Omissions of parts of
+            the path are tolerated.
+        :raises KeyError: if no item can be fetched.
+        :raises ValueError: if multiple items are found on supplied path.
+        :returns: an object stored in self.
+        """
+        try:
+            key, values = [list(i) for i  in zip(*self.leaves(*path))]
+        except ValueError: # self.leaves(*path) is empty
+            raise KeyError
+        if len(values) == 0:
+            raise KeyError
+        elif len(values) > 1:
+            raise ValueError
+        else:
+            return values[0]
+
+    def subset(self, *path):
+        """Returns the smallest subtree that enables access to path.
+
+        Path does not need to be fully specified, i.e. omissions are
+        tolerated. The function returns an aggregage of all nodes that can
+        be reached with the supplied path. If this can be done from a single
+        node whose depth is greater than the root, then the subtree at that
+        node is returned. As an example:
+        subset(self, 'a') will return:
+        self    'a' - 'a'        return    'a' - 'a'
+                    - 'b'                      - 'b'
+                'b' - 'a'                  'b' - 'a'
+                    - 'b'
+        subset(self, 'a') will return:
+        self    'x' - 'a'        return    'x' - 'a'
+                    - 'b'
+                'y' - 'b'
+        subset(self, 'a') will return:
+        self    'x' - 'a'        return    'x' - 'a'
+                    - 'b'                  'y' - 'a'
+                'y' - 'a'
+
+        :param *path: an optional path specification. Omissions of parts of
+            the path are tolerated.
+        :returns: an NxTree of the same type as self.
+        """
+        # First extract an absolute subset
+        subset_ = self._random_key_subset(*path)
+        # Second, truncate the access path to get to the root node
+        return subset_._effective_root()[1]
 
     def __reduce__(self):
         return NotImplemented
 
     def __repr__(self):
-        return dict(self).__repr__()
+        return dict(self.items()).__repr__()
 
 
