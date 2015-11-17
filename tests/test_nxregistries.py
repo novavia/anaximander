@@ -51,5 +51,15 @@ class TestNxTree(TestCase):
         assert isinstance(treecopy[1], nxregistries.NxTree)
         assert treecopy[1][1] == i1
 
+    def test_items(self):
+        tree = nxregistries.NxTree()
+        i0, i1, i2 = Item(), Item(), Item()
+        tree[0] = i0
+        tree[1][1] = i1
+        tree[1][2] = i2
+        assert set(tree.keys()) == set([(0,), (1, 1), (1, 2)])
+        assert set(tree.values()) == set([i0, i1, i2])
+        assert set(tree.keys(1)) == set([(1, 1), (1, 2)])
+
 if __name__ == '__main__':
     unittest.main()
