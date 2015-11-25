@@ -8,27 +8,71 @@ Copyright (C) Novavia Solutions, LLC.
 """
 
 #==============================================================================
-# Import statements
+### Imports
 #==============================================================================
 
+import operator as opr
 import unittest
 from unittest import TestCase
 
 import nxregistries
 
 #==============================================================================
-# Mock NxObject
+### Mock NxObject
 #==============================================================================
 
 class Item(object):
     """ A dummy object that mocks as an NxObject."""
 
-    def __init__(self):
+    def __init__(self, ix=0):
+        self.ix = ix
         self._nxregistries = set()
 
 #==============================================================================
-# NxTree testing
+### Test Cases
 #==============================================================================
+
+class TestNxCell(TestCase):
+
+    def _build(self):
+        """Builds an NxCell with items."""
+        self.cell = nxregistries.NxCell()
+        i0, i1 = [Item() for i in range(2)]
+        self.cell.register(i0)
+        self.cell.register(i1)
+        return i0, i1
+
+    def test_insert(self):
+        i0, i1 = self._build()
+        assert len(self.cell) == 2
+
+    def test_removal(self):
+        i0, i1 = self._build()
+        self.cell.unregister(i0)
+        assert list(self.cell) == [i1]
+
+
+class TestNxSortedCell(TestCase):
+
+    def _build(self):
+        """Builds an NxCell with items."""
+        cell_type = nxregistries.NxSortedCell[opr.attrgetter('ix')]
+        self.cell = cell_type()
+        i0, i1 = [Item(i) for i in range(2)]
+        self.cell.register(i0)
+        self.cell.register(i1)
+        return i0, i1
+
+    def test_insert(self):
+        i0, i1 = self._build()
+        assert len(self.cell) == 2
+
+    def test_removal(self):
+        i0, i1 = self._build()
+        self.cell.unregister(i0)
+        assert len(self.cell) == 1
+        assert i1 in self.cell
+
 
 class TestNxTree(TestCase):
 
@@ -78,6 +122,54 @@ class TestNxTree(TestCase):
             self.tree.fetch('a')
         assert self.tree.fetch('z') == i4
         assert self.tree.fetch('x', 'y') == i3
+
+    def test_subset(self):
+        i0, i1, i2, i3, i4 = self._build()
+        assert bool(self.tree.subset('f')) is False
+        assert len(self.tree.subset('a').items()) == 4
+        assert len(self.tree.subset('c').items()) == 1
+        assert list(self.tree.subset('z').dictitems())[0] == ('z', i4)
+
+
+class TestNxCellTree(TestCase):
+
+    def _build(self):
+        """Builds an NxTree with items."""
+        cell_type = nxregistries.NxSortedCell[opr.attrgetter('ix')]
+        tree_type = nxregistries.NxCellTree[cell_type]
+        self.tree = tree_type()
+        i0, i1, i2, i3, i4 = [Item() for i in range(5)]
+        self.tree.register(i0, 'a')
+        self.tree.register(i1, 'b')
+        self.tree.register(i2, 'a')
+        self.tree.register(i3, 'b')
+        self.tree.register(i4, 'a')
+        return i0, i1, i2, i3, i4
+
+    def test_insert(self):
+        i0, i1, i2, i3, i4 = self._build()
+        assert i0 in self.tree['a']
+        assert isinstance(self.tree['b'], nxregistries.NxSortedCell)
+        assert self.tree['b'][0] == i1
+
+    def test_removal(self):
+        i0, i1, i2, i3, i4 = self._build()
+        del self.tree['a']
+        self.tree.unregister(i1, 'b')
+        assert len(self.tree.dictvalues()) == 1
+        assert set(self.tree.values()) == set([i3])
+
+    def test_copy(self):
+        i0, i1, i2, i3, i4 = self._build()
+        treecopy = self.tree.copy()
+        assert isinstance(treecopy, nxregistries.NxTree)
+        assert treecopy['b'][0] == i1
+
+    def test_fetch(self):
+        i0, i1, i2, i3, i4 = self._build()
+        with self.assertRaises(KeyError):
+            self.tree.fetch('e')
+        assert list(self.tree.fetch('a')) == [i0, i2, i4]
 
 if __name__ == '__main__':
     unittest.main()

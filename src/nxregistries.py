@@ -6,7 +6,7 @@ This module implements Anaximander registries, i.e. weak object containers.
 The main two registry types are NxCell (a weak set) and NxTree (a recursive
 weak values dictionary). The registries are used for building taxonomies,
 keeping configuration information, and as instance caches or indexes.
-Every NxObject has an attribute _nxregistries which keeps a set of
+Every NxBase object has an attribute _nxregistries which keeps a set of
 strong references to the registries in which it is featured.
 
 This module is part of the Anaximander project.
@@ -14,19 +14,20 @@ Copyright (C) Novavia Solutions, LLC.
 """
 
 #==============================================================================
-# Import statements
+### Imports
 #==============================================================================
 
 import abc
+from itertools import chain
 from weakref import WeakSet, WeakValueDictionary
 
 from blist import weaksortedset
 
-
+import nxfunctions as fun
 import xprops
 
 #==============================================================================
-# NxWeakContainer base class
+### Abstract base class
 #==============================================================================
 
 class NxRegistry(abc.ABC):
@@ -38,37 +39,281 @@ class NxRegistry(abc.ABC):
     NxRegistries can only have one parent and this has implications: the same
     NxRegistry cannot be a node to multiple NxTrees. If something along
     those lines is required, then the structure needs to be copied.
-    NxObjects can be featured in multiple NxRegistries, and for that purpose
-    they carry a _nxregistries set attribute, which NxRegistry can access and
-    alter. However as a result an NxObject cannnot have multiple simultaneous
-    registrations in the same NxRegistry.
+    NxBase objects can be featured in multiple NxRegistries, and for that
+    purpose they carry a _nxregistries set attribute, which NxRegistry can
+    access and alter. However as a result an NxBase object cannnot have
+    multiple simultaneous registrations in the same NxRegistry.
     """
 
     @xprops.cachedproperty
     def parent(self):
         return None
 
-#    @abc.abstractmethod
-#    def register(self, obj, *key):
-#        """Registers obj with an optional key, which can be composite."""
-#        pass
+    @abc.abstractmethod
+    def register(self, obj, *path):
+        """Registers obj with an optional key path."""
+        pass
+
+    @abc.abstractmethod
+    def unregister(self, obj, *path):
+        """Unregisters obj at given insertion path."""
+        pass
 
 #==============================================================================
-# NxCell class
+### Concrete classes
 #==============================================================================
 
 class NxCell(WeakSet, NxRegistry):
-    """A weak container of NxObjects."""
+    """A weak container of NxBase objects."""
 
     def __init__(self):
         super().__init__()
 
-    def register(self, obj, *key):
+    # Hashability
+
+    def __hash__(self):
+        return id(self)
+
+    def __eq__(self, other):
+        return id(self) == id(other)
+
+    def __ne__(self, other):
+        return id(self) != id(other)
+
+    # Access methods
+
+    def add(self, item):
+        """Overwrites the default add method."""
+        if isinstance(item, NxRegistry):
+            item._parent = self
+        else:
+            try:
+                item._nxregistries.add(self)
+            except AttributeError:
+                msg = "Only NxBase objects can be added as values in " + \
+                      "an NxCell."
+                raise AttributeError(msg)
+        super().add(item)
+
+    def remove(self, item):
+        super().remove(item)
+        if isinstance(item, NxRegistry):
+            del item.parent
+        else:
+            item._nxregistries.remove(self)
+
+    def discard(self, item):
+        try:
+            self.remove(item)
+        except KeyError:
+            pass
+
+    def pop(self):
+        return NotImplemented
+
+    def update(self, iterable):
+        return NotImplemented
+
+    def intersection_update(self, other):
+        return NotImplemented
+
+    def difference_update(self, other):
+        return NotImplemented
+
+    def symmetric_difference_update(self, other):
+        return NotImplemented
+
+    def clear(self):
+        for item in list(self):
+            self.remove(item)
+
+    def register(self, obj, *path):
+        """Adds an object to the cell. Path is ignored in this implementation.
+
+        :param obj: An NxBase object or NxRegistry.
+        """
         self.add(obj)
 
-#==============================================================================
-# NxTree class
-#==============================================================================
+    def unregister(self, obj, *path):
+        """Removes object from the cell. Path is ignored.
+
+        :param obj: An NxBase object.
+        """
+        self.remove(obj)
+
+    def copy(self):
+        """Returns a deep copy of self save for NxBase objects."""
+        return self.__copy__()
+
+    def __copy__(self):
+        """Primitive to copy."""
+        copy_ = type(self)()
+        for item in self:
+            if isinstance(item, NxRegistry):
+                copy_.add(item.__copy__())
+            else:
+                copy_.add(item)
+        return copy_
+
+    def __repr__(self):
+        cls = type(self).__name__
+        if not self:
+            return '{cls}()'.format(**locals())
+        content = fun.spformat(self)
+        return '{cls}({content})'.format(**locals())
+
+
+# weaksortedset does not inherit from WeakSet, and therefore NxSortedCell
+# does not inherit from NxCell. As a result, all the methods are fully
+# rewritten. This could be done more sparingly but given the size of the
+# code that seemed like the safest and most efficient route.
+
+class NxSortedCellType(abc.ABCMeta):
+    """The metaclass for NxSortedCell."""
+    __cache__ = WeakValueDictionary() # type cache
+
+    def __new__(mcl, name, bases, namespace, **kwargs):
+        """Customized to intercept key and provide caching / retrieving."""
+        try:
+            key = namespace['__key__']
+        except KeyError:
+            msg = "NxSortedCell type requires a __key__ atrribute."
+            raise ValueError(msg)
+        try:
+            return mcl.__cache__[key]
+        except KeyError:
+            cell_type = super().__new__(mcl, name, bases, namespace)
+            mcl.__cache__[key] = cell_type
+            return cell_type
+
+    @classmethod
+    def _from_key(mcl, key):
+        """Makes a NxSortedCell type from a sort key."""
+        base_type = mcl.__cache__[None]
+        name, bases, namespace = fun.metargs(base_type)
+        bases = (base_type,)
+        namespace['__key__'] = key
+        return mcl(name, bases, namespace)
+
+    def __getitem__(cls, key):
+        """Enables retrieving types by sort key."""
+        try:
+            return cls.__cache__[key]
+        except KeyError:
+            return cls._from_key(key)
+
+
+class NxSortedCell(weaksortedset, NxRegistry, metaclass=NxSortedCellType):
+    """A weak sorted container of NxBase objects."""
+    __key__ = None # A default sort key
+
+    def __init__(self, key=None):
+        """Specify a sort key, otherwise takes class' default."""
+        super().__init__(key = fun.get(key, self.__key__))
+
+    # Hashability
+
+    def __hash__(self):
+        return id(self)
+
+    def __eq__(self, other):
+        return id(self) == id(other)
+
+    def __ne__(self, other):
+        return id(self) != id(other)
+
+    # Access methods
+
+    def __getitem__(self, index):
+        """A slice returns a weaksortedset rather than a NxSortedCell."""
+        if isinstance(index, slice):
+            rv = weaksortedset()
+            rv._blist = self._blist[index]
+            rv._key = self._key
+            return rv
+        return super().__getitem__(index)
+
+    def add(self, item):
+        """Overwrites the default add method."""
+        if isinstance(item, NxRegistry):
+            item._parent = self
+        else:
+            try:
+                item._nxregistries.add(self)
+            except AttributeError:
+                msg = "Only NxBase objects can be added as values in " + \
+                      "an NxCell."
+                raise AttributeError(msg)
+        super().add(item)
+
+    def remove(self, item):
+        if not item in self:
+            raise KeyError
+        self.discard(item)
+
+    def discard(self, item):
+        if not item in self:
+            return
+        super().discard(item)
+        if isinstance(item, NxRegistry):
+            del item.parent
+        else:
+            item._nxregistries.remove(self)
+
+    def pop(self):
+        return NotImplemented
+
+    def update(self, iterable):
+        return NotImplemented
+
+    def intersection_update(self, other):
+        return NotImplemented
+
+    def difference_update(self, other):
+        return NotImplemented
+
+    def symmetric_difference_update(self, other):
+        return NotImplemented
+
+    def clear(self):
+        for item in list(self):
+            self.remove(item)
+
+    def register(self, obj, *path):
+        """Adds an object to the cell. Path is ignored in this implementation.
+
+        :param obj: An NxBase object.
+        """
+        self.add(obj)
+
+    def unregister(self, obj, *path):
+        """Removes object from the cell. Path is ignored.
+
+        :param obj: An NxBase object.
+        """
+        self.remove(obj)
+
+    def copy(self):
+        """Returns a deep copy of self save for NxBase objects."""
+        return self.__copy__()
+
+    def __copy__(self):
+        """Primitive to copy."""
+        copy_ = type(self)()
+        for item in self:
+            if isinstance(item, NxRegistry):
+                copy_.add(item.__copy__())
+            else:
+                copy_.add(item)
+        return copy_
+
+    def __repr__(self):
+        cls = type(self).__name__
+        if not self:
+            return '{cls}()'.format(**locals())
+        content = fun.spformat(self)
+        return '{cls}({content})'.format(**locals())
+
 
 class NxTree(WeakValueDictionary, NxRegistry):
     """A recursive nested dictionary with weak value references.
@@ -154,28 +399,32 @@ class NxTree(WeakValueDictionary, NxRegistry):
         a single branch and no twigs.
         """
         if len(self) == 1:
-            k, v = list(self.dictitems)[0]
+            k, v = list(self.dictitems())[0]
             if isinstance(v, NxTree):
-                path, root = v._effective_root(self)
+                path, root = v._effective_root()
                 return (k, ) + path, root
         return (), self
+
+    def clear(self):
+        for path, obj in list(self.items()):
+            self.unregister(obj, path)
 
     # Tree insertion and removal
 
     def register(self, obj, *path):
         """Registers obj with given insertion path.
 
-        :param obj: An NxObject or NxRegistry.
+        :param obj: An NxBase object.
         :param *path: A path as a sequence of keys.
         """
         key, *path = path
         if len(path) == 0:
             self[key] = obj
-            return
-        try:
-            self[key].register(obj, *path)
-        except KeyError:
-            self.child(key).register(obj, *path)
+        else:
+            try:
+                self[key].register(obj, *path)
+            except KeyError:
+                self.child(key).register(obj, *path)
 
     def discard(self, *path):
         """Similar to a deletion, but with a recursive path.
@@ -186,11 +435,12 @@ class NxTree(WeakValueDictionary, NxRegistry):
         :param *path: An optional path as a sequence of keys.
         """
         key,*path = path
-        if len(path) == 0:
-            del self[key]
-            return
         try:
-            self[key].discard(*path)
+            if len(path) == 0:
+                del self[key]
+                return
+            else:
+                self[key].discard(*path)
         except KeyError:
             pass
 
@@ -201,7 +451,7 @@ class NxTree(WeakValueDictionary, NxRegistry):
         is found in the tree but points to an object other than obj, or to
         multiple objects, a ValueError is raised.
 
-        :param obj: An NxObject or NxRegistry.
+        :param obj: An NxBase object.
         :param *path: A path as a sequence of keys.
         :raises KeyError: if path is not found in self.
         :raises ValueError: if the obj, path pairing is wrong or ambiguous.
@@ -219,7 +469,8 @@ class NxTree(WeakValueDictionary, NxRegistry):
             try:
                 val._nxregistries.add(self)
             except AttributeError:
-                msg = "Only NxObjects can be added as values in an NxTree."
+                msg = "Only NxRegistries / NxBase objects can be added as " + \
+                      "values in an NxTree."
                 raise AttributeError(msg)
         super().__setitem__(key, val)
 
@@ -229,6 +480,18 @@ class NxTree(WeakValueDictionary, NxRegistry):
             del val.parent
         else:
             val._nxregistries.remove(self)
+
+    def pop(self, key, *args):
+        return NotImplemented
+
+    def popitem(self):
+        return NotImplemented
+
+    def setdefault(self, key, default=None):
+        return NotImplemented
+
+    def update(self, dict=None, **kwargs):
+        return NotImplemented
 
     # Tree accessors
 
@@ -388,6 +651,176 @@ class NxTree(WeakValueDictionary, NxRegistry):
         return NotImplemented
 
     def __repr__(self):
-        return dict(self.items()).__repr__()
+        cls = type(self).__name__
+        if not self:
+            return '{cls}()'.format(**locals())
+        paths, values = zip(*self._leaves())
+        max_depth = max(len(p) for p in paths) - 1
+        content = fun.spformat(values, 'leaf', 'leaves')
+        return '{cls}({content}, max_depth={max_depth})'.format(**locals())
 
 
+class NxCellTreeType(abc.ABCMeta):
+    """The metaclass for NxCellTree."""
+    __cache__ = WeakValueDictionary() # type cache
+
+    def __new__(mcl, name, bases, namespace, **kwargs):
+        """Customized to intercept key and provide caching / retrieving."""
+        try:
+            cell_type = namespace['__cell__']
+        except KeyError:
+            msg = "NxCellTree type requires a __cell__ atrribute."
+            raise ValueError(msg)
+        try:
+            return mcl.__cache__[cell_type]
+        except KeyError:
+            tree_type = super().__new__(mcl, name, bases, namespace)
+            mcl.__cache__[cell_type] = tree_type
+            return tree_type
+
+    @classmethod
+    def _from_cell_type(mcl, cell_type):
+        """Makes a NxCellTree type from a cell type."""
+        base_type = mcl.__cache__[NxCell]
+        name, bases, namespace = fun.metargs(base_type)
+        bases = (base_type,)
+        namespace['__cell__'] = cell_type
+        return mcl(name, bases, namespace)
+
+    def __getitem__(cls, cell_type):
+        """Enables retrieving types by cell_type."""
+        try:
+            return cls.__cache__[cell_type]
+        except KeyError:
+            return cls._from_cell_type(cell_type)
+
+
+class NxCellTree(NxTree, metaclass=NxCellTreeType):
+    """An NxTree whose leaves are NxCells."""
+    __cell__ = NxCell # NxCell type
+
+    def leaf(self, key):
+        """Creates an NxCell as a direct leaf of self.
+
+        :param key: A key to be inserted in self.
+        :returns: An NxCell, after it's been inserted.
+        """
+        self[key] = cell = self.__cell__()
+        return cell
+
+    # Tree insertion and removal
+
+    def __setitem__(self, key, val):
+        if not isinstance(val, NxRegistry):
+            msg = "NxRegistries are the only admissible values in NxCellTree."
+            raise AttributeError(msg)
+        super().__setitem__(key, val)
+
+    def register(self, obj, *path):
+        """Registers obj with given insertion path.
+
+        :param obj: An NxBase object.
+        :param *path: A path as a sequence of keys.
+        """
+        key, *path = path
+        if len(path) == 0:
+            try:
+                self[key].register(obj)
+            except KeyError:
+                self.leaf(key).register(obj)
+        else:
+            try:
+                self[key].register(obj, *path)
+            except KeyError:
+                self.child(key).register(obj, *path)
+
+    def discard(self, *path):
+        """Similar to a deletion, but with a recursive path.
+
+        Note however that discard does not throw an error if the path
+        does not exist.
+
+        :param *path: An optional path as a sequence of keys.
+        """
+        key,*path = path
+        try:
+            if len(path) == 0:
+                del self[key]
+                return
+            else:
+                self[key].discard(*path)
+        except KeyError:
+            pass
+
+    def unregister(self, obj, *path):
+        """Unregisters obj at given insertion path.
+
+        If the supplied path is not featured, a KeyError is raised. If it
+        is found in the tree but points to a cell that doesn't contain obj,
+        a KeyError is raised as well.
+
+        :param obj: An NxBase object.
+        :param *path: A path as a sequence of keys.
+        :raises KeyError: if path not found in self or obj not found at path.
+        :raises ValueError: if path is ambiguous.
+        """
+        cell = self.fetch(*path)
+        cell.unregister(obj)
+
+    # Note that the interface below is a stark departure from a dictionary
+    # interface: items and values return NxBase objects stored in the leaf
+    # cells, while keys only return the set of paths leading to those
+    # cells. In particular, keys and items / values will usually have
+    # different lengths.
+
+    def items(self):
+        """Returns an iterable of path, object pairs from self's leaves."""
+        def expand(path, cell):
+            """Returns an iterable of (path, item) tuples."""
+            return ((path, item) for item in cell)
+        return chain(*[expand(*leaf) for leaf in self._leaves()])
+
+    def keys(self):
+        """Returns an iterable of paths to self's leaves."""
+        return dict(self._leaves()).keys()
+
+    def values(self):
+        """Returns an iterable of the values stored in self's leaves."""
+        vals = chain(*[leaf[1] for leaf in self._leaves()])
+        return dict(enumerate(vals)).values()
+
+    def fetch(self, *path):
+        """Returns a single cell from path or raises an exception.
+
+        Path does not need to be fully specified, i.e. a cell whose path
+        is a superset of the supplied path can be returned. However if no
+        such cell is found, a KeyError is raised. If on the other hand
+        multiple cells meet the path condition, a ValueError is raised.
+
+        :param *path: an optional path specification. Omissions of parts of
+            the path are tolerated.
+        :raises KeyError: if no item can be fetched.
+        :raises ValueError: if multiple items are found on supplied path.
+        :returns: a leaf cell stored in self.
+        """
+        try:
+            key, values = [list(i) for i  in zip(*self.leaves(*path))]
+        except ValueError: # self.leaves(*path) is empty
+            raise KeyError
+        if len(values) == 0:
+            raise KeyError
+        elif len(values) > 1:
+            raise ValueError
+        else:
+            return values[0]
+
+    def __repr__(self):
+        cls = type(self).__name__
+        if not self:
+            return '{cls}()'.format(**locals())
+        paths, cells = zip(*self._leaves())
+        max_depth = max(len(p) for p in paths) - 1
+        cells_ = fun.spformat(cells, 'cell')
+        items_ = fun.spformat(list(chain(*cells)))
+        content = ', '.join((cells_, items_))
+        return '{cls}({content}, max_depth={max_depth})'.format(**locals())
