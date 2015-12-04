@@ -22,17 +22,20 @@ import weakref
 class cachedproperty(property):
     """A lazily evaluated but cached property descriptor.
 
-    cachedproperty implement __delete__, which in this particular context 
-    empties the cache so that the property can be recalculated on the next 
+    cachedproperty implement __delete__, which in this particular context
+    empties the cache so that the property can be recalculated on the next
     call.
     There is also a reset class method that can be passed an object
     instance: all cached propeties of the instance will then be reset,
     i.e. their cache is emptied.
     """
 
-    def __init__(self, fget=None, fset=None, fdel=None):
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
         super(cachedproperty, self).__init__(fget, fset, fdel)
         self.cache = '_' + fget.__name__
+        if doc is None and fget is not None:
+            doc = fget.__doc__
+        self.__doc__ = doc
 
     def __get__(self, obj, objtype=None):
         if obj is None:
@@ -90,7 +93,7 @@ class settablecachedproperty(cachedproperty):
 class weakproperty(settablecachedproperty):
     """A cached property who stores a weak reference of a target attribute.
 
-    weakproperty decorates a function that returns a default value -usually 
+    weakproperty decorates a function that returns a default value -usually
     None. It is meant to be set and will keep a weak reference in cache.
     """
 

@@ -15,28 +15,30 @@ import operator as opr
 import unittest
 from unittest import TestCase
 
-import nxregistries
+from nxmeta import NxObject
+import nxregistries as nxr
 
 #==============================================================================
 ### Mock NxObject
 #==============================================================================
 
-class Item(object):
-    """ A dummy object that mocks as an NxObject."""
+
+class Item(NxObject):
+    """ A dummy NxObject."""
 
     def __init__(self, ix=0):
         self.ix = ix
-        self._nxregistries = set()
 
 #==============================================================================
 ### Test Cases
 #==============================================================================
 
+
 class TestNxCell(TestCase):
 
     def _build(self):
         """Builds an NxCell with items."""
-        self.cell = nxregistries.NxCell()
+        self.cell = nxr.NxCell()
         i0, i1 = [Item() for i in range(2)]
         self.cell.register(i0)
         self.cell.register(i1)
@@ -56,7 +58,7 @@ class TestNxSortedCell(TestCase):
 
     def _build(self):
         """Builds an NxCell with items."""
-        cell_type = nxregistries.NxSortedCell[opr.attrgetter('ix')]
+        cell_type = nxr.NxSortedCell[opr.attrgetter('ix')]
         self.cell = cell_type()
         i0, i1 = [Item(i) for i in range(2)]
         self.cell.register(i0)
@@ -78,7 +80,7 @@ class TestNxTree(TestCase):
 
     def _build(self):
         """Builds an NxTree with items."""
-        self.tree = nxregistries.NxTree()
+        self.tree = nxr.NxTree()
         i0, i1, i2, i3, i4 = [Item() for i in range(5)]
         self.tree.register(i0, 'a')
         self.tree.register(i1, 'b', 'a')
@@ -90,7 +92,7 @@ class TestNxTree(TestCase):
     def test_insert(self):
         i0, i1, i2, i3, i4 = self._build()
         assert self.tree['a'] == i0
-        assert isinstance(self.tree['b'], nxregistries.NxTree)
+        assert isinstance(self.tree['b'], nxr.NxTree)
         assert self.tree['b']['a'] == i1
 
     def test_removal(self):
@@ -104,7 +106,7 @@ class TestNxTree(TestCase):
     def test_copy(self):
         i0, i1, i2, i3, i4 = self._build()
         treecopy = self.tree.copy()
-        assert isinstance(treecopy['b'], nxregistries.NxTree)
+        assert isinstance(treecopy['b'], nxr.NxTree)
         assert treecopy['b']['a'] == i1
 
     def test_nodes(self):
@@ -135,8 +137,8 @@ class TestNxCellTree(TestCase):
 
     def _build(self):
         """Builds an NxTree with items."""
-        cell_type = nxregistries.NxSortedCell[opr.attrgetter('ix')]
-        tree_type = nxregistries.NxCellTree[cell_type]
+        cell_type = nxr.NxSortedCell[opr.attrgetter('ix')]
+        tree_type = nxr.NxCellTree[cell_type]
         self.tree = tree_type()
         i0, i1, i2, i3, i4 = [Item() for i in range(5)]
         self.tree.register(i0, 'a')
@@ -149,7 +151,7 @@ class TestNxCellTree(TestCase):
     def test_insert(self):
         i0, i1, i2, i3, i4 = self._build()
         assert i0 in self.tree['a']
-        assert isinstance(self.tree['b'], nxregistries.NxSortedCell)
+        assert isinstance(self.tree['b'], nxr.NxSortedCell)
         assert self.tree['b'][0] == i1
 
     def test_removal(self):
@@ -162,7 +164,7 @@ class TestNxCellTree(TestCase):
     def test_copy(self):
         i0, i1, i2, i3, i4 = self._build()
         treecopy = self.tree.copy()
-        assert isinstance(treecopy, nxregistries.NxTree)
+        assert isinstance(treecopy, nxr.NxTree)
         assert treecopy['b'][0] == i1
 
     def test_fetch(self):
@@ -172,4 +174,4 @@ class TestNxCellTree(TestCase):
         assert list(self.tree.fetch('a')) == [i0, i2, i4]
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(warnings='ignore')
