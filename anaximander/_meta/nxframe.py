@@ -18,20 +18,21 @@ Copyright (C) Novavia Solutions, LLC.
 import types
 from itertools import chain
 
-import nxmeta
-import nxregistries as nxr
+from . import apeiron
+
+from ..utilities import registries as reg
 
 #==============================================================================
 ### Abstract base classes
 #==============================================================================
 
 
-class NxFrameworkType(nxmeta.NxType):
+class NxFrameworkType(apeiron.NxBaseType):
     """Parent class to types in Anaximander's framework layer."""
     pass
 
 
-class NxFrameworkObject(nxmeta.NxObject, metaclass=NxFrameworkType):
+class NxFrameworkObject(apeiron.NxBaseObject, metaclass=NxFrameworkType):
     """Parent class to Anaximander's framework layer objects."""
     pass
 
@@ -87,7 +88,7 @@ class Template(NxFrameworkType):
 
     @classmethod
     def __prepare__(mcl, name, bases, key=None, _metaclass=None):
-        return super().__prepare__(mcl, name, bases)
+        return super().__prepare__(name, bases)
 
     def __new__(mcl, name, bases, namespace, key=None, _metaclass=None):
         return super().__new__(mcl, name, bases, namespace)
@@ -105,7 +106,7 @@ class Template(NxFrameworkType):
             tpl.__original__ = True
         tpl.__namespace__.pop('__qualname__', None)
         tpl.__namespace__.pop('__type__', None)
-        tpl.__types__ = nxr.NxTree()
+        tpl.__types__ = reg.NxTree()
 
         def simple_new(tpl, *args, **kwargs):
             """Customized __new__ for templates."""

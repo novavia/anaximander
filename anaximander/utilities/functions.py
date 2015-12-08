@@ -17,6 +17,7 @@ import inspect
 ### Attributes handling
 #==============================================================================
 
+
 def spformat(collection, singular='item', plural=None):
     """Returns 'n {item}' or 'n {items}' where n is the collection's length.
 
@@ -28,9 +29,9 @@ def spformat(collection, singular='item', plural=None):
     plural = plural or singular + 's'
     n = len(collection)
     if n <= 1:
-        return '{n} {sf}'.format(n = n, sf = singular)
+        return '{n} {sf}'.format(n=n, sf=singular)
     else:
-        return '{n} {pf}'.format(n = n, pf = plural)
+        return '{n} {pf}'.format(n=n, pf=plural)
 
 
 def dictionarize(*args):
@@ -43,7 +44,7 @@ def dictionarize(*args):
     :return: a dictionary of locally named variables.
     """
     caller_frame = inspect.currentframe().f_back
-    return {a:caller_frame.f_locals[a] for a in args}
+    return {a: caller_frame.f_locals[a] for a in args}
 
 
 def get(val, default=None):
@@ -52,7 +53,5 @@ def get(val, default=None):
 
 
 def metargs(cls):
-    """Returns the name, bases and attributes of the supplied class."""
+    """Returns the name, bases and namespace of the supplied class."""
     return (cls.__name__, cls.__bases__, cls.__dict__.copy())
-
-

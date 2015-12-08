@@ -19,6 +19,7 @@ import weakref
 # Properties
 #==============================================================================
 
+
 class cachedproperty(property):
     """A lazily evaluated but cached property descriptor.
 
@@ -77,7 +78,8 @@ class cachedproperty(property):
         """Resets all cached properties on obj (if declared in its class)."""
         attrs = type(obj).__dict__
         props = [k for k, v in attrs.items() if isinstance(v, cls)]
-        for k in props: delattr(obj, k)
+        for k in props:
+            delattr(obj, k)
 
 
 class settablecachedproperty(cachedproperty):

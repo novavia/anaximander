@@ -14,8 +14,8 @@ Copyright (C) Novavia Solutions, LLC.
 import unittest
 from unittest import TestCase
 
-import nxmeta
-import nxframe as nxf
+import anaximander as nx
+from anaximander._meta import nxframe as nxf
 
 #==============================================================================
 ### Test Cases
@@ -38,7 +38,7 @@ class TestTemplate(TestCase):
     class D(C):
         i_am_a_d = True
 
-    class E(nxmeta.NxObject, metaclass=nxf.Template, key=('x', 'y')):
+    class E(nx.Object, metaclass=nxf.Template, key=('x', 'y')):
         pass
 
     def setUp(self):
@@ -52,7 +52,7 @@ class TestTemplate(TestCase):
         assert self.Exy.__name__ == 'E_x_y'
         assert type(self.C0) == nxf.NxFrameworkType
         assert type(self.D0) == nxf.NxFrameworkType
-        assert type(self.Exy) == nxmeta.NxType
+        assert type(self.Exy) == nx.Type
         assert self.C0.__ctype__ == 0
         assert self.D0.__ctype__ == 0
         assert self.Exy.x == 'x'

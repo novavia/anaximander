@@ -6,7 +6,7 @@ This module implements Anaximander registries, i.e. weak object containers.
 The main two registry types are NxCell (a weak set) and NxTree (a recursive
 weak values dictionary). The registries are used for building taxonomies,
 keeping configuration information, and as instance caches or indexes.
-Every Anaximander object or types has an attribute _nxregistries which keeps
+Every Anaximander object or type has an attribute _nxregistries which keeps
 a set of strong references to the registries in which it is featured.
 
 This module is part of the Anaximander project.
@@ -23,16 +23,15 @@ from weakref import WeakSet, WeakValueDictionary
 
 from blist import weaksortedset
 
-import nxmeta
-import nxfunctions as fun
-import xprops
+from . import functions as fun
+from . import xprops
 
 #==============================================================================
 ### Abstract base class
 #==============================================================================
 
 
-class NxRegistry(nxmeta.NxObject):
+class NxRegistry(abc.ABC):
     """Abstract base class for NxCell and NxTree.
 
     The base class implements the parent property, a strong reference
@@ -41,11 +40,10 @@ class NxRegistry(nxmeta.NxObject):
     NxRegistries can only have one parent and this has implications: the same
     NxRegistry cannot be a node to multiple NxTrees. If something along
     those lines is required, then the structure needs to be copied.
-    NxMeta instances (i.e. NxObjects and NxTypes) can be featured in multiple
-    NxRegistries, and for that purpose they carry a _nxregistries set
-    attribute, which NxRegistry can access and alter. However as a result an
-    NxMeta instance cannnot reliably have multiple simultaneous registrations
-    in the same NxRegistry.
+    nxobjects can be featured in multiple NxRegistries, and for
+    hat purpose they carry a _nxregistries set attribute, which NxRegistry
+    can access and alter. However as a result an nxobject instance cannnot
+    reliably have multiple simultaneous registrations in the same NxRegistry.
     """
 
     @xprops.cachedproperty
@@ -68,7 +66,7 @@ class NxRegistry(nxmeta.NxObject):
 
 
 class NxCell(WeakSet, NxRegistry):
-    """A weak container of NxMeta instances."""
+    """A weak container of nxobject instances."""
 
     def __init__(self):
         super().__init__()
@@ -88,22 +86,16 @@ class NxCell(WeakSet, NxRegistry):
 
     def add(self, item):
         """Overwrites the default add method."""
-        if isinstance(item, NxRegistry):
-            item._parent = self
-        else:
-            try:
-                item._nxregistries.add(self)
-            except AttributeError:
-                msg = "Only NxMeta instances can be added to an NxCell."
-                raise TypeError(msg)
+        try:
+            item._nxregistries.add(self)
+        except AttributeError:
+            msg = "Only nxobject instances can be added to an NxCell."
+            raise TypeError(msg)
         super().add(item)
 
     def remove(self, item):
         super().remove(item)
-        if isinstance(item, NxRegistry):
-            del item.parent
-        else:
-            item._nxregistries.remove(self)
+        item._nxregistries.remove(self)
 
     def discard(self, item):
         try:
@@ -133,14 +125,14 @@ class NxCell(WeakSet, NxRegistry):
     def register(self, obj, *path):
         """Adds an object to the cell. Path is ignored in this implementation.
 
-        :param obj: An NxMeta instance.
+        :param obj: An nxobject instance.
         """
         self.add(obj)
 
     def unregister(self, obj, *path):
         """Removes object from the cell. Path is ignored.
 
-        :param obj: An NxMeta instance.
+        :param obj: An nxobject instance.
         """
         self.remove(obj)
 
@@ -152,9 +144,6 @@ class NxCell(WeakSet, NxRegistry):
         """Primitive to copy."""
         copy_ = type(self)()
         for item in self:
-            if isinstance(item, NxRegistry):
-                copy_.add(item.__copy__())
-            else:
                 copy_.add(item)
         return copy_
 
@@ -171,7 +160,7 @@ class NxCell(WeakSet, NxRegistry):
 # rewritten. This could be done more sparingly but given the size of the
 # code that seemed like the safest and most efficient route.
 
-class NxSortedCellType(nxmeta.NxType):
+class NxSortedCellType(abc.ABCMeta):
     """The metaclass for NxSortedCell."""
     __cache__ = WeakValueDictionary()  # type cache
 
@@ -207,7 +196,7 @@ class NxSortedCellType(nxmeta.NxType):
 
 
 class NxSortedCell(weaksortedset, NxRegistry, metaclass=NxSortedCellType):
-    """A weak sorted container of NxMeta instances."""
+    """A weak sorted container of nxobject instances."""
     __key__ = None  # A default sort key
 
     def __init__(self, key=None):
@@ -238,14 +227,11 @@ class NxSortedCell(weaksortedset, NxRegistry, metaclass=NxSortedCellType):
 
     def add(self, item):
         """Overwrites the default add method."""
-        if isinstance(item, NxRegistry):
-            item._parent = self
-        else:
-            try:
-                item._nxregistries.add(self)
-            except AttributeError:
-                msg = "Only NxMeta instances can be added to an NxCell."
-                raise AttributeError(msg)
+        try:
+            item._nxregistries.add(self)
+        except AttributeError:
+            msg = "Only nxobject instances can be added to an NxCell."
+            raise AttributeError(msg)
         super().add(item)
 
     def remove(self, item):
@@ -257,10 +243,7 @@ class NxSortedCell(weaksortedset, NxRegistry, metaclass=NxSortedCellType):
         if not item in self:
             return
         super().discard(item)
-        if isinstance(item, NxRegistry):
-            del item.parent
-        else:
-            item._nxregistries.remove(self)
+        item._nxregistries.remove(self)
 
     def pop(self):
         return NotImplemented
@@ -284,28 +267,25 @@ class NxSortedCell(weaksortedset, NxRegistry, metaclass=NxSortedCellType):
     def register(self, obj, *path):
         """Adds an object to the cell. Path is ignored in this implementation.
 
-        :param obj: An NxMeta instance.
+        :param obj: An nxobject instance.
         """
         self.add(obj)
 
     def unregister(self, obj, *path):
         """Removes object from the cell. Path is ignored.
 
-        :param obj: An NxMeta instance.
+        :param obj: An nxobject instance.
         """
         self.remove(obj)
 
     def copy(self):
-        """Returns a deep copy of self save for non-registry objects."""
+        """Returns a copy of self."""
         return self.__copy__()
 
     def __copy__(self):
         """Primitive to copy."""
         copy_ = type(self)()
         for item in self:
-            if isinstance(item, NxRegistry):
-                copy_.add(item.__copy__())
-            else:
                 copy_.add(item)
         return copy_
 
@@ -329,23 +309,94 @@ class NxTree(WeakValueDictionary, NxRegistry):
     * A tree has levels corresponding to various depths.
     * Key generally refers to a single key that enables access from one level
     to the next. In order to span multiple levels, we use tuples of keys
-    which together form paths. However an exception to this rule is that
-    the built-in method keys actually return paths to the tree's values.
-    * Nodes refer exclusively to (path, value) pairs where value is another
-    NxTree -hence 'leaf nodes' are actually not considered nodes.
-    * Leaves refer to (path, value) pairs where value is not an NxTree.
-    * Branches refer to (key, value) pairs where value is an NxTree.
-    * Twigs refer to (key, value) pairs where value is not an NxTree.
-    * Basically, Nodes and Leaves are recursive properties while Branches
-    and Twigs are not.
+    which together form paths. By convention the path to a tree's root is
+    the empty tuple.
+    * Trees are made of nodes, but node is only a contextual designation for
+    the descendants of a given tree since there is no node class. Nodes can
+    be any type of NxRegistry, i.e. NxCell, NxSortedCell or NxTree.
+    * In addition to its children, an NxTree stores a single value, which can
+    be accessed by its value attribute or by a call.
+    * Leaves refer to nodes without children.
+    * Branches refer to the (key, child) tuples accessible by a root node.
+    * Twigs refer to branches where the child is a leaf.
+    * As a result, NxTree implements the following methods:
+        - value (property) is the stored value of the root node;
+        - keys are the known keys of the root node;
+        - branches are the (key, child) tuples accessible by the root node;
+        - children are the children of the root node;
+        - childpaths, childitems and childvalues mimic keys, items and values
+        of a dictionary, where values are the values stored by children nodes.
+        childpaths is equivalent to keys;
+        - nodes are all of the (path, node) tuples of the tree, including the
+        root;
+        - nodepath, nodeitems, nodevalues mimic keys, items and values of a
+        dictionary, where values are the values stored by nodes;
+        - descendants are (path, node) tuples of the tree, minus the root;
+        - descendantpaths, descendantitems, descendantvalues mimic keys, items
+        and values of a dictionary, where values are values stored by
+        descendants;
+        - nodes and descendants, as well as their dict-like associated methods
+        accept an optional *depths argument to restrict the results to
+        specified depths;
+        - items and values are aliases for nodeitems and nodevalues. Paths is
+        an alias for nodepath.
+        - leaves are (path, node) tuples of the tree where node is childless.
+        Note that this may include the root;
+        _ leafpaths, leafitems, leafvalues mimic keys, items and values of a
+        dictionary, where values are the values stored by leaf nodes;
+    * All the items / values methods exclude None values from their results.
+    * Cells are returned as nodes by branches, children, nodes, descendants
+    and leaves. Hence when iterating or traversing, one must check for the
+    type of the nodes.
+    * Values stored in cells are chained together with NxTree values, such
+    that childvalues, nodevalues, descendantvalues, leafvalues return iterators
+    of values in which cell contents are already unpacked. The same holds
+    true for items. However paths are returned without duplicates. From this
+    it follows that paths and items / values generally don't have the same
+    length. This is only the case if the Tree contains no cell.
+    * Basically, paths, nodes, descendants and leaves are recursive properties,
+    while keys, children, branches and twigs are not.
+    * The interface messes a bit with the dictionary interface, but
+    NxTree implements dictkeys, dictvalues and dictitems that behave as one
+    would expect.
+    * The len of an NxTree is the count of its keys, so this is unchanged
+    from a dictionary.
+    * NxTree also implments the properties height (maximum depth), nodecount
+    (number of nodes), leafcount (number of leaves), and itemcount (number of
+    stored values).
     The NxTree uses weak references to store its values. In order to
     keep the structure together, values that are inserted hold strong
     references to their parent node.
     """
 
-    def __init__(self):
+    def __init__(self, value=None):
         """To prevent errors, NxTrees cannot be passed items upon __init__."""
         super().__init__()
+        if value is not None:
+            self.value = value
+
+    @xprops.cachedproperty
+    def value(self):
+        return None
+
+    @value.setter
+    def value(self, val=None):
+        if val is not None:
+            try:
+                val._nxregistries.add(self)
+            except AttributeError:
+                msg = "Only nxobjects can be stored in an NxRegistry."
+                raise TypeError(msg)
+        if self._value is not None:
+            self._value._nxregistries.remove(self)
+        self._value = val
+
+    @value.deleter
+    def value(self):
+        self.value = None
+
+    def __call__(self):
+        return self._value
 
     # Hashability
 
@@ -371,31 +422,29 @@ class NxTree(WeakValueDictionary, NxRegistry):
 
     # Administrative functions
 
-    def child(self, key):
+    def child(self, key, value=None):
         """Creates a child tree of self with the same type from key.
 
         :param key: A key to be inserted in self.
+        :param value: An optional value stored in the child's root node.
         :returns: A child tree, after it's been inserted.
         """
-        self[key] = child_ = type(self)()
+        self[key] = child_ = type(self)(value)
         return child_
 
     def copy(self):
-        """Returns a deep copy of self, save for leaf values."""
+        """Returns a deep copy of self."""
         return self.__copy__()
 
     def __copy__(self):
         """Primitive to copy."""
-        copy_ = type(self)()
+        copy_ = type(self)(self.value)
         for k, v in self.dictitems():
-            if isinstance(v, NxRegistry):
                 copy_[k] = v.__copy__()
-            else:
-                copy_[k] = v
         return copy_
 
     def _effective_root(self):
-        """Returns the shallowest node with more than one branch / twig.
+        """Returns the shallowest path, node with more than one branch.
 
         The effective root is different from the root if the tree has
         a single branch and no twigs.
@@ -416,7 +465,7 @@ class NxTree(WeakValueDictionary, NxRegistry):
     def register(self, obj, *path):
         """Registers obj with given insertion path.
 
-        :param obj: An NxMeta instance.
+        :param obj: An nxobject instance.
         :param *path: A path as a sequence of keys.
         """
         key, *path = path
@@ -453,7 +502,7 @@ class NxTree(WeakValueDictionary, NxRegistry):
         is found in the tree but points to an object other than obj, or to
         multiple objects, a ValueError is raised.
 
-        :param obj: An NxMeta instance.
+        :param obj: An nxobject instance.
         :param *path: A path as a sequence of keys.
         :raises KeyError: if path is not found in self.
         :raises ValueError: if the obj, path pairing is wrong or ambiguous.
@@ -468,19 +517,13 @@ class NxTree(WeakValueDictionary, NxRegistry):
         if isinstance(val, NxRegistry):
             val._parent = self
         else:
-            try:
-                val._nxregistries.add(self)
-            except AttributeError:
-                msg = "Only NxMeta instances can be registered in an NxTree."
-                raise AttributeError(msg)
+            msg = "Only NxRegistries can be inserted into an NxTree."
+            raise TypeError(msg)
         super().__setitem__(key, val)
 
     def __delitem__(self, key):
         val = super().pop(key)  # May raise a KeyError
-        if isinstance(val, NxRegistry):
-            del val.parent
-        else:
-            val._nxregistries.remove(self)
+        del val.parent
 
     def pop(self, key, *args):
         return NotImplemented
@@ -663,7 +706,7 @@ class NxTree(WeakValueDictionary, NxRegistry):
         return '{cls}({content}, max_depth={max_depth})'.format(**locals())
 
 
-class NxCellTreeType(nxmeta.NxType):
+class NxCellTreeType(abc.ABCMeta):
     """The metaclass for NxCellTree."""
     __cache__ = WeakValueDictionary()  # type cache
 
@@ -722,7 +765,7 @@ class NxCellTree(NxTree, metaclass=NxCellTreeType):
     def register(self, obj, *path):
         """Registers obj with given insertion path.
 
-        :param obj: An NxMeta instance.
+        :param obj: An nxobject instance.
         :param *path: A path as a sequence of keys.
         """
         key, *path = path
@@ -762,7 +805,7 @@ class NxCellTree(NxTree, metaclass=NxCellTreeType):
         is found in the tree but points to a cell that doesn't contain obj,
         a KeyError is raised as well.
 
-        :param obj: An NxMeta instance.
+        :param obj: An nxobject instance.
         :param *path: A path as a sequence of keys.
         :raises KeyError: if path not found in self or obj not found at path.
         :raises ValueError: if path is ambiguous.
@@ -771,7 +814,7 @@ class NxCellTree(NxTree, metaclass=NxCellTreeType):
         cell.unregister(obj)
 
     # Note that the interface below is a stark departure from a dictionary
-    # interface: items and values return NxMeta instances stored in the leaf
+    # interface: items and values return nxobject instances stored in the leaf
     # cells, while keys only return the set of paths leading to those
     # cells. In particular, keys and items / values will usually have
     # different lengths.
