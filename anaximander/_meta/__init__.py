@@ -9,7 +9,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 __all__ = ['Meta', 'BaseType', 'BaseObject', 'nxframe']
 
-from .apeiron import NxMeta as Meta, \
+from .nxmeta import NxMeta as Meta, \
     NxBaseType as BaseType, \
     NxBaseObject as BaseObject
 from . import nxframe

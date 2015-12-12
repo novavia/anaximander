@@ -7,8 +7,7 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-__all__ = ['functions', 'xprops', 'registries']
+__all__ = ['functions', 'xprops']
 
 from . import functions as functions
 from . import xprops
-from . import registries

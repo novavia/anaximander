@@ -38,7 +38,7 @@ class TestTemplate(TestCase):
     class D(C):
         i_am_a_d = True
 
-    class E(nx.Object, metaclass=nxf.Template, key=('x', 'y')):
+    class E(nx.nxobject, metaclass=nxf.Template, key=('x', 'y')):
         pass
 
     def setUp(self):

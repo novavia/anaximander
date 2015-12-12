@@ -23,8 +23,8 @@ from weakref import WeakSet, WeakValueDictionary
 
 from blist import weaksortedset
 
-from . import functions as fun
-from . import xprops
+from ..utilities import functions as fun
+from ..utilities import xprops
 
 #==============================================================================
 ### Abstract base class
@@ -122,19 +122,19 @@ class NxCell(WeakSet, NxRegistry):
         for item in list(self):
             self.remove(item)
 
-    def register(self, obj, *path):
-        """Adds an object to the cell. Path is ignored in this implementation.
+    def register(self, obj):
+        """Adds an object to the cell.
 
         :param obj: An nxobject instance.
         """
         self.add(obj)
 
-    def unregister(self, obj, *path):
-        """Removes object from the cell. Path is ignored.
+    def unregister(self, obj):
+        """Removes object from the cell.
 
         :param obj: An nxobject instance.
         """
-        self.remove(obj)
+        self.discard(obj)
 
     def copy(self):
         """Returns a deep copy of self save for non-registry objects."""
@@ -231,7 +231,7 @@ class NxSortedCell(weaksortedset, NxRegistry, metaclass=NxSortedCellType):
             item._nxregistries.add(self)
         except AttributeError:
             msg = "Only nxobject instances can be added to an NxCell."
-            raise AttributeError(msg)
+            raise TypeError(msg)
         super().add(item)
 
     def remove(self, item):
@@ -264,19 +264,19 @@ class NxSortedCell(weaksortedset, NxRegistry, metaclass=NxSortedCellType):
         for item in list(self):
             self.remove(item)
 
-    def register(self, obj, *path):
-        """Adds an object to the cell. Path is ignored in this implementation.
+    def register(self, obj):
+        """Adds an object to the cell.
 
         :param obj: An nxobject instance.
         """
         self.add(obj)
 
-    def unregister(self, obj, *path):
-        """Removes object from the cell. Path is ignored.
+    def unregister(self, obj):
+        """Removes object from the cell.
 
         :param obj: An nxobject instance.
         """
-        self.remove(obj)
+        self.discard(obj)
 
     def copy(self):
         """Returns a copy of self."""
@@ -364,9 +364,10 @@ class NxTree(WeakValueDictionary, NxRegistry):
     * NxTree also implments the properties height (maximum depth), nodecount
     (number of nodes), leafcount (number of leaves), and itemcount (number of
     stored values).
-    The NxTree uses weak references to store its values. In order to
-    keep the structure together, values that are inserted hold strong
-    references to their parent node.
+    The NxTree uses weak references to store its nodes and values. In order to
+    keep the structure together, stored values hold strong
+    references to their node, and children nodes hold strong references to
+    their parent.
     """
 
     def __init__(self, value=None):
@@ -375,21 +376,23 @@ class NxTree(WeakValueDictionary, NxRegistry):
         if value is not None:
             self.value = value
 
-    @xprops.cachedproperty
+    @xprops.weakproperty
     def value(self):
         return None
 
     @value.setter
     def value(self, val=None):
+        if self._value is not None:
+            self._value._nxregistries.remove(self)
         if val is not None:
             try:
                 val._nxregistries.add(self)
             except AttributeError:
                 msg = "Only nxobjects can be stored in an NxRegistry."
                 raise TypeError(msg)
-        if self._value is not None:
-            self._value._nxregistries.remove(self)
-        self._value = val
+            self._value = weakref.ref(val)
+        else:
+            self._value = None
 
     @value.deleter
     def value(self):
@@ -425,7 +428,7 @@ class NxTree(WeakValueDictionary, NxRegistry):
     def child(self, key, value=None):
         """Creates a child tree of self with the same type from key.
 
-        :param key: A key to be inserted in self.
+        :param key: A keremovey to be inserted in self.
         :param value: An optional value stored in the child's root node.
         :returns: A child tree, after it's been inserted.
         """
@@ -443,19 +446,20 @@ class NxTree(WeakValueDictionary, NxRegistry):
                 copy_[k] = v.__copy__()
         return copy_
 
-    def _effective_root(self):
-        """Returns the shallowest path, node with more than one branch.
+#    def _effective_root(self):
+#        """Returns the shallowest path, node with more than one branch.
+#
+#        The effective root is different from the root if the tree has
+#        a single branch and no twigs.
+#        """
+#        if len(self) == 1:
+#            k, v = list(self.dictitems())[0]
+#            if isinstance(v, NxTree):
+#                path, root = v._effective_root()
+#                return (k, ) + path, root
+#        return (), self
 
-        The effective root is different from the root if the tree has
-        a single branch and no twigs.
-        """
-        if len(self) == 1:
-            k, v = list(self.dictitems())[0]
-            if isinstance(v, NxTree):
-                path, root = v._effective_root()
-                return (k, ) + path, root
-        return (), self
-
+# TODO: make sure this works.
     def clear(self):
         for path, obj in list(self.items()):
             self.unregister(obj, path)
@@ -468,14 +472,58 @@ class NxTree(WeakValueDictionary, NxRegistry):
         :param obj: An nxobject instance.
         :param *path: A path as a sequence of keys.
         """
-        key, *path = path
         if len(path) == 0:
-            self[key] = obj
+            self.value = obj
+            return
+        key, *path = path
+        try:
+            self[key].register(obj, *path)
+        except KeyError:
+            self.child(key).register(obj, *path)
+
+# TODO: this implementation only works with complete paths, may want partial paths
+    def unregister(self, obj, *path):
+        """Unregisters obj at given insertion path.
+
+        If the supplied path is not featured, a KeyError is raised. If it
+        is found in the tree but obj is not registered there, the function
+        dies silently and no exception gets raised.
+
+        :param obj: An nxobject instance.
+        :param *path: A path as a sequence of keys.
+        :raises KeyError: if path is not found in self.
+        """
+        if len(path) == 0:
+            if self.value == obj:
+                del self.value
+            return
+        key, *path = path
+        self[key].unregister(obj, *path)
+
+    def __setitem__(self, key, node):
+        if isinstance(node, NxRegistry):
+            node._parent = self
         else:
-            try:
-                self[key].register(obj, *path)
-            except KeyError:
-                self.child(key).register(obj, *path)
+            msg = "Only NxRegistries can be inserted into an NxTree."
+            raise TypeError(msg)
+        super().__setitem__(key, node)
+
+    def __delitem__(self, key):
+        node = super().pop(key)  # May raise a KeyError
+        del node.value
+        del node.parent
+
+    def prune(self, *path):
+        """Removes a node and descendants at provided path.
+
+        :param *path: An optional path as a sequence of keys.
+        :raises KeyError: if path is not found in self.
+        """
+        if len(path) == 0:
+            self.clear()
+            return
+        key, *path = path
+        self[key].remove(*path)
 
     def discard(self, *path):
         """Similar to a deletion, but with a recursive path.
@@ -485,7 +533,8 @@ class NxTree(WeakValueDictionary, NxRegistry):
 
         :param *path: An optional path as a sequence of keys.
         """
-        key, *path = path
+        if len(path) == 0:
+            key, *path = path
         try:
             if len(path) == 0:
                 del self[key]
@@ -494,36 +543,6 @@ class NxTree(WeakValueDictionary, NxRegistry):
                 self[key].discard(*path)
         except KeyError:
             pass
-
-    def unregister(self, obj, *path):
-        """Unregisters obj at given insertion path.
-
-        If the supplied path is not featured, a KeyError is raised. If it
-        is found in the tree but points to an object other than obj, or to
-        multiple objects, a ValueError is raised.
-
-        :param obj: An nxobject instance.
-        :param *path: A path as a sequence of keys.
-        :raises KeyError: if path is not found in self.
-        :raises ValueError: if the obj, path pairing is wrong or ambiguous.
-        """
-        val = self.fetch(*path)
-        if val == obj:
-            self.discard(*path)
-        else:
-            raise ValueError
-
-    def __setitem__(self, key, val):
-        if isinstance(val, NxRegistry):
-            val._parent = self
-        else:
-            msg = "Only NxRegistries can be inserted into an NxTree."
-            raise TypeError(msg)
-        super().__setitem__(key, val)
-
-    def __delitem__(self, key):
-        val = super().pop(key)  # May raise a KeyError
-        del val.parent
 
     def pop(self, key, *args):
         return NotImplemented

@@ -9,6 +9,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 __all__ = ['utilities', 'types', 'Type', 'Object']
 
+
 from . import utilities
 from . import types
 from .types import NxType as Type, NxObject as Object

@@ -18,21 +18,20 @@ Copyright (C) Novavia Solutions, LLC.
 import types
 from itertools import chain
 
-from . import apeiron
-
-from ..utilities import registries as reg
+from . import nxmeta
+from . import registries as reg
 
 #==============================================================================
 ### Abstract base classes
 #==============================================================================
 
 
-class NxFrameworkType(apeiron.NxBaseType):
+class NxFrameworkType(nxmeta.NxBaseType):
     """Parent class to types in Anaximander's framework layer."""
     pass
 
 
-class NxFrameworkObject(apeiron.NxBaseObject, metaclass=NxFrameworkType):
+class NxFrameworkObject(nxmeta.NxBaseObject, metaclass=NxFrameworkType):
     """Parent class to Anaximander's framework layer objects."""
     pass
 

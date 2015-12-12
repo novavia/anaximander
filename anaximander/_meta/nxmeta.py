@@ -11,18 +11,11 @@ Copyright (C) Novavia Solutions, LLC.
 ### Imports
 #==============================================================================
 
+from ..arche import apeiron, nxobject
 
 #==============================================================================
 ### Abstract base classes
 #==============================================================================
-
-
-apeiron = type  # The unbounded origin of all concepts and things.
-
-
-class nxobject(object):
-    """The base class of all Anaximander entitites (meta, type & object)."""
-    pass
 
 
 class NxMeta(apeiron, nxobject):
@@ -33,12 +26,16 @@ class NxMeta(apeiron, nxobject):
         return {}
 
     def __new__(mcl, name, bases, namespace, **kwargs):
-        cls = type.__new__(mcl, name, bases, namespace)
-        cls._nxregistries = set()
+        cls = apeiron.__new__(mcl, name, bases, namespace)
+        cls._cls_folios = set()
         return cls
 
     def __init__(cls, name, bases, namespace, **kwargs):
-        type.__init__(cls, name, bases, namespace)
+        apeiron.__init__(cls, name, bases, namespace)
+
+    @property
+    def _folios(cls):
+        return cls._cls_folios
 
 
 class NxBaseType(NxMeta, metaclass=NxMeta):
@@ -48,8 +45,4 @@ class NxBaseType(NxMeta, metaclass=NxMeta):
 
 class NxBaseObject(nxobject, metaclass=NxBaseType):
     """Base class for all Anaximander objects."""
-
-    def __new__(cls, *args, **kwargs):
-        obj = object.__new__(cls)
-        obj._nxregistries = set()
-        return obj
+    pass

@@ -3,7 +3,8 @@
 """
 This module provides extended property descriptors.
 
-The properties are cachedproperty, settablecachedproperty and weakproperty.
+The properties are cachedproperty, settablecachedproperty, weakproperty, and
+classproperty.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
@@ -13,6 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 #==============================================================================
 
+import inspect
 import weakref
 
 #==============================================================================

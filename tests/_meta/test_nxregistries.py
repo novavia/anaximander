@@ -16,7 +16,7 @@ import unittest
 from unittest import TestCase
 
 import anaximander as nx
-from anaximander.utilities import registries as reg
+from anaximander._meta import registries as reg
 
 #==============================================================================
 ### Mock NxObject
