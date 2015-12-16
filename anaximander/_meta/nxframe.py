@@ -19,7 +19,7 @@ import types
 from itertools import chain
 
 from . import nxmeta
-from . import registries as reg
+#from . import registries as reg
 
 #==============================================================================
 ### Abstract base classes
@@ -105,7 +105,7 @@ class Template(NxFrameworkType):
             tpl.__original__ = True
         tpl.__namespace__.pop('__qualname__', None)
         tpl.__namespace__.pop('__type__', None)
-        tpl.__types__ = reg.NxTree()
+#        tpl.__types__ = reg.NxTree()
 
         def simple_new(tpl, *args, **kwargs):
             """Customized __new__ for templates."""

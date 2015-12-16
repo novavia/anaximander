@@ -6,11 +6,12 @@ Implements folios i.e. specialized data structures used to build registries.
 Folios are divided into two categories: portfolios hold other folios,
 whereas documents are necessarily terminal nodes in the folio structure in
 which they reside.
-Portfolios carry a title attribute to which an nxobject can be assigned.
-Documents carry entries, either a single entry (NxCard) or a collection of
-entries (NxPage, NxScroll). References to titles and entries are weak,
-allowing the content of folios to change dynamically and not hinder
-the garbage collection of application objects.
+PortFolios carry a title attribute to which an nxobject can be assigned.
+This is primarily useful for building object hierarchies or genealogies.
+Documents don't have titles but carry entries, either a single entry (NxCard)
+or a collection (NxPage, NxScroll, NxSchedule). References to titles and
+entries are weak, allowing the content of folios to change dynamically and
+not hinder the garbage collection of application objects.
 Moreover, the references from portfolios to the folios they contain are
 also weak references. This enables folio structures themselves to be dynamic
 as well. For instance, a page of an index may be garbage collected once
@@ -22,11 +23,10 @@ an interface that allows registration / unregistration into a folio structure.
 If the parent of a folio is a portfolio, then the reference is strong -whereas
 the reference from the portfolio to the folio is weak. If the parent of a
 folio is a registry, then the reference is weak, whereas the reference from
-the registry to folio is weak. Folio types *must* have a parent. Instantiation
-without a parent will fail, and removal of the parent (deletion or setting
+the registry to folio is weak. Removal of the parent (deletion or setting
 it to None) will cause removal of the title / entries, which in turn will
 throw the folio into the garbage collector.
-The second enabler of the design is the _nxfolios attribute of nxobjects,
+The second enabler of the design is the _folios attribute of nxobjects,
 which a strong set to all the folios that hold a particular nxobject. This
 strong reference is what ensures that a document can stay alive in memory
 for so long as it contains at least one object, since as a terminal node it
@@ -35,6 +35,14 @@ As a result, portofolios can be strongly referenced by either children or
 their title, but if they have neither they get garbage collected.
 Folios are designed to create relatively shallow data structures employed
 by different types of registries, i.e. caches, indexes, glossaries, etc.
+Another layer implementation are the folio proxies, which behave like a
+folio and have a parent attribute exactly like NxFolio, but do not hold
+direct references to their titles / entries, instead relying on a weakly
+referenced folio instance. Proxies are necessary to enable effective
+subsetting of registries: registry subsets are themselves registries, but
+they contain folio proxies rather than folios, hence avoiding
+unnecessary object copies. NxFolio objects have a _proxies attribute that
+works in a similar fashion to nxobjects' _folios attribute.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
@@ -48,27 +56,23 @@ import abc
 import weakref
 from weakref import WeakSet, WeakValueDictionary
 
-from blist import weaksortedset
+from blist import sortedset, weaksortedset
 
 from ..arche import nxobject
 from ..utilities import functions as fun
 from ..utilities import xprops
+
+__all__ = ['NxFolder', 'NxVolume',
+           'NxCard', 'NxPage', 'NxScroll', 'NxSchedule']
 
 #==============================================================================
 ### Abstract base classes for folios and registries.
 #==============================================================================
 
 
-class NxRegistry(nxobject, abc.ABC):
+class NxRegistryABC(nxobject, abc.ABC):
     """ABC for registries, in the registries module."""
-
-    @abc.abstractmethod
-    def register(self, obj, *address):
-        pass
-
-    @abc.abstractmethod
-    def unregister(self, obj, *address):
-        pass
+    pass
 
 
 class NxFolio(nxobject, abc.ABC):
@@ -98,7 +102,7 @@ class NxFolio(nxobject, abc.ABC):
         :param val: an NxRegistry or NxPortfolio instance or None.
         :raises TypeError: if val is of the wrong type.
         """
-        if isinstance(val, NxRegistry):
+        if isinstance(val, NxRegistryABC):
             self._parent = weakref.ref(val)
         elif isinstance(val, NxPortFolio):
             self._parent = val
@@ -126,13 +130,41 @@ class NxFolio(nxobject, abc.ABC):
         """Disposes of self's content (subfolios, title, entries)."""
         pass
 
+    @abc.abstractmethod
+    def register(self, obj):
+        """Registers an nxobject, implementation specific to each class."""
+        pass
+
+    @abc.abstractmethod
+    def unregister(self, obj):
+        """Unregisters an nxobject, implementation specific to each class."""
+        pass
+
     def copy(self):
-        """Returns a deep copy of self."""
+        """Returns a copy of self using proxies."""
         return self.__copy__()
+
+    def deepcopy(self):
+        """Returns a copy of self using new folio instances."""
+        return self.__deepcopy__()
+
+    def hardcopy(self):
+        """Returns a copy of self using strong-reference data structures."""
+        return self.__hardcopy__()
 
     @abc.abstractmethod
     def __copy__(self):
         """Primitive to copy."""
+        pass
+
+    @abc.abstractmethod
+    def __deepcopy__(self):
+        """Primitive to deepcopy."""
+        pass
+
+    @abc.abstractmethod
+    def __hardcopy__(self):
+        """Primitive to hardcopy."""
         pass
 
     @abc.abstractmethod
@@ -193,6 +225,11 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
     def title(self):
         self.title = None
 
+    @xprops.cachedproperty
+    def _proxies(self):
+        """A set of strong references to self's proxies."""
+        return set()
+
     @property
     def leaf(self):
         return len(self) == 0
@@ -218,15 +255,15 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
         """Returns values, restricted to portfolios."""
         return (f for f in self.values() if isinstance(f, NxPortFolio))
 
-    def get(self, *path):
+    def retrieve(self, *path):
         """Retrieves a folio at path or raises a KeyError."""
         folio = self
-        while path:
+        while path and not isinstance(folio, NxSchedule):
             key, *path = path
             folio = folio[key]
         return folio
 
-    def find(self, *path):
+    def search(self, *path):
         """Returns an iterable of folios whose path is a superset of path.
 
         :param path: an optional path specification. Omissions of parts of
@@ -241,14 +278,14 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
             for k, f in self.items():
                 if k == key:
                     if isinstance(f, NxPortFolio):
-                        results.extend(f.find(*path))
+                        results.extend(f.search(*path))
                     elif not path:
                         results.append(f)
                 elif isinstance(f, NxPortFolio):
-                    results.extend(f.find(key, *path))
+                    results.extend(f.search(key, *path))
         return iter(results)
 
-    def fetch(self, *path):
+    def find(self, *path):
         """Returns a folio whose path is a superset of path.
 
         If none is found, a KeyError is raised. If the search path returns
@@ -260,7 +297,7 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
         :raises ValueError: if the seach path yields multiple results.
         :returns: a folio.
         """
-        folios = list(self.find(*path))
+        folios = list(self.search(*path))
         if not folios:
             raise KeyError
         elif len(folios) == 1:
@@ -338,7 +375,7 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
 
     def clear(self):
         """Cleanly disassembles self's substructure."""
-        folios = self.values()
+        folios = list(self.values())
         for f in folios:
             del f.parent
 
@@ -375,13 +412,61 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
     def update(self, dict=None, **kwargs):
         return NotImplemented
 
+    @classmethod
+    def fromkeys(cls, *args, **kwargs):
+        return NotImplemented
+
+    # Registration methods
+
+    def register(self, obj):
+        self.title = obj
+
+    def unregister(self, obj):
+        if self.title == obj:
+            del self.title
+
     # Administrative functions
+
+    def copy(self):
+        """Returns a copy of self using proxies."""
+        return self.__copy__()
+
+    def deepcopy(self):
+        """Returns a copy of self using new folio instances."""
+        return self.__deepcopy__()
+
+    def hardcopy(self):
+        """Returns a copy of self using strong-reference data structures."""
+        return self.__hardcopy__()
 
     def __copy__(self):
         """Primitive to copy."""
-        copy_ = type(self)(title=self.title)
+        type_ = globals()[type(self).__name__ + 'Proxy']
+        copy_ = type_(self)
         for k, f in self.items():
                 copy_[k] = f.__copy__()
+        return copy_
+
+    def __deepcopy__(self):
+        """Primitive to deepcopy."""
+        copy_ = type(self)(title=self.title)
+        for k, f in self.items():
+                copy_[k] = f.__deepcopy__()
+        return copy_
+
+    class TitledDict(dict):
+        """A dictionary with a title attribute."""
+
+        @xprops.settablecachedproperty
+        def title(self):
+            return None
+
+    def __hardcopy__(self):
+        """Primitive to hardcopy."""
+        copy_ = self.TitledDict()
+        copy_.title = self.title
+        for k, f in self.items():
+            copy_[k] = f.__hardcopy__()
         return copy_
 
     def __reduce__(self):
@@ -492,20 +577,50 @@ class NxVolume(NxPortFolio):
 #==============================================================================
 
 
-class NxDocument(NxFolio, abc.ABC):
-    """ABC for terminal folios that contain entries."""
+class NxDocumentBase(NxFolio):
+    """Base class for NxDocument and NxDocumentProxy."""
 
     @property
     def leaf(self):
         return True
 
+
+class NxDocument(NxDocumentBase):
+    """ABC for terminal folios that contain entries."""
+
+    @xprops.cachedproperty
+    def _proxies(self):
+        """A set of strong references to self's proxies."""
+        return set()
+
+    @abc.abstractmethod
+    def read(self):
+        """Returns a stable iterable of entries in self."""
+        pass
+
+    def copy(self):
+        """Returns a copy of self using proxies."""
+        return self.__copy__()
+
+    def deepcopy(self):
+        """Returns a copy of self using new folio instances."""
+        return self.__deepcopy__()
+
+    def hardcopy(self):
+        """Returns a copy of self using strong-reference data structures."""
+        return self.__hardcopy__()
+
+    def __copy__(self):
+        """Primitive to copy."""
+        type_ = globals()[type(self).__name__ + 'Proxy']
+        return type_(self)
+
     def _str(self, *indent):
         """Primitive to __str__."""
         return type(self).__name__[2:]
 
-    @abc.abstractmethod
-    def entries(self):
-        """Returns a stable iterable of entries in self."""
+    def __str__(self):
+        return self._str()
 
 
 class NxCard(NxDocument):
@@ -537,16 +652,29 @@ class NxCard(NxDocument):
     def entry(self):
         self.entry = None
 
-    def entries(self):
+    def read(self):
         """Returns a stable iterable of entries in self."""
         return iter([self.entry])
 
     def dispose(self):
         del self.entry
 
-    def __copy__(self):
-        """Primitive to copy."""
+    def register(self, obj):
+        """Makes obj the entry."""
+        self.entry = obj
+
+    def unregister(self, obj):
+        """If obj is the entry, it gets erased."""
+        if obj == self.entry:
+            del self.entry
+
+    def __deepcopy__(self):
+        """Primitive to deepcopy."""
         return type(self)(self.entry)
+
+    def __hardcopy__(self):
+        """Primitive to hardcopy."""
+        return self.entry
 
 
 class _NxEntrySetMixin(object):
@@ -584,7 +712,27 @@ class _NxEntrySetMixin(object):
         for item in list(self):
             self.remove(item)
 
+    def register(self, obj):
+        """Adds obj to the document."""
+        self.add(obj)
+
+    def unregister(self, obj):
+        """If obj is on the document, it gets erased."""
+        self.discard(obj)
+
     # Administrative functions
+
+    def copy(self):
+        """Returns a copy of self using proxies."""
+        return self.__copy__()
+
+    def deepcopy(self):
+        """Returns a copy of self using new folio instances."""
+        return self.__deepcopy__()
+
+    def hardcopy(self):
+        """Returns a copy of self using strong-reference data structures."""
+        return self.__hardcopy__()
 
     def __repr__(self):
         cls = type(self).__name__
@@ -596,6 +744,9 @@ class _NxEntrySetMixin(object):
     def _str(self, *indent):
         """Primitive to __str__."""
         return type(self).__name__[2:] + ' | {}'.format(len(self))
+
+    def __str__(self):
+        return self._str()
 
 
 class NxPage(WeakSet, NxDocument):
@@ -627,19 +778,23 @@ class NxPage(WeakSet, NxDocument):
         except KeyError:
             pass
 
-    def entries(self):
+    def read(self):
         """Returns a stable iterable of entries in self."""
         return iter(list(self))
 
     def dispose(self):
         self.clear()
 
-    def __copy__(self):
-        """Primitive to copy."""
+    def __deepcopy__(self):
+        """Primitive to deepcopy."""
         copy_ = type(self)()
         for item in self:
-                copy_.add(item)
+            copy_.add(item)
         return copy_
+
+    def __hardcopy__(self):
+        """Primitive to hardcopy."""
+        return set(self)
 
 fun.ducktype(NxPage, _NxEntrySetMixin)
 
@@ -654,6 +809,10 @@ class NxScroll(weaksortedset, NxDocument):
         if entries is not None:
             for e in entries:
                 self.add(e)
+
+    @property
+    def key(self):
+        return self._key
 
     def __getitem__(self, index):
         """A slice returns a weaksortedset rather than an NxScroll."""
@@ -681,18 +840,315 @@ class NxScroll(weaksortedset, NxDocument):
             item._folios.remove(self)
             super().discard(item)
 
-    def entries(self):
+    def read(self):
         """Returns a stable iterable of entries in self."""
         return iter(list(self))
 
     def dispose(self):
         self.clear()
 
-    def __copy__(self):
-        """Primitive to copy."""
-        copy_ = type(self)()
+    def __deepcopy__(self):
+        """Primitive to deepcopy."""
+        copy_ = type(self)(key=self.key)
         for item in self:
-                copy_.add(item)
+            copy_.add(item)
         return copy_
 
+    def __hardcopy__(self):
+        """Primitive to hardcopy."""
+        return sortedset(self, key=self.key)
+
 fun.ducktype(NxScroll, _NxEntrySetMixin)
+
+
+class NxSchedule(WeakValueDictionary, NxDocument):
+    """An indexed entry container."""
+
+    def __init__(self, entries=None, **kwargs):
+        super().__init__()
+        NxFolio.__init__(self)
+        if entries is not None:
+            for k, v in entries:
+                self[k] = v
+        for k, v in kwargs:
+            self[k] = v
+
+    # Hashability
+
+    def __hash__(self):
+        return id(self)
+
+    def __eq__(self, other):
+        return id(self) == id(other)
+
+    def __ne__(self, other):
+        return id(self) != id(other)
+
+    # Getters
+
+    def read(self):
+        """Returns a stable iterable of self's objects."""
+        return iter(list(self.values()))
+
+    # Setters
+
+    def __setitem__(self, key, value):
+        if key in self:
+            del self[key]
+        try:
+            value._folios.add(self)
+        except AttributeError:
+            msg = "Only nxobjects can be entries to an NxDocument."
+            raise TypeError(msg)
+        super().__setitem__(key, value)
+
+    def __delitem__(self, key):
+        item = super().pop(key)  # May raise a KeyError
+        item._folios.remove(self)
+
+    def clear(self):
+        for key in list(self):
+            del self[key]
+
+    def dispose(self):
+        self.clear()
+
+    def pop(self, key, *args):
+        return NotImplemented
+
+    def popitem(self):
+        return NotImplemented
+
+    def setdefault(self, key, default=None):
+        return NotImplemented
+
+    def update(self, dict=None, **kwargs):
+        return NotImplemented
+
+    @classmethod
+    def fromkeys(cls, *args, **kwargs):
+        return NotImplemented
+
+    def register(self, obj, key):
+        """Adds obj to the document."""
+        self[key] = obj
+
+    def unregister(self, obj, key):
+        """If obj is on the document, it gets erased."""
+        if self[key] == obj:
+            del self[key]
+
+    # Administrative functions
+
+    def copy(self):
+        """Returns a copy of self using proxies."""
+        return self.__copy__()
+
+    def deepcopy(self):
+        """Returns a copy of self using new folio instances."""
+        return self.__deepcopy__()
+
+    def hardcopy(self):
+        """Returns a copy of self using strong-reference data structures."""
+        return self.__hardcopy__()
+
+    def __copy__(self):
+        """Primitive to copy."""
+        type_ = globals()[type(self).__name__ + 'Proxy']
+        return type_(self)
+
+    def __deepcopy__(self):
+        """Primitive to deepcopy."""
+        copy_ = type(self)()
+        for k, v in self.items():
+                copy_[k] = v
+        return copy_
+
+    def __hardcopy__(self):
+        """Primitive to hardcopy."""
+        return dict(self)
+
+    def __reduce__(self):
+        return NotImplemented
+
+    def __repr__(self):
+        cls = type(self).__name__
+        if not self:
+            return '{cls}()'.format(**locals())
+        content = fun.spformat(self)
+        return '{cls}({content})'.format(**locals())
+
+    def _str(self, *indent):
+        """Primitive to __str__."""
+        return type(self).__name__[2:] + ' | {}'.format(len(self))
+
+#==============================================================================
+### Folio proxies
+#==============================================================================
+
+
+class NxFolioProxy(NxFolio):
+    """Base class for folio proxies, lightweight references to folios."""
+
+    def __init__(self, folio):
+        super().__init__()
+        self._folio = weakref.ref(folio)
+        folio._proxies.add(self)
+
+    @property
+    def folio(self):
+        try:
+            return self._folio()
+        except AttributeError:
+            return None
+
+    def dispose(self):
+        self.folio._proxies.remove(self)
+        del self._folio
+
+    def __copy__(self):
+        return type(self)(self.folio)
+
+    def _str(self):
+        return self.folio._str()
+
+    def __str__(self):
+        return self.folio.__str__()
+
+
+class NxPortFolioProxy(NxFolioProxy, NxPortFolio):
+    """A lightweight, read-only weak reference to an NxPortFolio object."""
+
+    @property
+    def title(self):
+        return self.folio.title
+
+    def insert(self, folio, *path):
+        return NotImplemented
+
+    def dispose(self):
+        self.clear()
+        super().dispose()
+
+    def __copy__(self):
+        copy_ = type(self)(self.folio)
+        for k, f in self.folio.items():
+                copy_[k] = f.__copy__()
+        return copy_
+
+    def __deepcopy__(self):
+        type_ = globals()[type(self).__name__[:-5]]
+        copy_ = type_(self.title)
+        for k, f in self.folio.items():
+            copy_[k] = f.__deepcopy__()
+        return copy_
+
+    def __hardcopy__(self):
+        copy_ = NxPortFolio.TitledDict()
+        copy_.title = self.title
+        for k, f in self.folio.items():
+            copy_[k] = f.__hardcopy__()
+        return copy_
+
+    def _str(self, indent=0):
+        return self.folio._str(indent)
+
+
+class NxFolderProxy(NxPortFolioProxy, NxFolder):
+    """Proxy to an NxFolder."""
+    pass
+
+
+class NxVolumeProxy(NxPortFolioProxy, NxVolume):
+    """Proxy to an NxVolume."""
+    pass
+
+
+class NxDocumentProxy(NxFolioProxy):
+    """A lightweight, read-only weak reference to an NxDocument object."""
+
+    @property
+    def leaf(self):
+        return True
+
+    def read(self):
+        return self.folio.read()
+
+    def __repr__(self):
+        frepr = self.folio.__repr__()
+        ftype = type(self.folio).__name__
+        ptype = type(self).__name__
+        return frepr.replace(ftype, ptype)
+
+
+class NxCardProxy(NxDocumentProxy):
+    """A proxy to an an NxCard."""
+
+    @property
+    def entry(self):
+        return self.folio.entry
+
+    def __deepcopy__(self):
+        return NxCard(self.entry)
+
+    def __hardcopy__(self):
+        return self.entry
+
+
+class _CollectionDocumentProxy(NxDocumentProxy):
+    """Parent class to NxPage, NxScroll, NxSchedule proxies."""
+
+    def __getitem__(self, key):
+        return self.folio.__getitem__(key)
+
+
+class NxPageProxy(_CollectionDocumentProxy):
+    """Proxy to an NxPage."""
+
+    def __deepcopy__(self):
+        copy_ = NxPage()
+        for obj in self.read():
+            copy_.add(obj)
+        return copy_
+
+    def __hardcopy__(self):
+        return set(self.folio)
+
+
+class NxScrollProxy(_CollectionDocumentProxy):
+    """Proxy to an NxScroll."""
+
+    @property
+    def key(self):
+        return self.folio.key
+
+    def __deepcopy__(self):
+        copy_ = NxScroll(key=self.key)
+        for obj in self.read():
+            copy_.add(obj)
+        return copy_
+
+    def __hardcopy__(self):
+        return sortedset(self.folio, key=self.key)
+
+
+class NxScheduleProxy(_CollectionDocumentProxy):
+    """Proxy to an NxSchedule."""
+
+    def keys(self):
+        return self.folio.keys()
+
+    def values(self):
+        return self.folio.values()
+
+    def items(self):
+        return self.folio.items()
+
+    def __deepcopy__(self):
+        copy_ = NxSchedule()
+        for key, obj in self.folio.items():
+            copy_[key] = obj
+        return copy_
+
+    def __hardcopy__(self):
+        return dict(self.folio)
