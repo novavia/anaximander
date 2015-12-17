@@ -81,6 +81,7 @@ class NxFolio(nxobject, abc.ABC):
 
     def __init__(self, **kwargs):
         self._parent = None
+        self._path = ()
 
     @property
     def parent(self):
@@ -109,6 +110,7 @@ class NxFolio(nxobject, abc.ABC):
         elif val is None:
             self.dispose()
             self._parent = None
+            self._path = ()
         else:
             msg = "The Parent to a folio can only be an NxRegistry or an " + \
                   "NxPortFolio."
@@ -119,11 +121,16 @@ class NxFolio(nxobject, abc.ABC):
         """Deleting the parent forces a cleanup of the folio."""
         self.dispose()
         self._parent = None
+        self._path = ()
 
     @abc.abstractproperty
     def leaf(self):
         """True if self doesn't have hierarchical children."""
         pass
+
+    @property
+    def path(self):
+        return self._path
 
     @abc.abstractmethod
     def dispose(self):
@@ -131,12 +138,12 @@ class NxFolio(nxobject, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def register(self, obj):
+    def register(self, obj, *args, **kwargs):
         """Registers an nxobject, implementation specific to each class."""
         pass
 
     @abc.abstractmethod
-    def unregister(self, obj):
+    def unregister(self, obj, *args, **kwargs):
         """Unregisters an nxobject, implementation specific to each class."""
         pass
 
@@ -258,8 +265,10 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
     def retrieve(self, *path):
         """Retrieves a folio at path or raises a KeyError."""
         folio = self
-        while path and not isinstance(folio, NxSchedule):
+        while path:
             key, *path = path
+            if isinstance(folio, NxDocument):
+                raise KeyError
             folio = folio[key]
         return folio
 
@@ -350,6 +359,7 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
             self[key].dispose()
         if isinstance(folio, NxFolio):
             folio.parent = self
+            folio._path = self.path + (key,)
         else:
             msg = "Only NxFolio objects can be inserted into an NxPortFolio."
             raise TypeError(msg)
@@ -366,6 +376,9 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
                 self[key].insert(folio, *path)
             except KeyError:
                 self.sub(key).insert(folio, *path)
+            except AttributeError:
+                msg = "Path points inside an NxDocument."
+                raise KeyError(msg)
         else:
             self[key] = folio
 
@@ -424,6 +437,8 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
     def unregister(self, obj):
         if self.title == obj:
             del self.title
+            return True
+        return False
 
     # Administrative functions
 
@@ -439,10 +454,14 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
         """Returns a copy of self using strong-reference data structures."""
         return self.__hardcopy__()
 
+    def proxy(self):
+        """Returns a proxy to self, empty of subfolios."""
+        type_ = globals()[type(self).__name__ + 'Proxy']
+        return type_(self)
+
     def __copy__(self):
         """Primitive to copy."""
-        type_ = globals()[type(self).__name__ + 'Proxy']
-        copy_ = type_(self)
+        copy_ = self.proxy()
         for k, f in self.items():
                 copy_[k] = f.__copy__()
         return copy_
@@ -610,10 +629,12 @@ class NxDocument(NxDocumentBase):
         """Returns a copy of self using strong-reference data structures."""
         return self.__hardcopy__()
 
-    def __copy__(self):
-        """Primitive to copy."""
+    def proxy(self):
+        """Returns a proxy to self."""
         type_ = globals()[type(self).__name__ + 'Proxy']
         return type_(self)
+
+    __copy__ = proxy
 
     def _str(self, *indent):
         """Primitive to __str__."""
@@ -667,6 +688,8 @@ class NxCard(NxDocument):
         """If obj is the entry, it gets erased."""
         if obj == self.entry:
             del self.entry
+            return True
+        return False
 
     def __deepcopy__(self):
         """Primitive to deepcopy."""
@@ -711,14 +734,6 @@ class _NxEntrySetMixin(object):
     def clear(self):
         for item in list(self):
             self.remove(item)
-
-    def register(self, obj):
-        """Adds obj to the document."""
-        self.add(obj)
-
-    def unregister(self, obj):
-        """If obj is on the document, it gets erased."""
-        self.discard(obj)
 
     # Administrative functions
 
@@ -785,6 +800,18 @@ class NxPage(WeakSet, NxDocument):
     def dispose(self):
         self.clear()
 
+    def register(self, obj):
+        """Adds obj to the document."""
+        self.add(obj)
+
+    def unregister(self, obj):
+        """If obj is on the document, it gets erased."""
+        try:
+            self.remove(obj)
+            return True
+        except KeyError:
+            return False
+
     def __deepcopy__(self):
         """Primitive to deepcopy."""
         copy_ = type(self)()
@@ -846,6 +873,18 @@ class NxScroll(weaksortedset, NxDocument):
 
     def dispose(self):
         self.clear()
+
+    def register(self, obj):
+        """Adds obj to the document."""
+        self.add(obj)
+
+    def unregister(self, obj):
+        """If obj is on the document, it gets erased."""
+        try:
+            self.remove(obj)
+            return True
+        except KeyError:
+            return False
 
     def __deepcopy__(self):
         """Primitive to deepcopy."""
@@ -935,8 +974,13 @@ class NxSchedule(WeakValueDictionary, NxDocument):
 
     def unregister(self, obj, key):
         """If obj is on the document, it gets erased."""
-        if self[key] == obj:
-            del self[key]
+        try:
+            if self[key] == obj:
+                del self[key]
+                return True
+        except KeyError:
+            pass
+        return False
 
     # Administrative functions
 
@@ -1006,14 +1050,14 @@ class NxFolioProxy(NxFolio):
         self.folio._proxies.remove(self)
         del self._folio
 
+    def register(self, obj, *args, **kwargs):
+        self.folio.register(obj, *args, **kwargs)
+
+    def unregister(self, obj, *args, **kwargs):
+        return self.folio.unregister(obj, *args, **kwargs)
+
     def __copy__(self):
         return type(self)(self.folio)
-
-    def _str(self):
-        return self.folio._str()
-
-    def __str__(self):
-        return self.folio.__str__()
 
 
 class NxPortFolioProxy(NxFolioProxy, NxPortFolio):
@@ -1023,8 +1067,32 @@ class NxPortFolioProxy(NxFolioProxy, NxPortFolio):
     def title(self):
         return self.folio.title
 
-    def insert(self, folio, *path):
-        return NotImplemented
+    def insert(self, proxy, *path):
+        """Inserts proxy at specified path, creating portfolios as needed."""
+        try:
+            key, *path = path
+        except ValueError:
+            raise TypeError("Insert requires at least one key.")
+        if path:
+            try:
+                self[key].insert(proxy, *path)
+            except KeyError:
+                try:
+                    self[key] = self.folio[key].proxy()
+                except KeyError:
+                    msg = "Cannot insert into a proxy if key does not " + \
+                          "exist in the referred folio."
+                    raise KeyError(msg)
+                try:
+                    self[key].insert(proxy, *path)
+                except AttributeError:
+                    msg = "Path points inside an NxDocument."
+                    raise KeyError(msg)
+            except AttributeError:
+                msg = "Path points inside an NxDocument."
+                raise KeyError(msg)
+        else:
+            self[key] = proxy
 
     def dispose(self):
         self.clear()
@@ -1032,26 +1100,23 @@ class NxPortFolioProxy(NxFolioProxy, NxPortFolio):
 
     def __copy__(self):
         copy_ = type(self)(self.folio)
-        for k, f in self.folio.items():
+        for k, f in self.items():
                 copy_[k] = f.__copy__()
         return copy_
 
     def __deepcopy__(self):
         type_ = globals()[type(self).__name__[:-5]]
         copy_ = type_(self.title)
-        for k, f in self.folio.items():
+        for k, f in self.items():
             copy_[k] = f.__deepcopy__()
         return copy_
 
     def __hardcopy__(self):
         copy_ = NxPortFolio.TitledDict()
         copy_.title = self.title
-        for k, f in self.folio.items():
+        for k, f in self.items():
             copy_[k] = f.__hardcopy__()
         return copy_
-
-    def _str(self, indent=0):
-        return self.folio._str(indent)
 
 
 class NxFolderProxy(NxPortFolioProxy, NxFolder):
@@ -1073,6 +1138,12 @@ class NxDocumentProxy(NxFolioProxy):
 
     def read(self):
         return self.folio.read()
+
+    def _str(self, *indent):
+        return self.folio._str()
+
+    def __str__(self):
+        return self.folio.__str__()
 
     def __repr__(self):
         frepr = self.folio.__repr__()

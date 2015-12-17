@@ -50,6 +50,12 @@ class TestNxFolder(TestCase):
         root_copy = root.copy()
         assert root.height == root_copy.height == 3
         assert root.subcount == root_copy.subcount == 5
+        assert set(root.subfolios(1)) == {root['a'], root['c']}
+        assert set(root.subfolios(2, 3)) == {root['a']['b'],
+                                             root['c']['d'],
+                                             root['c']['d']['e']}
+        assert root.path == ()
+        assert root['c']['d']['e'].path == ('c', 'd', 'e')
         item = Item(0)
         with self.assertRaises(TypeError):
             root['f'] = item
@@ -132,6 +138,7 @@ class TestVolume(TestCase):
         assert root[1] == p0
         assert root[3] == p1
         assert root[4] == p2
+        assert root[1].path == (1,)
 
 
 class TestCard(TestCase):
@@ -142,6 +149,7 @@ class TestCard(TestCase):
         i = Item()
         card = folios.NxCard(i)
         root['a'] = card
+        assert card.path == ('a',)
         assert i._folios == {card}
         root.dispose()
         assert i._folios == set()
@@ -269,6 +277,7 @@ class TestSchedule(TestCase):
         """Tests input and disposal."""
         i0, i1, i2 = (Item(i) for i in range(3))
         d = folios.NxSchedule(enumerate([i0, i1, i2]))
+        assert d.path == ()
         assert i0._folios == {d}
         del d[0]
         assert i0._folios == set()
