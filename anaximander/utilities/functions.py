@@ -11,6 +11,7 @@ Copyright (C) Novavia Solutions, LLC.
 ### Imports
 #==============================================================================
 
+import functools
 import sys
 
 #==============================================================================
@@ -73,6 +74,31 @@ def lformat(string):
     return string.format(**curlydict(caller_locals))
 
 #==============================================================================
+### Function decorators
+#==============================================================================
+
+
+def args_or_kwargs(f=None, *, tabs=1):
+    """Enforces calls to use either *args or **kwargs but not both.
+
+    :param f: the decorated function.
+    :param tabs: specifies any number of non-keyword arguments that escape
+    the rule. The default is 1, which means that the decorator can be used
+    without arguments for a method written as f(self, *args, **kwargs).
+    """
+    if f is None:
+        return functools.partial(args_or_kwargs, tabs=tabs)
+    err_msg = "{} can be called with *args or **kwargs but not both."
+    msg = err_msg.format(f.__name__)
+
+    @functools.wraps(f)
+    def decorated(*arguments, **kwargs):
+        if arguments[tabs:] and kwargs:
+            raise ValueError(msg)
+        return f(*arguments, **kwargs)
+    return decorated
+
+#==============================================================================
 ### Metaprogramming
 #==============================================================================
 
@@ -82,7 +108,7 @@ def metargs(cls):
     return (cls.__name__, cls.__bases__, cls.__dict__.copy())
 
 
-def ducktype(cls, mixin, *exclusions):
+def monkeypatch(cls, mixin, *exclusions):
     """Adds attributes and methods from mixin to cls.
 
     Attributes to exclude can be passed to exclusions as strings.

@@ -50,12 +50,16 @@ class TestNxFolder(TestCase):
         root_copy = root.copy()
         assert root.height == root_copy.height == 3
         assert root.subcount == root_copy.subcount == 5
+        assert set(root.subfolios(0)) == {root}
         assert set(root.subfolios(1)) == {root['a'], root['c']}
-        assert set(root.subfolios(2, 3)) == {root['a']['b'],
-                                             root['c']['d'],
-                                             root['c']['d']['e']}
+        assert set(root.subfolios(0, 2, 3)) == {root,
+                                                root['a']['b'],
+                                                root['c']['d'],
+                                                root['c']['d']['e']}
         assert root.path == ()
+        assert root.tab is None
         assert root['c']['d']['e'].path == ('c', 'd', 'e')
+        assert root['c']['d']['e'].tab == 'e'
         item = Item(0)
         with self.assertRaises(TypeError):
             root['f'] = item
@@ -74,6 +78,8 @@ class TestNxFolder(TestCase):
         assert root.subcount == 3
         assert i2._folios == {root['b']['c']}
         assert root_copy['b']['c'].title == i2
+        assert set(root.titles()) == {i0, i1, i2}
+        assert set(root.titles(2, root=True)) == {i2}
         root['b'].dispose()
         assert not i2._folios
         assert list(root.keys()) == ['a']

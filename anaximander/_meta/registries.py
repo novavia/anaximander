@@ -11,13 +11,6 @@ Copyright (C) Novavia Solutions, LLC.
 ### Imports
 #==============================================================================
 
-import abc
-import weakref
-from weakref import WeakSet, WeakValueDictionary
-
-from blist import sorteddict
-
-from ..arche import nxobject
 from . import folios as fol
 from ..utilities import functions as fun, xprops
 
@@ -56,21 +49,27 @@ class NxRegistryBase(fol.NxRegistryABC):
             del self._root_cache.parent
             self._root_cache = None
 
+    @fun.args_or_kwargs
     def _path(self, *args, **kwargs):
-        """Forms a partial or complete path from *args, **kwargs.
+        """Forms a partial or complete path from *args or **kwargs.
 
+        _path accepts either arguments or keyword arguments but not
+        both.
         Kwargs are interpreted by looking up the __layers__ attribute
         of the class.
+        The arguments can form a partial path from the root to a folio
+        contained in the registry, but cannot ommit intermediary keys.
         """
-        path = sorteddict(enumerate(args))
-        for k, v in kwargs.items():
-            try:
-                ix = self.layernames.index(k)
-            except ValueError:
-                msg = "Incorrect keyword assignment {k}"
-                raise ValueError(fun.lformat(msg))
-            path[ix] = v
-        return tuple(path.values())
+        if args:
+            return args
+        path = []
+        try:
+            for k in self.layernames:
+                path.append(kwargs.pop(k))
+        except KeyError:
+            if kwargs:
+                raise KeyError("Incorrect address specification.")
+        return path
 
     # Getters
 
@@ -110,23 +109,68 @@ class NxRegistryBase(fol.NxRegistryABC):
         origin, copy = self.root, subregistry.root
         try:
             while path:
-                key, *path = path
+                if not isinstance(origin, fol.NxPortFolio):
+                    raise KeyError
+                tab, *path = path
                 if path:
-                    if isinstance(origin, fol.NxPortFolio):
-                        copy[key] = origin[key].proxy()
-                        origin = origin[key]
-                        copy = copy[key]
-                    else:
-                        raise KeyError
+                    copy[tab] = origin[tab].proxy()
+                    origin = origin[tab]
+                    copy = copy[tab]
                 else:
-                    copy[key] = origin[key].copy()
+                    copy[tab] = origin[tab].copy()
         except KeyError:
             msg = "No branch matching the path specification."
             raise KeyError(msg)
         return subregistry
 
-# FIXME: this may still be incorrect in the sense that if kwargs are specified,
-# these shouldn't be used at other locations on the path.
+    def _args_subset(self, *args):
+        """Subset primitive based on *args."""
+        if not args:
+            return NxSubRegistry(self, copy=True)
+        if not isinstance(self.root, fol.NxPortFolio):
+            return NxSubRegistry(self, empty=True)
+        subregistry = NxSubRegistry(self)
+        folios = self.root.search(*args)
+        for f in folios:
+            subregistry.root.insert(f.copy(), *f.path)
+        return subregistry
+
+    def _kwargs_subset(self, **kwargs):
+        """Subset primitive based on **kwargs."""
+        if not kwargs:
+            return NxSubRegistry(self, copy=True)
+        if not isinstance(self.root, fol.NxPortFolio):
+            return NxSubRegistry(self, empty=True)
+        subregistry = NxSubRegistry(self)
+        branches = [self.root]
+        depth = 0
+        if 'key' in self.layernames:
+            layernames = self.layernames[:-1]
+        else:
+            layernames = self.layernames
+        for i, k in enumerate(layernames):
+            try:
+                v = kwargs.pop(k)
+            except KeyError:
+                continue
+            new_branches = []
+            for b in branches:
+                for f in b.subfolios(i - depth):
+                    try:
+                        new_branches.append(f[v])
+                    except KeyError:
+                        pass
+            if not new_branches:
+                return subregistry
+            branches = new_branches
+            depth = i + 1
+        if kwargs:
+            return subregistry
+        for f in new_branches:
+            subregistry.root.insert(f.copy(), *f.path)
+        return subregistry
+
+    @fun.args_or_kwargs
     def subset(self, *args, **kwargs):
         """Returns a subregistry from a random access path search.
 
@@ -135,23 +179,35 @@ class NxRegistryBase(fol.NxRegistryABC):
 
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
-        :raises ValueError: if the path specification uses incorrect keywords.
+        :raises KeyError: if the path specification uses incorrect keywords.
         :returns: a NxSubRegistry.
         """
-        path = self._path(*args, **kwargs)
-        if not path:
-            return NxSubRegistry(self, copy=True)
-        if not isinstance(self.root, fol.NxPortFolio):
-            return NxSubRegistry(self, empty=True)
-        subregistry = NxSubRegistry(self)
-        folios = self.root.search(*path)
-        for f in folios:
-            subregistry.root.insert(f.copy(), *f.path)
-        return subregistry
+        if args:
+            return self._args_subset(*args)
+        else:
+            return self._kwargs_subset(**kwargs)
+
+    def branches(self, *args, **kwargs):
+        """Returns iterable of paths to leaf folios.
+
+        This function accepts truncated addresses but does not perform
+        random search as subset would.
+
+        :param args: a sequential registry address specification.
+        :param kwargs: a named registry address specification.
+        :raises KeyError: if no matching registry address exists.
+        :returns: an iterable of paths to foios, as tuples.
+        """
+        root = self._folio(*args, **kwargs)
+        if root.leaf:
+            return iter((root.path,))
+        return (l.path for l in root.leaves())
 
     def addresses(self, *args, **kwargs):
-        """Returns a list of registered addresses, subset by arguments.
+        """Returns iterable of registered entry addresses, subset by arguments.
 
+        Technically this function returns addresses to documents,
+        complemented by keys in the case of NxSchedules.
         This function accepts truncated addresses but does not perform
         random search as subset would.
 
@@ -160,46 +216,85 @@ class NxRegistryBase(fol.NxRegistryABC):
         :raises KeyError: if no matching registry address exists.
         :returns: an iterable of addresses to objects, as tuples.
         """
-        pass
+        root = self._folio(*args, **kwargs)
+        if isinstance(root, fol.NxPortFolio):
+            leaves = root.leaves()
+        else:
+            leaves = (root,)
+        results = []
+        for leaf in leaves:
+            path = leaf.path
+            if isinstance(leaf, fol.NxSchedule):
+                results.extend((path + (k,) for k in leaf.keys()))
+            elif isinstance(leaf, fol.NxDocument):
+                results.append(path)
+        return iter(results)
 
     def values(self, *args, **kwargs):
-        """Retuns an iterable of objects whose address match the arguments.
+        """Retuns an iterable of entries whose address match the arguments.
 
         This function accepts truncated addresses but does not perform
         random search as subset would.
+        Note that this function returns document entries but not portfolio
+        titles.
 
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
         :raises KeyError: if no matching registry address exists.
         :returns: an iterable of nxobject.
         """
-        pass
+        return self._folio(*args, **kwargs).read()
 
     def items(self, *args, **kwargs):
         """Retuns an (address, obj) iterable where address match the arguments.
 
         This function accepts truncated addresses but does not perform
         random search as subset would.
+        Note that this function returns document entries but not portfolio
+        titles.
 
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
         :raises KeyError: if no matching registry address exists.
         :returns: an iterable of (address, nxobject) tuples.
         """
-        pass
+        root = self._folio(*args, **kwargs)
+        if isinstance(root, fol.NxPortFolio):
+            leaves = root.leaves()
+        else:
+            leaves = (root,)
+        results = []
+        for leaf in leaves:
+            path = leaf.path
+            if isinstance(leaf, fol.NxSchedule):
+                results.extend(((path + (k,), v) for k, v in leaf.items()))
+            elif isinstance(leaf, fol.NxDocument):
+                results.extend((path, v) for v in leaf.read())
+        return iter(results)
+
+    def scan(self, *args, **kwargs):
+        """Returns an iterable of objects whose address supersedes the spec.
+
+        :param args: a partial sequential registry address specification.
+        :param kwargs: a partial named registry address specification.
+        :returns: an nxobject.
+        """
+        subregistry = self.subset(*args, **kwargs)
+        return subregistry.values()
 
     def titles(self, *args, **kwargs):
         """Retuns an iterable of titles whose address match the arguments.
 
         This function accepts truncated addresses but does not perform
-        random search as subset would.
+        random search as subset would. None titles are ignored.
 
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
         :raises KeyError: if no matching registry address exists.
         :returns: an iterable of nxobject.
         """
-        pass
+        root = self._folio(*args, **kwargs)
+        return root.titles(root=True)
 
     def browse(self, *args, **kwargs):
         """Retuns an iterable of titles whose address match the arguments.
@@ -212,6 +307,8 @@ class NxRegistryBase(fol.NxRegistryABC):
         :raises KeyError: if no matching registry address exists.
         :returns: an iterable of nxobject.
         """
+        subregistry = self.subset(*args, **kwargs)
+        return subregistry.titles()
 
     def get(self, *args, **kwargs):
         """Returns a single title or raises an exception.
@@ -222,7 +319,13 @@ class NxRegistryBase(fol.NxRegistryABC):
         :raises ValueError: if the registry address points to multiple items.
         :returns: an nxobject.
         """
-        pass
+        candidates = list(self.titles(*args, *kwargs))
+        if not candidates:
+            raise KeyError
+        elif len(candidates) > 1:
+            raise ValueError
+        else:
+            return candidates.pop()
 
     def fetch(self, *args, **kwargs):
         """Returns a single title or raises an exception.
@@ -236,16 +339,13 @@ class NxRegistryBase(fol.NxRegistryABC):
         :raises ValueError: if the registry address points to multiple items.
         :returns: an nxobject.
         """
-        pass
-
-    def find(self, *args, **kwargs):
-        """Returns an iterable of objects whose address supersedes the spec.
-
-        :param args: a partial sequential registry address specification.
-        :param kwargs: a partial named registry address specification.
-        :returns: an nxobject.
-        """
-        pass
+        candidates = list(self.browse(*args, **kwargs))
+        if not candidates:
+            raise KeyError
+        elif len(candidates) > 1:
+            raise ValueError
+        else:
+            return candidates.pop()
 
     # Admin
 
@@ -269,10 +369,12 @@ class NxRegistryBase(fol.NxRegistryABC):
         return self.root.hardcopy()
 
     def __repr__(self):
-        pass
+        rtname = type(self.root).__name__
+        rgname = type(self).__name__
+        return repr(self.root).replace(rtname, rgname)
 
     def __str__(self):
-        pass
+        return str(self.root)
 
 
 class NxRegistry(NxRegistryBase):
@@ -296,7 +398,7 @@ class NxRegistry(NxRegistryBase):
     def layernames(self):
         try:
             bottom_layer_type = self.layertypes[-1]
-        except KeyError:
+        except IndexError:
             bottom_layer_type = self.__root__ if not self.__recurse__ else None
         add_key = bottom_layer_type == fol.NxSchedule
         try:
@@ -330,32 +432,32 @@ class NxRegistry(NxRegistryBase):
         except IndexError:
             return self.__recurse__
 
-    def register(self, obj, *args, **kwargs):
+    def register(self, obj, *arguments, **kwargs):
         """Open registration method, can be simplified in subclasses.
 
         :param obj: an nxobject.
-        :param *args, **kwargs: an address specification.
-        :raises ValueError: if the address specification is incorrect.
+        :param *args or **kwargs: an address specification.
+        :raises KeyError: if the address specification is incorrect.
         :returns True: if registration is successful.
         """
         err_msg = "Incorrect registration address specification."
-        path = self._path(*args, **kwargs)
+        path = self._path(*arguments, **kwargs)
         folio = self.root
         i = -1  # Layer counter.
         while path:
             if isinstance(folio, fol.NxPortFolio):
-                key, *path = path
+                tab, *path = path
                 i += 1
                 try:
-                    folio = folio[key]
+                    folio = folio[tab]
                 except KeyError:
                     try:
                         insert = self.layertype(i)()
-                        folio[key] = insert
+                        folio[tab] = insert
                         folio = insert
-                    # Failure to create insert or incorrect key type.
+                    # Failure to create insert or incorrect tab type.
                     except (KeyError, TypeError):
-                        raise ValueError(err_msg)
+                        raise KeyError(err_msg)
             else:
                 break
         else:
@@ -363,12 +465,12 @@ class NxRegistry(NxRegistryBase):
                 folio.register(obj)
                 return True
             except TypeError:
-                raise ValueError(err_msg)
+                raise KeyError(err_msg)
         try:
             folio.register(obj, *path)
             return True
         except TypeError:
-            raise ValueError(err_msg)
+            raise KeyError(err_msg)
 
     def unregister(self, obj, *args, **kwargs):
         """Unregisters object if found, otherwise silences exceptions."""
@@ -379,7 +481,7 @@ class NxRegistry(NxRegistryBase):
         except KeyError:  # Assume an NxSchedule terminal folio.
             folio = self.root.retrieve(*path[:-1])
             return folio.unregister(obj, path[-1])
-        except TypeError:  # NxSchedule missing key arg in unregister
+        except TypeError:  # NxSchedule missing tab arg in unregister
             return False
 
 
@@ -421,25 +523,58 @@ class Pool(NxRegistry):
     __root__ = fol.NxPage
 
     def register(self, obj):
-        self.root.add(obj)
+        self.root.register(obj)
+        return True
 
     def unregister(self, obj):
-        self.root.discard(obj)
+        return self.root.unregister(obj)
 
 
 class Hierarchy(NxRegistry):
-    """A tree-like registry of individual objects, where keys are strings."""
-    __root__ = fol.NxFolder
-    __recurse__ = fol.NxFolder
+    """A tree-like registry of individual objects."""
+    __root__ = fol.NxPortFolio
+    __recurse__ = fol.NxPortFolio
 
     def register(self, obj, *args, **kwargs):
         path = self._path(*args, **kwargs)
         folio = self.__recurse__(obj)
         self.root.insert(folio, *path)
+        return True
 
     def unregister(self, obj, *args, **kwargs):
         try:
             folio = self._folio(*args, **kwargs)
             folio.dispose()
+            return True
         except KeyError:
             pass
+
+
+class Book(NxRegistry):
+    """A registry built as a sequence of pages."""
+    __root__ = fol.NxVolume
+    __layers__ = [('pages', fol.NxPage)]
+
+
+class Roll(NxRegistry):
+    """A registry made up of a single NxScroll."""
+    __root__ = fol.NxScroll
+
+    def register(self, obj):
+        self.root.register(obj)
+        return True
+
+    def unregister(self, obj):
+        return self.root.unregister(obj)
+
+
+class Directory(NxRegistry):
+    """A registry made up of a single schedule."""
+    __root__ = fol.NxSchedule
+
+    def register(self, obj, key):
+        self.root.register(obj)
+        return True
+
+    def unregister(self, obj, key):
+        return self.root.unregister(obj, key)

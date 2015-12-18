@@ -12,7 +12,7 @@ Documents don't have titles but carry entries, either a single entry (NxCard)
 or a collection (NxPage, NxScroll, NxSchedule). References to titles and
 entries are weak, allowing the content of folios to change dynamically and
 not hinder the garbage collection of application objects.
-Moreover, the references from portfolios to the folios they contain are
+Moreover, the references from portfolios to the folios they contain (tabs) are
 also weak references. This enables folio structures themselves to be dynamic
 as well. For instance, a page of an index may be garbage collected once
 it holds no objects.
@@ -54,6 +54,8 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 import weakref
+from itertools import chain
+import numbers
 from weakref import WeakSet, WeakValueDictionary
 
 from blist import sortedset, weaksortedset
@@ -131,6 +133,18 @@ class NxFolio(nxobject, abc.ABC):
     @property
     def path(self):
         return self._path
+
+    @property
+    def tab(self):
+        """The key with which the folio is accessed by its parent."""
+        if self._path:
+            return self._path[-1]
+        return None
+
+    @abc.abstractmethod
+    def read(self):
+        """Returns an iterable of document entries."""
+        pass
 
     @abc.abstractmethod
     def dispose(self):
@@ -266,10 +280,10 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
         """Retrieves a folio at path or raises a KeyError."""
         folio = self
         while path:
-            key, *path = path
+            tab, *path = path
             if isinstance(folio, NxDocument):
                 raise KeyError
-            folio = folio[key]
+            folio = folio[tab]
         return folio
 
     def search(self, *path):
@@ -282,16 +296,16 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
         if not path:
             results = [self]
         else:
-            key, *path = path
+            tab, *path = path
             results = []
             for k, f in self.items():
-                if k == key:
+                if k == tab:
                     if isinstance(f, NxPortFolio):
                         results.extend(f.search(*path))
                     elif not path:
                         results.append(f)
                 elif isinstance(f, NxPortFolio):
-                    results.extend(f.search(key, *path))
+                    results.extend(f.search(tab, *path))
         return iter(results)
 
     def find(self, *path):
@@ -321,12 +335,19 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
         optionally restricted to specific depths. For instance:
         self.subfolios(1) is equivalent to self.values()
         self.subfolios(1, 2) returns descendants at levels 1 and 2.
+        By convention, depth 0 adds self to the return results.
 
         :param *depths: optional sequence of integers representing tree depth.
         :returns: an iterable of folios.
         """
-        results = []
         depths = sorted(depths)
+        if 0 in depths:
+            results = [self]
+            depths.pop(0)
+            if not depths:
+                return iter(results)
+        else:
+            results = []
         if not depths:
             results.extend(self.values())
             for f in self.portfolios():
@@ -342,6 +363,21 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
             results.extend(f.subfolios(*depths))
         return iter(results)
 
+    def titles(self, *depths, root=False):
+        """Returns an iterable of non-None titles in self's subfolios.
+
+        :param *depths: optional sequence of integers representing tree depth.
+        :param root: if True, self's title is included in the results.
+        :returns: an iterable of titles.
+        """
+        results = []
+        if root and self.title is not None:
+            results.append(self.title)
+        for f in self.subfolios(*depths):
+            if isinstance(f, NxPortFolio) and f.title is not None:
+                results.append(f.title)
+        return iter(results)
+
     def leaves(self):
         """Returns an iterable of bottom-level folios."""
         results = []
@@ -352,38 +388,42 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
                 results.extend(f.leaves())
         return iter(results)
 
+    def read(self):
+        """Returns an iterable of document entries."""
+        return chain(*(l.read() for l in self.leaves()))
+
     # Setters
 
-    def __setitem__(self, key, folio):
-        if key in self:
-            self[key].dispose()
+    def __setitem__(self, tab, folio):
+        if tab in self:
+            self[tab].dispose()
         if isinstance(folio, NxFolio):
             folio.parent = self
-            folio._path = self.path + (key,)
+            folio._path = self.path + (tab,)
         else:
             msg = "Only NxFolio objects can be inserted into an NxPortFolio."
             raise TypeError(msg)
-        super().__setitem__(key, folio)
+        super().__setitem__(tab, folio)
 
     def insert(self, folio, *path):
         """Inserts folio at specified path, creating portfolios as needed."""
         try:
-            key, *path = path
+            tab, *path = path
         except ValueError:
-            raise TypeError("Insert requires at least one key.")
+            raise TypeError("Insert requires at least one tab.")
         if path:
             try:
-                self[key].insert(folio, *path)
+                self[tab].insert(folio, *path)
             except KeyError:
-                self.sub(key).insert(folio, *path)
+                self.sub(tab).insert(folio, *path)
             except AttributeError:
                 msg = "Path points inside an NxDocument."
                 raise KeyError(msg)
         else:
-            self[key] = folio
+            self[tab] = folio
 
-    def __delitem__(self, key):
-        folio = super().pop(key)  # May raise a KeyError
+    def __delitem__(self, tab):
+        folio = super().pop(tab)  # May raise a KeyError
         del folio.parent
 
     def clear(self):
@@ -397,29 +437,29 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
         self.clear()
         del self.title
 
-    def sub(self, *key, title=None, type_=None):
+    def sub(self, *tab, title=None, type_=None):
         """Creates a subfolio of self.
 
         Key is generally required but subclasses can implement rules
         to make it optional.
 
-        :param key: An optional key specification to be inserted in self.
+        :param tab: An optional tab specification to be inserted in self.
         :param title: An optional title to the subfolio.
         :type_: The type of the subfolio, defaulting to type(self).
         :returns: A folio, after it's been inserted.
         """
         type_ = type_ or type(self)
         sub = type_(title=title)
-        self[key[0]] = sub
+        self[tab[0]] = sub
         return sub
 
-    def pop(self, key, *args):
+    def pop(self, tab, *args):
         return NotImplemented
 
     def popitem(self):
         return NotImplemented
 
-    def setdefault(self, key, default=None):
+    def setdefault(self, tab, default=None):
         return NotImplemented
 
     def update(self, dict=None, **kwargs):
@@ -524,10 +564,10 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
 class NxFolder(NxPortFolio):
     """An indexed Portfolio whose keys are strings."""
 
-    def __setitem__(self, key, folio):
-        if not isinstance(key, str):
+    def __setitem__(self, tab, folio):
+        if not isinstance(tab, str):
             raise TypeError
-        super().__setitem__(key, folio)
+        super().__setitem__(tab, folio)
 
     def keys(self):
         return iter(sorted(super().keys()))
@@ -572,12 +612,12 @@ class NxVolume(NxPortFolio):
                 return (1,)
         return super()(self, *index, title=title, type_=type_)
 
-    def __setitem__(self, key, folio):
-        if not isinstance(key, int):
+    def __setitem__(self, tab, folio):
+        if not isinstance(tab, numbers.Integral):
             raise TypeError
-        if not key >= 1:
+        if not tab >= 1:
             raise ValueError
-        super().__setitem__(key, folio)
+        super().__setitem__(tab, folio)
 
     def keys(self):
         return iter(sorted(super().keys()))
@@ -758,7 +798,7 @@ class _NxEntrySetMixin(object):
 
     def _str(self, *indent):
         """Primitive to __str__."""
-        return type(self).__name__[2:] + ' | {}'.format(len(self))
+        return type(self).__name__[2:] + ' | ' + fun.spformat(self)
 
     def __str__(self):
         return self._str()
@@ -823,7 +863,7 @@ class NxPage(WeakSet, NxDocument):
         """Primitive to hardcopy."""
         return set(self)
 
-fun.ducktype(NxPage, _NxEntrySetMixin)
+fun.monkeypatch(NxPage, _NxEntrySetMixin)
 
 
 class NxScroll(weaksortedset, NxDocument):
@@ -897,7 +937,7 @@ class NxScroll(weaksortedset, NxDocument):
         """Primitive to hardcopy."""
         return sortedset(self, key=self.key)
 
-fun.ducktype(NxScroll, _NxEntrySetMixin)
+fun.monkeypatch(NxScroll, _NxEntrySetMixin)
 
 
 class NxSchedule(WeakValueDictionary, NxDocument):
@@ -1024,7 +1064,7 @@ class NxSchedule(WeakValueDictionary, NxDocument):
 
     def _str(self, *indent):
         """Primitive to __str__."""
-        return type(self).__name__[2:] + ' | {}'.format(len(self))
+        return type(self).__name__[2:] + ' | ' + fun.spformat(self)
 
 #==============================================================================
 ### Folio proxies
@@ -1070,21 +1110,21 @@ class NxPortFolioProxy(NxFolioProxy, NxPortFolio):
     def insert(self, proxy, *path):
         """Inserts proxy at specified path, creating portfolios as needed."""
         try:
-            key, *path = path
+            tab, *path = path
         except ValueError:
-            raise TypeError("Insert requires at least one key.")
+            raise TypeError("Insert requires at least one tab.")
         if path:
             try:
-                self[key].insert(proxy, *path)
+                self[tab].insert(proxy, *path)
             except KeyError:
                 try:
-                    self[key] = self.folio[key].proxy()
+                    self[tab] = self.folio[tab].proxy()
                 except KeyError:
-                    msg = "Cannot insert into a proxy if key does not " + \
+                    msg = "Cannot insert into a proxy if tab does not " + \
                           "exist in the referred folio."
                     raise KeyError(msg)
                 try:
-                    self[key].insert(proxy, *path)
+                    self[tab].insert(proxy, *path)
                 except AttributeError:
                     msg = "Path points inside an NxDocument."
                     raise KeyError(msg)
@@ -1092,7 +1132,7 @@ class NxPortFolioProxy(NxFolioProxy, NxPortFolio):
                 msg = "Path points inside an NxDocument."
                 raise KeyError(msg)
         else:
-            self[key] = proxy
+            self[tab] = proxy
 
     def dispose(self):
         self.clear()

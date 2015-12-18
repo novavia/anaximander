@@ -63,6 +63,30 @@ class TestStringFormatting(TestCase):
         assert string == "A car has 4 wheels and {n} cylinders."
 
 
+class TestDecorators(TestCase):
+
+    def test_args_or_kwargs(self):
+
+        @fun.args_or_kwargs
+        def f(self, *args, **kwargs):
+            if kwargs:
+                return kwargs
+            return dict(enumerate(args))
+
+        @fun.args_or_kwargs(tabs=0)
+        def g(x, y):
+            return x + y
+
+        with self.assertRaises(ValueError):
+            f(Item(), 0, y=1)
+        assert f(Item(), x=0, y=1) == {'x': 0, 'y': 1}
+        assert f(Item(), 0, 1) == {0: 0, 1: 1}
+        with self.assertRaises(ValueError):
+            g(0, y=1)
+        assert g(0, 1) == 1
+        assert g(x=0, y=1) == 1
+
+
 class TestMetaprogramming(TestCase):
 
     class Obj(nx.Object):
@@ -88,8 +112,8 @@ class TestMetaprogramming(TestCase):
         def from_other(cls, obj):
             return cls()
 
-    def test_ducktype(self):
-        fun.ducktype(self.Obj, self.Mixin)
+    def test_monkeypatch(self):
+        fun.monkeypatch(self.Obj, self.Mixin)
         m = self.Obj()
         m.mixer()
         n = self.Obj.from_other(m)
