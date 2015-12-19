@@ -22,6 +22,11 @@ class NxMeta(apeiron, nxobject):
     """The base metaclass to all Anaximander Types and Objects."""
 
     @classmethod
+    def __baptize__(mcl, bases, **kwargs):
+        """A class namer, from bases and kwargs. Provided as placeholder."""
+        raise TypeError
+
+    @classmethod
     def __prepare__(mcl, name, bases, **kwargs):
         return {}
 
