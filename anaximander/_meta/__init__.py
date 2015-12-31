@@ -7,9 +7,6 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-__all__ = ['Meta', 'BaseType', 'BaseObject', 'nxframe']
+__all__ = ['NxType', 'NxObject', 'NxDataType', 'nxdata']
 
-from .nxmeta import NxMeta as Meta, \
-    NxBaseType as BaseType, \
-    NxBaseObject as BaseObject
-from . import nxframe
+from .basetypes import NxType, NxObject, NxDataType, nxdata

@@ -34,7 +34,7 @@ def lmap(*args):
     :return: a dictionary of locally named variables.
     """
     caller_locals = sys._getframe(1).f_locals
-    return {k: v for k, v in caller_locals.items() if v in args}
+    return {k: v for k, v in caller_locals.items() if k in args}
 
 #==============================================================================
 ### String formatting

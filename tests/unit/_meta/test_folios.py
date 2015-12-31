@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Test module for nxregistries.
+Test module for folios.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.

@@ -18,7 +18,7 @@ Copyright (C) Novavia Solutions, LLC.
 import types
 from itertools import chain
 
-from . import nxmeta
+from .nxmeta import NxBaseType, NxBaseObject
 #from . import registries as reg
 
 #==============================================================================
@@ -26,12 +26,12 @@ from . import nxmeta
 #==============================================================================
 
 
-class NxFrameworkType(nxmeta.NxBaseType):
+class NxFrameworkType(NxBaseType):
     """Parent class to types in Anaximander's framework layer."""
     pass
 
 
-class NxFrameworkObject(nxmeta.NxBaseObject, metaclass=NxFrameworkType):
+class NxFrameworkObject(NxBaseObject, metaclass=NxFrameworkType):
     """Parent class to Anaximander's framework layer objects."""
     pass
 

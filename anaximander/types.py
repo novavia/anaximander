@@ -11,18 +11,43 @@ Copyright (C) Novavia Solutions, LLC.
 ### Imports
 #==============================================================================
 
-from ._meta import BaseType, BaseObject
+from ._meta import NxType, NxObject
 
 #==============================================================================
 ### Abstract base classes
 #==============================================================================
 
 
-class NxType(BaseType):
-    """The parent metaclass to all NxObject."""
-    pass
+class Type(NxType):
+    """The parent metaclass to all Objects."""
+
+    def __new__(mcl, name, bases, namespace, patch=None, slots=None, **keys):
+        if not bases:
+            bases = (Object,)
+        cls = NxType.__new__(mcl, name, bases, namespace, patch, slots, **keys)
+        return cls
 
 
-class NxObject(BaseObject, metaclass=NxType):
+class ClassMethod(object):
+    "Emulate PyClassMethod_Type() in Objects/funcobject.c"
+
+    def __init__(self, f):
+        self.f = f
+
+    def __get__(self, obj, cls=None):
+        f = lambda *a, **kw: self.f(cls, *a, **kw)
+        f.__name__ = self.f.__name__
+        f.__doc__ = self.f.__doc__
+        return f
+
+
+class Object(NxObject, metaclass=Type):
     """Parent class to all library and application objects."""
-    pass
+
+    @ClassMethod
+    def om(cls):
+        print(cls.__name__)
+
+    @classmethod
+    def om2(cls):
+        print(cls.__name__)

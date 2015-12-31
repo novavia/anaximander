@@ -40,7 +40,7 @@ class TestAttributeHandling(TestCase):
 
     def tests_lmap(self):
         i0, i1, i2 = (Item(i) for i in range(3))
-        assert fun.lmap(i0, i2) == {'i0': i0, 'i2': i2}
+        assert fun.lmap('i0', 'i2') == {'i0': i0, 'i2': i2}
 
 
 class TestStringFormatting(TestCase):

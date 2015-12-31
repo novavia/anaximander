@@ -60,7 +60,7 @@ from weakref import WeakSet, WeakValueDictionary
 
 from blist import sortedset, weaksortedset
 
-from ..arche import nxobject
+from .. import nxobject
 from ..utilities import functions as fun
 from ..utilities import xprops
 

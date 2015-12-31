@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Test module for nxregistries.
+Test module for registries.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
@@ -33,7 +33,7 @@ class Item(nx.Object):
 
 
 class ComplexRegistry(nrg.NxRegistry):
-    """A registry with mixed layers for testing purposes."""
+    """A registry with mixed laypeyers for testing purposes."""
     __root__ = fol.NxFolder
     __layers__ = [('volume', fol.NxVolume),
                   ('schedule', fol.NxSchedule)]
