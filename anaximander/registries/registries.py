@@ -55,8 +55,8 @@ class NxRegistryBase(fol.NxRegistryABC):
 
         _path accepts either arguments or keyword arguments but not
         both.
-        Kwargs are interpreted by looking up the __layers__ attribute
-        of the class.
+        Kwargs are interpreted by looking up the layers attribute
+        of the registry.
         The arguments can form a partial path from the root to a folio
         contained in the registry, but cannot ommit intermediary keys.
         """
@@ -394,15 +394,21 @@ class NxRegistry(NxRegistryBase):
     __layers__ = ()  # Placeholder for the name and type of folio layers.
     __recurse__ = None  # Placeholder for a recursive folio type.
 
+    def __init__(self, *layers, recurse=None):
+        """Instances may overrides layers and recurse definitions."""
+        self.layers = layers or self.__layers__
+        self.recurse = recurse or self.__recurse__
+        super().__init__()
+
     @xprops.cachedproperty
     def layernames(self):
         try:
             bottom_layer_type = self.layertypes[-1]
         except IndexError:
-            bottom_layer_type = self.__root__ if not self.__recurse__ else None
+            bottom_layer_type = self.__root__ if not self.recurse else None
         add_key = bottom_layer_type == fol.NxSchedule
         try:
-            names = list(list(zip(*self.__layers__))[0])
+            names = list(list(zip(*self.layers))[0])
         except (TypeError, IndexError):
             names = []
         if add_key:
@@ -412,9 +418,9 @@ class NxRegistry(NxRegistryBase):
     @xprops.cachedproperty
     def layertypes(self):
         try:
-            return tuple(zip(*self.__layers__))[1]
+            return tuple(zip(*self.layers))[1]
         except (TypeError, IndexError):
-            return tuple(self.__layers__)
+            return tuple(self.layers)
 
     def layertype(self, depth=1, name=None):
         """Returns the layer type at a specified depth or name.
@@ -430,9 +436,9 @@ class NxRegistry(NxRegistryBase):
         try:
             return self.layertypes[depth]
         except IndexError:
-            return self.__recurse__
+            return self.recurse
 
-    def register(self, obj, *arguments, **kwargs):
+    def register(self, obj, *args, **kwargs):
         """Open registration method, can be simplified in subclasses.
 
         :param obj: an nxobject.
@@ -441,7 +447,7 @@ class NxRegistry(NxRegistryBase):
         :returns True: if registration is successful.
         """
         err_msg = "Incorrect registration address specification."
-        path = self._path(*arguments, **kwargs)
+        path = self._path(*args, **kwargs)
         folio = self.root
         i = -1  # Layer counter.
         while path:
@@ -517,6 +523,10 @@ class NxSubRegistry(NxRegistryBase):
     def layertypes(self):
         return self.registry.layertypes
 
+#==============================================================================
+### Base registry types
+#==============================================================================
+
 
 class Pool(NxRegistry):
     """A simple registry that provides membership functionality only."""
@@ -537,7 +547,7 @@ class Hierarchy(NxRegistry):
 
     def register(self, obj, *args, **kwargs):
         path = self._path(*args, **kwargs)
-        folio = self.__recurse__(obj)
+        folio = self.recurse(obj)
         self.root.insert(folio, *path)
         return True
 
@@ -553,7 +563,7 @@ class Hierarchy(NxRegistry):
 class Book(NxRegistry):
     """A registry built as a sequence of pages."""
     __root__ = fol.NxVolume
-    __layers__ = [('pages', fol.NxPage)]
+    __layers__ = [('page', fol.NxPage)]
 
 
 class Roll(NxRegistry):

@@ -74,6 +74,25 @@ def lformat(string):
     return string.format(**curlydict(caller_locals))
 
 #==============================================================================
+### Iteration / collection functions
+#==============================================================================
+
+
+def dictunion(*dicts, unique_keys=False):
+    """Returns a dictionary that unionizes the supplied dictionaries.
+
+    If unique_keys is True, then the function raises a ValueError if
+    the same key is featured in multiple input dictionaries.
+    """
+    union = {k: v for d in dicts for k, v in d.items()}
+    if unique_keys:
+        if len(union) != sum(len(d) for d in dicts):
+            msg = "Dictionaries with shared keys were passed to dictunion " + \
+                  "with the unique_keys flag set to True."
+            raise ValueError(msg)
+    return union
+
+#==============================================================================
 ### Function decorators
 #==============================================================================
 

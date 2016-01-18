@@ -26,8 +26,8 @@ class NxType(nxmeta, nxobject, metaclass=nxmeta):
     the _folios property, but it can work on NxType instances in general.
     """
 
-    def __new__(mcl, name, bases, namespace, patch=None, slots=None, **keys):
-        cls = nxmeta.__new__(mcl, name, bases, namespace, patch, slots, **keys)
+    def __new__(mcl, name, bases, namespace, slots=None, **keys):
+        cls = nxmeta.__new__(mcl, name, bases, namespace, slots, **keys)
         cls._cls_folios = set()
         return cls
 

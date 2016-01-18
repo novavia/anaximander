@@ -16,9 +16,9 @@ import unittest
 from unittest import TestCase
 
 import anaximander as nx
-from anaximander._meta import nxmeta
-from anaximander._meta.nxmeta import typemethod
-from anaximander._meta.basetypes import NxType, NxObject
+from anaximander.meta import nxmeta
+from anaximander.meta.nxmeta import typemethod
+from anaximander.meta.basetypes import NxType, NxObject
 from anaximander.utilities.functions import lmap
 
 #==============================================================================
@@ -70,7 +70,7 @@ class Testtypemethod(TestCase):
         """Tests a getitem typemethod."""
         class C(NxObject):
             @typemethod
-            def __metagetitem__(cls, key):
+            def __typegetitem__(cls, key):
                 return key
         self.assertEqual(C[0], 0)
 
@@ -80,27 +80,26 @@ class Testtypemethod(TestCase):
                 return key
         self.assertEqual(D[0], 0)
 
+        @typemethod
+        def __typegetitem__(cls, key):
+            return key
+        patch = lmap('__typegetitem__')
+        E = nxmeta.Assembler(NxObject, patch=patch)('E')
+        self.assertEqual(E[0], 0)
+
         # Wrong function syntax
         with self.assertRaises(ValueError):
-            class E(NxObject):
+            class F(NxObject):
                 @typemethod
-                def metagetit(cls, key):
+                def typegetit(cls, key):
                     return key
 
         # Credible function syntax but no corresponding target
         with self.assertRaises(nxmeta.MetaError):
-            class F(NxObject):
+            class G(NxObject):
                 @typemethod
-                def __metagetit__(cls, key):
+                def __typegetit__(cls, key):
                     return key
-
-        @typemethod
-        def __metagetitem__(cls, key):
-            return key
-        patch = lmap('__metagetitem__')
-        assembler = nxmeta.Assembler(NxObject, patch=patch)
-        G = assembler('G')
-        self.assertEqual(G[0], 0)
 
 
 class TestAssembler(TestCase):
@@ -125,4 +124,4 @@ class TestAssembler(TestCase):
         self.assertEqual(C.__name__, 'Type_' + str(basecount + 1))
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(warnings='ignore')

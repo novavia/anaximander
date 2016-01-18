@@ -63,6 +63,18 @@ class TestStringFormatting(TestCase):
         assert string == "A car has 4 wheels and {n} cylinders."
 
 
+class TestCollectionFunctions(TestCase):
+
+    def test_dictunion(self):
+        d0 = dict(a=1, b=2, c=3)
+        d1 = dict(a=1, d=4)
+        d2 = dict(e=5)
+        union = fun.dictunion(d0, d1, d2)
+        self.assertEqual(union, dict(a=1, b=2, c=3, d=4, e=5))
+        with self.assertRaises(ValueError):
+            union = fun.dictunion(d0, d1, unique_keys=True)
+
+
 class TestDecorators(TestCase):
 
     def test_args_or_kwargs(self):

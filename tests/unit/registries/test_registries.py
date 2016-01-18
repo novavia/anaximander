@@ -15,7 +15,7 @@ import unittest
 from unittest import TestCase
 
 import anaximander as nx
-from anaximander._meta import folios as fol, registries as nrg
+from anaximander.registries import folios as fol, registries as nrg
 
 #==============================================================================
 ### Mock NxObject

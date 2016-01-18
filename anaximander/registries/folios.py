@@ -272,6 +272,26 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
 
     # Accessors
 
+    def keys(self):
+        superkeys = super().keys()
+        try:
+            return iter(sorted(superkeys))
+        except TypeError:  # Unorderable keys.
+            return iter(superkeys)
+
+    def items(self):
+        superitems = super().items()
+        try:
+            return iter(sorted(superitems, key=lambda i: i[0]))
+        except TypeError:
+            return iter(superitems)
+
+    def values(self):
+        try:
+            return iter(list(zip(*self.items()))[1])
+        except IndexError:
+            return iter([])
+
     def portfolios(self):
         """Returns values, restricted to portfolios."""
         return (f for f in self.values() if isinstance(f, NxPortFolio))
@@ -569,18 +589,6 @@ class NxFolder(NxPortFolio):
             raise TypeError
         super().__setitem__(tab, folio)
 
-    def keys(self):
-        return iter(sorted(super().keys()))
-
-    def items(self):
-        return iter(sorted(super().items(), key=lambda i: i[0]))
-
-    def values(self):
-        try:
-            return iter(list(zip(*self.items()))[1])
-        except IndexError:
-            return iter([])
-
 
 class NxVolume(NxPortFolio):
     """A portfolio that provides numerically indexed access to its items.
@@ -618,18 +626,6 @@ class NxVolume(NxPortFolio):
         if not tab >= 1:
             raise ValueError
         super().__setitem__(tab, folio)
-
-    def keys(self):
-        return iter(sorted(super().keys()))
-
-    def items(self):
-        return iter(sorted(super().items(), key=lambda i: i[0]))
-
-    def values(self):
-        try:
-            return iter(list(zip(*self.items()))[1])
-        except IndexError:
-            return iter([])
 
 #==============================================================================
 ### Document classes

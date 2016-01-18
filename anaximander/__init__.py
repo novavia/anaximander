@@ -7,10 +7,9 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-__all__ = ['nxtype', 'nxobject', 'utilities', '_meta', 'Type', 'Object']
+__all__ = ['utilities', 'nxtype', 'nxobject', 'Type', 'Object']
 
 
-from ._arche import nxtype, nxobject
 from . import utilities
-from . import _meta
+from ._arche import nxtype, nxobject
 from .types import Type, Object
