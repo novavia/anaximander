@@ -92,7 +92,7 @@ import types
 
 from .. import nxtype, nxobject
 from ..registries import registries as reg, folios as fol
-from ..utilities.xprops import settablecachedproperty
+from ..utilities.xprops import cachedproperty, settablecachedproperty
 from ..utilities.functions import lmap, get
 from ..utilities.cmpmixin import ComparableMixin
 
@@ -219,6 +219,10 @@ class nxdescriptor(nxobject, ComparableMixin):
     """The base Anaximander descriptor class."""
     __count__ = count()
 
+    class DescriptorError(MetaError):
+        """Customized error class, primarily for declaration checking."""
+        pass
+
     def __init__(self):
         """Descriptors receive an id to retrieve instantiation order."""
         self.descriptor_id = next(self.__count__)
@@ -239,10 +243,14 @@ class nxdescriptor(nxobject, ComparableMixin):
 class typeattribute(nxdescriptor):
     """Identifies type attributes in archetypes.
 
-    Note that this is technically not a true descriptor. It is portrayed
-    as such because it serves the purpose of identifying specific
-    attributes in archetype declarations. Once the typeattribute has
-    been registered, it is replaced by a regular class variable.
+    Type attributes are special attributes of types that serve to register
+    them into Clades, i.e. they provide specialization to an archetype.
+    Typeattributes are expected to be declared as words (e.g. 'zoom'), but
+    will create a double-underscore class variable ('__zoom__') to hold values.
+    If the typeattribute has leading or trailing underscores, these get
+    stripped in order to create the class cache.
+    The descriptor itself works like a property and will retrieve the value
+    stored in the double underscore variable.
     """
 
     def __init__(self, default=None, *, dtype=None):
@@ -251,6 +259,11 @@ class typeattribute(nxdescriptor):
         self.default = default
         self.dtype = dtype
         self.cache = None  # Name of storage attribute in host class
+
+    @cachedproperty
+    def cache(self):
+        stripped_name = self.name.strip('_')
+        return '__' + stripped_name + '__'
 
     def __get__(self, obj, objtype=None):
         return getattr(objtype, self.cache)
@@ -263,6 +276,10 @@ class typeattribute(nxdescriptor):
 
     def __metainit__(self, cls):
         """Called by the archetype that defines the attribute."""
+        # Enforces that the name doesn't conflict with the cache name
+        if self.cache == self.name:
+            msg = "Type attributes cannot use double-underscore naming."
+            raise self.DescriptorError(msg)
         setattr(cls, self.cache, self.default)
 
     def foreset(self, cls, value=None):
@@ -270,7 +287,9 @@ class typeattribute(nxdescriptor):
         value = get(value, self.default)
         if self.dtype is not None:
             if not isinstance(value, self.dtype):
-                raise TypeError
+                msg = "Wrong type {0} passed to type attribute {1}."
+                msg.format(type(value), self)
+                raise self.DescriptorError(msg)
         setattr(cls, self.cache, value)
 
 
@@ -312,7 +331,7 @@ class typemethod(classmethod, nxdescriptor):
                 msg = "Typemethods must follow naming convention or " + \
                       "explicitly target a metaclass method with the " + \
                       "keyword 'target' in the decorator."
-                raise ValueError(msg) from e
+                raise self.DescriptorError(msg) from e
         else:
             self.target = target
 
@@ -338,7 +357,7 @@ class typemethod(classmethod, nxdescriptor):
     def __metainit__(self, cls):
         if not hasattr(type(cls), self.target):
             msg = "{0} has invalid metaclass method target."
-            raise MetaError(msg.format(self))
+            raise self.DescriptorError(msg.format(self))
         setattr(cls, self._func(self.target), self)
 
 #==============================================================================

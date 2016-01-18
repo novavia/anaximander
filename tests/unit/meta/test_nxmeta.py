@@ -88,14 +88,14 @@ class Testtypemethod(TestCase):
         self.assertEqual(E[0], 0)
 
         # Wrong function syntax
-        with self.assertRaises(ValueError):
+        with self.assertRaises(nxmeta.nxdescriptor.DescriptorError):
             class F(NxObject):
                 @typemethod
                 def typegetit(cls, key):
                     return key
 
         # Credible function syntax but no corresponding target
-        with self.assertRaises(nxmeta.MetaError):
+        with self.assertRaises(nxmeta.nxdescriptor.DescriptorError):
             class G(NxObject):
                 @typemethod
                 def __typegetit__(cls, key):
