@@ -60,7 +60,7 @@ from weakref import WeakSet, WeakValueDictionary
 
 from blist import sortedset, weaksortedset
 
-from .. import nxobject
+#from .. import nxobject
 from ..utilities import functions as fun
 from ..utilities import xprops
 
@@ -72,12 +72,12 @@ __all__ = ['NxFolder', 'NxVolume',
 #==============================================================================
 
 
-class NxRegistryABC(nxobject, abc.ABC):
+class NxRegistryABC(abc.ABC):
     """ABC for registries, in the registries module."""
     pass
 
 
-class NxFolio(nxobject, abc.ABC):
+class NxFolio(abc.ABC):
     """ABC for all folio objects."""
     __print_spacer__ = ' ' * 2
 
