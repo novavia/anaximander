@@ -23,7 +23,7 @@ an interface that allows registration / unregistration into a folio structure.
 If the parent of a folio is a portfolio, then the reference is strong -whereas
 the reference from the portfolio to the folio is weak. If the parent of a
 folio is a registry, then the reference is weak, whereas the reference from
-the registry to folio is weak. Removal of the parent (deletion or setting
+the registry to folio is strong. Removal of the parent (deletion or setting
 it to None) will cause removal of the title / entries, which in turn will
 throw the folio into the garbage collector.
 The second enabler of the design is the _folios attribute of nxobjects,
