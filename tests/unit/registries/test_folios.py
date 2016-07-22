@@ -15,7 +15,7 @@ import operator as opr
 import unittest
 from unittest import TestCase
 
-import anaximander as nx
+from anaximander.utilities import xprops
 from anaximander.registries import folios
 
 #==============================================================================
@@ -23,11 +23,16 @@ from anaximander.registries import folios
 #==============================================================================
 
 
-class Item(nx.Object):
-    """ A dummy Object."""
+class Item(object):
+    """ A dummy nxobject-like object ."""
 
     def __init__(self, ix=0):
         self.ix = ix
+
+    @xprops.cachedproperty
+    def _folios(self):
+        """This property is used to hold references to registration folios."""
+        return set()
 
     def __repr__(self):
         return 'Item[{}]'.format(self.ix)

@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import unittest
 from unittest import TestCase
 
-import anaximander as nx
+#import anaximander as nx
 from anaximander.utilities import functions as fun
 
 #==============================================================================
@@ -22,7 +22,7 @@ from anaximander.utilities import functions as fun
 #==============================================================================
 
 
-class Item(nx.Object):
+class Item(object):
     """ A dummy Object."""
 
     def __init__(self, ix=0):
@@ -101,7 +101,7 @@ class TestDecorators(TestCase):
 
 class TestMetaprogramming(TestCase):
 
-    class Obj(nx.Object):
+    class Obj(object):
         pass
 
     class Mixin(object):
