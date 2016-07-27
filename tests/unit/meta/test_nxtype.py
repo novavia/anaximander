@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import unittest
 from unittest import TestCase
 
-from anaximander.meta import nxobject
+from anaximander.registries.folios import Registrable
 from anaximander.meta.nxtype import NxType, nxtype
 
 #==============================================================================
@@ -28,7 +28,7 @@ class TestDeclarativeTypeCreation(TestCase):
     class ThingType(NxType, basename='Thing'):
         pass
 
-    class Hammer(nxobject, metaclass=ThingType):
+    class Hammer(Registrable, metaclass=ThingType):
         pass
 
     class RedHammer(Hammer):
@@ -37,27 +37,11 @@ class TestDeclarativeTypeCreation(TestCase):
     def test_subclassing(self):
         """Tests subclassing NxType."""
         self.assertTrue(issubclass(self.ThingType, NxType))
-        self.assertTrue(issubclass(self.ThingType, nxobject))
+        self.assertTrue(issubclass(self.ThingType, Registrable))
 
     def test_typing(self):
         """Tests creating a new type."""
         self.assertTrue(isinstance(self.Hammer, NxType))
-
-    def test_folios_property(self):
-        """Verifies that the folios property works as intended.
-        
-        In particular, tests the independence of the property between
-        a type (Hammer) and its instances.
-        """
-        h = self.Hammer()
-        rh = self.RedHammer()
-        h._folios.add(0)
-        rh._folios.add(1)
-        self.RedHammer._folios.add(2)
-        self.assertEqual(h._folios, {0})
-        self.assertEqual(self.Hammer._folios, set())
-        self.assertEqual(rh._folios, {1})
-        self.assertEqual(self.RedHammer._folios, {2})
 
 
 class TestProgrammaticTypeCreation(TestCase):
@@ -66,7 +50,7 @@ class TestProgrammaticTypeCreation(TestCase):
     class ThingType(NxType, basename='Thing'):
         pass
 
-    class BaseThing(nxobject, metaclass=ThingType):
+    class BaseThing(Registrable, metaclass=ThingType):
         pass
 
     def test_typing(self):

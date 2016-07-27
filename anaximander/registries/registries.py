@@ -241,7 +241,7 @@ class NxRegistryBase(fol.NxRegistryABC):
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
         :raises KeyError: if no matching registry address exists.
-        :returns: an iterable of nxobject.
+        :returns: an iterable of Registrables.
         """
         return self._folio(*args, **kwargs).read()
 
@@ -256,7 +256,7 @@ class NxRegistryBase(fol.NxRegistryABC):
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
         :raises KeyError: if no matching registry address exists.
-        :returns: an iterable of (address, nxobject) tuples.
+        :returns: an iterable of (address, Registrable) tuples.
         """
         root = self._folio(*args, **kwargs)
         if isinstance(root, fol.NxPortFolio):
@@ -277,7 +277,7 @@ class NxRegistryBase(fol.NxRegistryABC):
 
         :param args: a partial sequential registry address specification.
         :param kwargs: a partial named registry address specification.
-        :returns: an nxobject.
+        :returns: a Registrable.
         """
         subregistry = self.subset(*args, **kwargs)
         return subregistry.values()
@@ -291,7 +291,7 @@ class NxRegistryBase(fol.NxRegistryABC):
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
         :raises KeyError: if no matching registry address exists.
-        :returns: an iterable of nxobject.
+        :returns: an iterable of Registrables.
         """
         root = self._folio(*args, **kwargs)
         return root.titles(root=True)
@@ -305,7 +305,7 @@ class NxRegistryBase(fol.NxRegistryABC):
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
         :raises KeyError: if no matching registry address exists.
-        :returns: an iterable of nxobject.
+        :returns: an iterable of Registrables.
         """
         subregistry = self.subset(*args, **kwargs)
         return subregistry.titles()
@@ -317,7 +317,7 @@ class NxRegistryBase(fol.NxRegistryABC):
         :param kwargs: a named registry address specification.
         :raises KeyError: if the registry address doesn't exist.
         :raises ValueError: if the registry address points to multiple items.
-        :returns: an nxobject.
+        :returns: an Registrable.
         """
         candidates = list(self.titles(*args, *kwargs))
         if not candidates:
@@ -337,7 +337,7 @@ class NxRegistryBase(fol.NxRegistryABC):
         :param kwargs: a partial named registry address specification.
         :raises KeyError: if no matching registry address exists.
         :raises ValueError: if the registry address points to multiple items.
-        :returns: an nxobject.
+        :returns: a Registrable.
         """
         candidates = list(self.browse(*args, **kwargs))
         if not candidates:
@@ -441,7 +441,7 @@ class NxRegistry(NxRegistryBase):
     def register(self, obj, *args, **kwargs):
         """Open registration method, can be simplified in subclasses.
 
-        :param obj: an nxobject.
+        :param obj: a Registrable.
         :param *args or **kwargs: an address specification.
         :raises KeyError: if the address specification is incorrect.
         :returns True: if registration is successful.

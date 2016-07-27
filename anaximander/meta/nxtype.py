@@ -26,24 +26,24 @@ Copyright (C) Novavia Solutions, LLC.
 
 import itertools
 import types
-from abc import ABCMeta
 
-from . import nxobject, meta
+from .nxmeta import NxMeta, nxmeta
 from ..utilities import xprops
 from ..utilities import functions as fun
+from ..registries.folios import RegistrableType
 
 #==============================================================================
 ### NxType declaration
 #==============================================================================
 
-class NxType(ABCMeta, nxobject, metaclass=meta, basename=None):
+class NxType(RegistrableType, metaclass=NxMeta, basename=None):
     """The Anaximander base metaclass.
     
     The basename for NxType is set to None in order to emphasize the
     abstract nature of NxType -i.e. it is not intended to directly
     produce any type, as this is left to concrete subclasses.    
     """
-    __archetype__ = None #  The archetype upon which the metaclass is built.
+    __archetype__ = None #  The archetype upon which the type is built.
     
     @classmethod
     def __baptize__(mcl, basename=None, *args, **kwargs):
@@ -62,19 +62,7 @@ class NxType(ABCMeta, nxobject, metaclass=meta, basename=None):
         return basename + '_' + str(idx)        
 
     def __init__(cls, name, bases, namespace):
-        cls._type_folios = set()
-        
-    @property
-    def _folios(cls):
-        """This property is used to hold references to registration folios.
-        
-        Note that NxType instances, which are classes, also have a
-        _folios property in their dictionary, which applies to objects.
-        This design is made possible by using two different names for
-        the underlying variable that stores the folios set ('_object_folios'
-        for objects, '_type_folios' for types).        
-        """
-        return cls._type_folios
+        super().__init__(name, bases, namespace)
 
 
 def nxtype(basetype, *traits, name=None, **kwargs):
@@ -87,3 +75,33 @@ def nxtype(basetype, *traits, name=None, **kwargs):
     name = fun.get(name, metatype.__baptize__(*traits, **kwargs))
     return types.new_class(name, (basetype,))
 
+
+def archetype(cls):
+    """A class decorator that signals an archetype.
+    
+    Archetype stand out as types in that they are designed to form the root
+    of so-called 'clades', or families of classes that all share the basic
+    structure. Here is how the relationship between an archetypical class
+    and the members of its clade different from regular class inheritance:
+    * Archetypes can define metacharacters, which are basically class
+    variables for which we would like to set different values for different
+    types. An example could be a family of nested list types each with
+    a set depth.
+    * Clade members can also enrich the archetype with traits. Anaximander
+    traits are essentially a framework for importing the behavior of
+    a class into another class by association or aggregation rather than
+    through explicit inheritance. For instance, a trait can be produced from
+    a Spatial class, and types that have a geometry attribute will be
+    made to inherit from the Spatial trait, which will confer them additional
+    behaviors, such as a bounding box property.
+    * When an archetype is declared, a metaclass is generated programatically
+    to handle subclassing. The archetype itself is not an instance of that
+    metaclass, but the other members of the clade are.
+    * Clade members are registered into a 'cladogram', which is a tree-like
+    structure that enables fast retrieving of types from a set of
+    metacharacteristics and traits.
+    """
+    mcl = nxmeta(cls)
+    cls.__archetype__ = cls
+    cls.__clade__ = mcl
+    return cls

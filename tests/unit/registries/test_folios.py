@@ -15,24 +15,22 @@ import operator as opr
 import unittest
 from unittest import TestCase
 
-from anaximander.utilities import xprops
 from anaximander.registries import folios
 
 #==============================================================================
-### Mock NxObject
+### Registrable Item class
 #==============================================================================
 
+class ItemType(folios.RegistrableType):
+    """A metaclass whose instances are registrable."""
+    pass
 
-class Item(object):
-    """ A dummy nxobject-like object ."""
+
+class Item(folios.RegistrableObject, metaclass=ItemType):
+    """A dummy Registrable object class."""
 
     def __init__(self, ix=0):
         self.ix = ix
-
-    @xprops.cachedproperty
-    def _folios(self):
-        """This property is used to hold references to registration folios."""
-        return set()
 
     def __repr__(self):
         return 'Item[{}]'.format(self.ix)
@@ -40,6 +38,28 @@ class Item(object):
 #==============================================================================
 ### Test Cases
 #==============================================================================
+
+
+class TestRegistrable(TestCase):
+
+    def test_folios_property(self):
+        """Verifies that the folios property works as intended.
+        
+        In particular, tests the independence of the property between
+        a type (Item) and its instances.
+        """
+        class SpecializedItem(Item): pass
+        i = Item()
+        si = SpecializedItem()
+        i._folios.add(0)
+        si._folios.add(1)
+        Item._folios.add(2)
+        SpecializedItem._folios.add(3)
+        self.assertEqual(i._folios, {0})
+        self.assertEqual(Item._folios, {2})
+        self.assertEqual(si._folios, {1})
+        self.assertEqual(SpecializedItem._folios, {3})
+        Item._folios.clear()
 
 
 class TestNxFolder(TestCase):

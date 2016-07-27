@@ -14,24 +14,18 @@ Copyright (C) Novavia Solutions, LLC.
 import unittest
 from unittest import TestCase
 
-from anaximander.utilities import xprops
 from anaximander.registries import folios as fol, registries as nrg
 
 #==============================================================================
-### Mock NxObject
+### Registrable Item class
 #==============================================================================
 
 
-class Item(object):
+class Item(fol.RegistrableObject):
     """ A dummy nxobject-like object ."""
 
     def __init__(self, ix=0):
         self.ix = ix
-
-    @xprops.cachedproperty
-    def _folios(self):
-        """This property is used to hold references to registration folios."""
-        return set()
 
     def __repr__(self):
         return 'Item[{}]'.format(self.ix)

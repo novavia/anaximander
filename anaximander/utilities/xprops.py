@@ -33,7 +33,7 @@ class cachedproperty(property):
     """
 
     def __init__(self, fget=None, fset=None, fdel=None, doc=None):
-        super(cachedproperty, self).__init__(fget, fset, fdel)
+        super().__init__(fget, fset, fdel)
         self.cache = '_' + fget.__name__
         if doc is None and fget is not None:
             doc = fget.__doc__

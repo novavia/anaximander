@@ -6,8 +6,9 @@ Implements folios i.e. specialized data structures used to build registries.
 Folios are divided into two categories: portfolios hold other folios,
 whereas documents are necessarily terminal nodes in the folio structure in
 which they reside.
-PortFolios carry a title attribute to which an nxobject can be assigned.
-This is primarily useful for building object hierarchies or genealogies.
+PortFolios carry a title attribute to which a 'registrable' object can be 
+assigned. This is primarily useful for building object hierarchies or
+genealogies.
 Documents don't have titles but carry entries, either a single entry (NxCard)
 or a collection (NxPage, NxScroll, NxSchedule). References to titles and
 entries are weak, allowing the content of folios to change dynamically and
@@ -26,23 +27,23 @@ folio is a registry, then the reference is weak, whereas the reference from
 the registry to folio is strong. Removal of the parent (deletion or setting
 it to None) will cause removal of the title / entries, which in turn will
 throw the folio into the garbage collector.
-The second enabler of the design is the _folios attribute of nxobjects,
-which a strong set to all the folios that hold a particular nxobject. This
-strong reference is what ensures that a document can stay alive in memory
+The second enabler of the design is the _folios attribute of registrables,
+which is a strong set containing all the folios that hold that registrable.
+This strong reference is what ensures that a document can stay alive in memory
 for so long as it contains at least one object, since as a terminal node it
 cannot have a child pointing to it.
 As a result, portofolios can be strongly referenced by either children or
 their title, but if they have neither they get garbage collected.
 Folios are designed to create relatively shallow data structures employed
 by different types of registries, i.e. caches, indexes, glossaries, etc.
-Another layer implementation are the folio proxies, which behave like a
+Another layer of implementation are the folio proxies, which behave like a
 folio and have a parent attribute exactly like NxFolio, but do not hold
 direct references to their titles / entries, instead relying on a weakly
 referenced folio instance. Proxies are necessary to enable effective
 subsetting of registries: registry subsets are themselves registries, but
 they contain folio proxies rather than folios, hence avoiding
 unnecessary object copies. NxFolio objects have a _proxies attribute that
-works in a similar fashion to nxobjects' _folios attribute.
+works in a similar fashion to registrables's _folios attribute.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
@@ -60,12 +61,53 @@ from weakref import WeakSet, WeakValueDictionary
 
 from blist import sortedset, weaksortedset
 
-#from .. import nxobject
 from ..utilities import functions as fun
 from ..utilities import xprops
 
 __all__ = ['NxFolder', 'NxVolume',
            'NxCard', 'NxPage', 'NxScroll', 'NxSchedule']
+
+#==============================================================================
+### Base classes for registrable objects and types.
+#==============================================================================
+
+class Registrable(abc.ABC):
+    """An abstract base class for registrable entities.
+    
+    The only feature is the presence of a _folios property that holds a set.
+    However in order to enable registrable objects whose class is itself
+    registrable, we have to create two distinct base types that hold
+    the underlying set in differently named attributes.
+    """
+    
+    @abc.abstractproperty
+    def _folios(self):
+        pass
+    
+
+class RegistrableObject(Registrable):
+    """Base class for registrable objects."""
+    
+    @property
+    def _folios(self):
+        if not hasattr(self, '_object_folios'):
+            self._object_folios = set()
+        return self._object_folios
+
+
+class RegistrableType(abc.ABCMeta, Registrable):
+    """Base class for registrable types.
+    
+    In the case of types, initialization is necessary in order to
+    break attribute inheritance.    
+    """
+
+    def __init__(cls, name, bases, namespace):
+        cls._type_folios = set()
+    
+    @property
+    def _folios(self):
+        return self._type_folios
 
 #==============================================================================
 ### Abstract base classes for folios and registries.
@@ -153,12 +195,12 @@ class NxFolio(abc.ABC):
 
     @abc.abstractmethod
     def register(self, obj, *args, **kwargs):
-        """Registers an nxobject, implementation specific to each class."""
+        """Registers an object, implementation specific to each class."""
         pass
 
     @abc.abstractmethod
     def unregister(self, obj, *args, **kwargs):
-        """Unregisters an nxobject, implementation specific to each class."""
+        """Unregisters an object, implementation specific to each class."""
         pass
 
     def copy(self):
@@ -201,7 +243,7 @@ class NxFolio(abc.ABC):
 class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
     """Base class for folios that carry other folios.
 
-    Portfolios have an optional title attribute that must be an nxobject.
+    Portfolios have an optional title attribute that must be a Registrable.
     The title is weakly held, but it itself holds a strong reference to
     the portfolio.
     """
@@ -238,7 +280,8 @@ class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
             try:
                 val._folios.add(self)
             except AttributeError:
-                msg = "Only nxobjects can be titles to an NxPortFolio."
+                msg = "Only Registrable objects or types can be titles to " + \
+                      "an NxPortFolio."
                 raise TypeError(msg)
             self._title = weakref.ref(val)
 
@@ -701,7 +744,8 @@ class NxCard(NxDocument):
             try:
                 val._folios.add(self)
             except AttributeError:
-                msg = "Only nxobjects can be entries to an NxDocument."
+                msg = "Only Registrable objects or types can be entries " + \
+                      "to an NxDocument."
                 raise TypeError(msg)
             self._entry = weakref.ref(val)
 
@@ -815,7 +859,8 @@ class NxPage(WeakSet, NxDocument):
         try:
             item._folios.add(self)
         except AttributeError:
-            msg = "Only nxobjects can be entries to an NxDocument."
+            msg = "Only Registrable objects or types can be entries to " + \
+                  "an NxDocument."
             raise TypeError(msg)
         super().add(item)
 
@@ -891,7 +936,8 @@ class NxScroll(weaksortedset, NxDocument):
         try:
             item._folios.add(self)
         except AttributeError:
-            msg = "Only nxobjects can be entries to an NxDocument."
+            msg = "Only Registrable objects or types can be entries to " + \
+                  "an NxDocument."
             raise TypeError(msg)
         super().add(item)
 
@@ -973,7 +1019,8 @@ class NxSchedule(WeakValueDictionary, NxDocument):
         try:
             value._folios.add(self)
         except AttributeError:
-            msg = "Only nxobjects can be entries to an NxDocument."
+            msg = "Only Registrable objects or types can be entries to " + \
+                  "an NxDocument."
             raise TypeError(msg)
         super().__setitem__(key, value)
 
