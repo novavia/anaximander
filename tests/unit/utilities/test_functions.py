@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Test module for nxregistries.
+Test module for functions.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-#==============================================================================
-### Imports
-#==============================================================================
+# =============================================================================
+# Imports
+# =============================================================================
 
-import unittest
+import pytest
 from unittest import TestCase
 
-#import anaximander as nx
 from anaximander.utilities import functions as fun
 
-#==============================================================================
-### Mock NxObject
-#==============================================================================
+# =============================================================================
+# Mock Item
+# =============================================================================
 
 
 class Item(object):
@@ -31,9 +30,9 @@ class Item(object):
     def __repr__(self):
         return 'Item[{}]'.format(self.ix)
 
-#==============================================================================
-### Test Cases
-#==============================================================================
+# =============================================================================
+# Test Cases
+# =============================================================================
 
 
 class TestAttributeHandling(TestCase):
@@ -99,38 +98,46 @@ class TestDecorators(TestCase):
         assert g(x=0, y=1) == 1
 
 
-class TestMetaprogramming(TestCase):
+@pytest.fixture
+def klass():
+    """Returns a generic class 'C'."""
 
-    class Obj(object):
-        pass
+    class C:
+        c = 0
 
-    class Mixin(object):
+        def __repr__(self):
+            return 'hello, world!'
 
-        def mixer(self):
-            self.mixed = True
+    return C
 
-        @property
-        def mixed(self):
-            try:
-                return self._mixed
-            except AttributeError:
-                return False
 
-        @mixed.setter
-        def mixed(self, val):
-            self._mixed = bool(val)
+def test_monkeypatch(klass):
 
-        @classmethod
-        def from_other(cls, obj):
-            return cls()
+    class Mixin:
+        x = 0
 
-    def test_monkeypatch(self):
-        fun.monkeypatch(self.Obj, self.Mixin)
-        m = self.Obj()
-        m.mixer()
-        n = self.Obj.from_other(m)
-        assert m.mixed
-        assert not n.mixed
+    fun.monkeypatch(klass, Mixin)
+    assert klass.__name__ == 'C'
+    assert hasattr(klass, 'c')
+    assert hasattr(klass, 'x')
+    assert repr(klass()) == 'hello, world!'
+    assert klass.__patches__[0] == Mixin
+
+
+def test_monkeypatch_overwrite(klass):
+
+    class Mixin:
+
+        def __repr__(self):
+            return 'no way, Jose!'
+
+    # With exclusions
+    fun.monkeypatch(klass, Mixin, '__repr__')
+    assert repr(klass()) == 'hello, world!'
+    # Without exclusions
+    fun.monkeypatch(klass, Mixin)
+    assert repr(klass()) == 'no way, Jose!'
+
 
 if __name__ == '__main__':
-    unittest.main()
+    pytest.main([__file__])

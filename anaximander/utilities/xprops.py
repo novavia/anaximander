@@ -93,6 +93,21 @@ class settablecachedproperty(cachedproperty):
             setattr(obj, self.cache, value)
 
 
+class singlesetproperty(settablecachedproperty):
+    """Cached property that can only be set once with a non-None value.
+
+    Note that deletion remains possible and that a new value can be passed
+    to the cache following a del event. This is maintained for compatibility
+    and consistency with the base class behavior.
+    """
+
+    def __set__(self, obj, value):
+        if getattr(obj, self.cache, None) is None:
+            super().__set__(obj, value)
+        else:
+            raise AttributeError("Can't set attribute.")
+
+
 class weakproperty(settablecachedproperty):
     """A cached property who stores a weak reference of a target attribute.
 

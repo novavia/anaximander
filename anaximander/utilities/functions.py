@@ -7,16 +7,18 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-#==============================================================================
-### Imports
-#==============================================================================
+# =============================================================================
+# Imports
+# =============================================================================
+
+from collections import deque
 
 import functools
 import sys
 
-#==============================================================================
-### Attributes handling
-#==============================================================================
+# =============================================================================
+# Attributes handling
+# =============================================================================
 
 
 def get(val, default=None):
@@ -36,9 +38,9 @@ def lmap(*args):
     caller_locals = sys._getframe(1).f_locals
     return {k: v for k, v in caller_locals.items() if k in args}
 
-#==============================================================================
-### String formatting
-#==============================================================================
+# =============================================================================
+# String formatting
+# =============================================================================
 
 
 def spformat(obj, singular='item', plural=None):
@@ -73,9 +75,9 @@ def lformat(string):
     caller_locals = sys._getframe(1).f_locals
     return string.format(**curlydict(caller_locals))
 
-#==============================================================================
-### Iteration / collection functions
-#==============================================================================
+# =============================================================================
+# Iteration / collection functions
+# =============================================================================
 
 
 def dictunion(*dicts, unique_keys=False):
@@ -92,9 +94,9 @@ def dictunion(*dicts, unique_keys=False):
             raise ValueError(msg)
     return union
 
-#==============================================================================
-### Function decorators
-#==============================================================================
+# =============================================================================
+# Function decorators
+# =============================================================================
 
 
 def args_or_kwargs(f=None, *, tabs=1):
@@ -117,9 +119,9 @@ def args_or_kwargs(f=None, *, tabs=1):
         return f(*arguments, **kwargs)
     return decorated
 
-#==============================================================================
-### Metaprogramming
-#==============================================================================
+# =============================================================================
+# Metaprogramming
+# =============================================================================
 
 
 def metargs(cls):
@@ -131,10 +133,17 @@ def monkeypatch(cls, mixin, *exclusions):
     """Adds attributes and methods from mixin to cls.
 
     Attributes to exclude can be passed to exclusions as strings.
+    Note that the patching is non-recursive, i.e. only attributes and
+    methods declared in mixin are patched. If mixin inherits from a base
+    class, then the attributes of the base class will not be patched.
     """
-    xattrs = set(['__dict__', '__doc__', '__module__', '__qualname__',
-                  '__weakref__', '_folios', '_cls_folios'])
+    # Reserved attributes that don't get overwritten
+    xattrs = {'__module__', '__dict__', '__weakref__', '__doc__',
+              '__patches__'}
     xattrs.update(exclusions)
     for name, attr in mixin.__dict__.items():
         if name not in xattrs:
             setattr(cls, name, attr)
+    if not hasattr(cls, '__patches__'):
+        cls.__patches__ = deque()
+    cls.__patches__.appendleft(mixin)

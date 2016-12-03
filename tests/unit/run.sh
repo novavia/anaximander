@@ -8,4 +8,7 @@ cd $DIR
 source activate anaximander &> /dev/null
 
 # Discover and run the tests.
-python -W ignore::PendingDeprecationWarning -m unittest discover
+# Using unittest (old way):
+# python -W ignore::PendingDeprecationWarning -m unittest discover
+# Using pytest:
+python -m pytest
