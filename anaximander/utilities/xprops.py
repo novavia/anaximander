@@ -120,7 +120,7 @@ class weakproperty(settablecachedproperty):
             return self
         try:
             return getattr(obj, self.cache)()
-        except AttributeError:
+        except (AttributeError, TypeError):
             if self.fget is None:
                 return None
             return self.fget(obj)
@@ -130,3 +130,5 @@ class weakproperty(settablecachedproperty):
             self.fset(obj, value)
         elif value is not None:
             setattr(obj, self.cache, weakref.ref(value))
+        else:
+            setattr(obj, self.cache, None)

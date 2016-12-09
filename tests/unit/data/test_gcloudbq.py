@@ -15,7 +15,7 @@ import pytest
 
 from gcloud import bigquery as bq
 
-from anaximander.data import schemas as sch, gcloudbq as gbq
+from anaximander.data import schema as sch, gcloudbq as gbq
 
 
 PROJECT_ID = 'infinite-uptime-1232'

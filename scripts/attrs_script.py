@@ -16,7 +16,7 @@ import re
 
 import attr
 
-from anaximander.data import schemas as sch
+from anaximander.data import schema as sch
 from anaximander.utilities import functions as fun
 
 # =============================================================================
