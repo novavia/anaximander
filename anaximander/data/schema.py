@@ -51,8 +51,6 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import OrderedDict
-import re
-import types
 
 import attr
 import marshmallow as msh
@@ -94,67 +92,6 @@ _field_check = {'Field': True,
                 'Int': True,
                 'Constant': False,
                 }
-
-# =============================================================================
-# Record base class
-# =============================================================================
-
-
-#TODO: May need to ensure that the _validate attribute is present?
-class Record:
-    """Abstract base class for record classes."""
-
-    # weak pointer to the schema class
-    @weakproperty
-    def schema(self):
-        return None
-
-    @classmethod
-    def load(self, data):
-        """Loads a record from a serialized data map."""
-        return self.schema().load(data).data
-
-    def dump(self):
-        """Serializes a record."""
-        return self.schema().dump(self).data
-
-    def as_dict(self, **kwargs):
-        """Returns self's field attributes in dictionary form.
-
-        See attr.asdict for documentation on keyword arguments.
-        """
-        filter = kwargs.pop('filter', lambda a, v: True)
-        kwargs['filter'] = self.attr_filter(filter)
-        return attr.asdict(self, **kwargs)
-
-    def as_tuple(self, **kwargs):
-        """Returns self's field attributes in tuple form.
-
-        See attr.astuple for documentation on keyword arguments.
-        """
-        filter = kwargs.pop('filter', lambda a, v: True)
-        kwargs['filter'] = self.attr_filter(filter)
-        return attr.astuple(self, **kwargs)
-
-    def validate(self):
-        """Validates an instance against the schema.
-
-        Note that this is relatively inefficient and not intended for
-        production use cases, because the instance has to be serialized,
-        and then basically deserialized for validation.
-        """
-        schema = self.schema()
-        schema.validate(schema.dump(self).data)
-
-    def __attrs_post_init__(self):
-        """Additional __init__ procedure -see attrs doc. for details."""
-        if self._validate:
-            self.validate()
-
-    @classmethod
-    def attr_filter(cls, filter):
-        """Composes a filter with the class' base filter."""
-        return lambda a, v: False if a is cls._validate else filter(a, v)
 
 # =============================================================================
 # Marshmallow patching
@@ -261,82 +198,11 @@ class _SchemaMetaPatch:
                         "fields."
                     raise SchemaError(msg.format(k))
             setattr(cls, k, v)
-#        cls.set_record_class(cls._make_record_class())
 
     @property
     def base_schemas(cls):
         """Filters bases for Schema subclasses."""
         return tuple(c for c in cls.__bases__ if issubclass(c, Schema))
-
-    @weakproperty
-    def Data(cls):
-        """A pointer to a host Data class, if any."""
-        return None
-
-    @cachedproperty
-    def record_class(cls):
-        return None
-
-    @property
-    def record_class_name(cls):
-        return cls._record_class.__name__
-
-    def _make_attributes(cls):
-        """Extract a list of attribute specifications from a schema."""
-        attrs = {}
-        for k, v in cls.fields.items():
-            if v.required:
-                attrs[k] = attr.ib()
-            else:
-                attrs[k] = attr.ib(default=v._attribute_default())
-        # Special attribute _validate makes it possible to add a 'validate'
-        # option to the __init__ method of the record class, while ignoring
-        # it for most practical purposes.
-        validate = attr.ib(False, repr=False, cmp=False, hash=False)
-        attrs['_validate'] = validate
-        return attrs
-
-# TODO: make meaningful doc string for record class
-    def _make_record_class(cls):
-        """Makes a record class from schema.
-
-        The record class uses attr.make_class to automate the creation
-        of boilerplate methods.
-        The name of the record class is set automatically as follows:
-        * the method checks whether the class defines an option
-        record_class_name and uses it if so.
-        * Otherwise if the schema class follows the pattern [CamelCase]Schema,
-        then the name of the record class is [CamelCase].
-        * Otherwise a SchemaError is raised.
-        """
-        if cls.opts.record_class_name is not None:
-            name = cls.opts.record_class_name
-        else:
-            try:
-                name = re.match('\w+(?=Schema)', cls.__name__).group(0)
-            except AttributeError:
-                if cls.__name__ == 'Schema':
-                    return Record
-                msg = "The schema has a non-standard name. Either change " + \
-                    "the name or supply a record_class_name option in Meta."
-                raise SchemaError(msg)
-
-        def body(ns):
-            """Populates the class' namespace with field attributes."""
-            attributes = cls._make_attributes()
-            ns.update(attributes)
-
-        kls = types.new_class(name, (Record,), exec_body=body)
-        record_class = attr.s(kls)
-        return record_class
-
-    def set_record_class(cls, record_class):
-        """Sets the record class associated with the Schema cls."""
-        cls._record_class = record_class
-        record_class.schema = cls
-        cls.make_record = msh.post_load(lambda i, d: record_class(**d))
-        # Re-run processors initialization on the class
-        cls._resolve_processors()
 
     @property
     def fields(cls):
@@ -349,6 +215,18 @@ class _SchemaMetaPatch:
     def keys(cls):
         """Returns an OrderedDict of key fields in a Schema instance."""
         return OrderedDict((k, v) for k, v in cls.fields.items() if v.key)
+
+    @weakproperty
+    def tract(cls):
+        """A pointer to a host Tract object, if any."""
+        return None
+
+    def set_record_class(cls, record_class):
+        """Sets a record class that is called in post-loading."""
+        cls.make_record = msh.post_load(lambda i, d: record_class(**d))
+        # Re-run processors initialization on the class
+        cls._resolve_processors()
+
 
 # If condition added to enable graceful module reload.
 if not hasattr(SchemaMeta, '__patches__'):

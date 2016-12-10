@@ -28,23 +28,25 @@ class RecordType(abc.ABCMeta):
     def __init__(cls, name, bases, attrs):
         auto = attrs.pop('__auto__', False)
         if auto:
-            cls.Data = None
-        elif cls.Data is not None:
-            cls.Data.set_record_class(cls)
+            cls.tract = None
+        # Ensures that a Data tract's Record class is updated if that
+        # class is subclassed.
+        elif cls.tract is not None:
+            cls.tract.set_record_class(cls)
 
     @classmethod
     def auto_init(mcl, name, bases, attrs):
-        """Init method used by Data classes for automatic creation.
+        """Init method used by Tract objects for automatic creation.
 
         This enables traceability so we can distinguish automated creation
         from a purpose-built Record class that defines additional methods.
         """
         attrs['__auto__'] = True
-        mcl(name, bases, attrs)
+        return mcl(name, bases, attrs)
 
     @weakproperty
-    def Data(self):
-        """Pointer to the owning Data class."""
+    def tract(self):
+        """Pointer to the owning Tract object."""
         return None
 
 
@@ -56,12 +58,12 @@ class Record(abc.ABC, metaclass=RecordType):
     @property
     def schema(self):
         """Returns the schema type associated with self."""
-        return type(self).Data.Schema
+        return type(self).tract.Schema
 
     @classmethod
-    def load(self, data):
+    def load(cls, data):
         """Loads a record from a serialized data map."""
-        return self.schema().load(data).data
+        return cls.tract.Schema().load(data).data
 
     def dump(self):
         """Serializes a record."""
