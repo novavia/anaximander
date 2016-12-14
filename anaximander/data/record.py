@@ -35,14 +35,14 @@ class RecordType(abc.ABCMeta):
             cls.tract.set_record_class(cls)
 
     @classmethod
-    def auto_init(mcl, name, bases, attrs):
+    def auto_init(mcl, name, attrs):
         """Init method used by Tract objects for automatic creation.
 
         This enables traceability so we can distinguish automated creation
         from a purpose-built Record class that defines additional methods.
         """
         attrs['__auto__'] = True
-        return mcl(name, bases, attrs)
+        return mcl(name, (Record,), attrs)
 
     @weakproperty
     def tract(self):
@@ -52,8 +52,6 @@ class RecordType(abc.ABCMeta):
 
 class Record(abc.ABC, metaclass=RecordType):
     """Abstract base class for record classes."""
-
-    _validate = False  # Placeholder, replaced by concrete implementations.
 
     @property
     def schema(self):
@@ -97,12 +95,18 @@ class Record(abc.ABC, metaclass=RecordType):
         schema = self.schema()
         schema.validate(schema.dump(self).data)
 
-    def __attrs_post_init__(self):
-        """Additional __init__ procedure -see attrs doc. for details."""
-        if self._validate:
-            self.validate()
-
     @classmethod
     def attr_filter(cls, filter):
         """Composes a filter with the class' base filter."""
-        return lambda a, v: False if a is cls._validate else filter(a, v)
+        return lambda a, v: False if a.name == '_validate' else filter(a, v)
+
+    def __attrs_post_init__(self):
+        """Additional __init__ procedure -see attrs doc. for details."""
+        try:
+            validate = self._validate
+        except AttributeError:
+            pass  # Fails silently
+        else:
+            if validate:
+                self.validate()
+            del self._validate

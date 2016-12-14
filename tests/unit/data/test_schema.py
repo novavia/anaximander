@@ -39,7 +39,10 @@ def test_field_properties():
     assert y.key is True
     assert z.serial is True
     assert x.serial is False
+    assert MyBaseSchema.fields == OrderedDict([('x', x)])
+    assert MySchema.fields == OrderedDict([('x', x), ('y', y), ('z', z)])
     assert MySchema.keys == OrderedDict([('x', x), ('y', y)])
+    assert MySchema.own_fields == OrderedDict([('y', y), ('z', z)])
 
 
 def test_reserved_names():

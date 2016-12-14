@@ -125,8 +125,9 @@ class Tract:
         name = name or self.name + 'Record'
         bases = self._bases(rec.Record)
         attributes = self._make_record_attributes()
-        kls = rec.RecordType.auto_init(name, bases, attributes)
+        kls = rec.RecordType.auto_init(name, attributes)
         record_class = attr.s(kls)
+        record_class.__bases__ = bases
         return record_class
 
     def set_record_class(self, record_class):

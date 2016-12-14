@@ -211,7 +211,13 @@ class _SchemaMetaPatch:
                        key=lambda i: i[1]._creation_index)
         return OrderedDict(items)
 
-    @cachedproperty
+    @property
+    def own_fields(cls):
+        """Returns non-inherited fields."""
+        inherited = msh.schema._get_fields_by_mro(cls, Field, True)
+        return OrderedDict(f for f in cls.fields.items() if f not in inherited)
+
+    @property
     def keys(cls):
         """Returns an OrderedDict of key fields in a Schema instance."""
         return OrderedDict((k, v) for k, v in cls.fields.items() if v.key)

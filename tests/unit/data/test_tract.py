@@ -124,5 +124,55 @@ def test_record_integration(schemas):
     with pytest.raises(sch.ValidationError):
         Purchase.Record(validate=True, **purchase_data)
 
+
+def test_nesting(schemas):
+    UserSchema, PurchaseSchema = schemas
+    global User, Purchase
+    tract.tract(UserSchema)
+    tract.tract(PurchaseSchema)
+
+    user_data = {'name': 'Joe', 'email': 'joe@bar.com'}
+    purchase_data = {'user': user_data,
+                     'timestamp': '2016-12-14T17:14:48.369685+00:00',
+                     'item': 'hammer'}
+    user = User.Record.load(user_data)
+    purchase = Purchase.Record.load(purchase_data)
+    assert purchase.dump() == purchase_data
+    assert purchase.as_dict()['user'] == user.as_dict()
+
+
+def test_schema_subclassing(schemas):
+    """Tests subclassing of Schemas into Tracts."""
+    UserSchema, PurchaseSchema = schemas
+    global User, Purchase
+    tract.tract(UserSchema)
+    tract.tract(PurchaseSchema)
+
+    @tract.tract
+    class PowerUserSchema(UserSchema):
+        power = sch.Bool(default=True)
+    global PowerUser
+    user_data = {'name': 'Joe', 'email': 'joe@bar.com', 'power': 'True'}
+    user = PowerUser.Record(user_data)
+    assert isinstance(user, User.Record)
+
+
+def test_record_subclassing(schemas):
+    """Tests subclassing a Record class."""
+    UserSchema, PurchaseSchema = schemas
+    global User, Purchase
+    tract.tract(UserSchema)
+    tract.tract(PurchaseSchema)
+
+    class UserRecord(User.Record):
+        @property
+        def greetings(self):
+            return "Hello, {0}.".format(self.name)
+
+    user_data = {'name': 'Joe', 'email': 'joe@bar.com'}
+    user = User.Record.load(user_data)
+    assert isinstance(user, UserRecord)
+    assert user.greetings == "Hello, Joe."
+
 if __name__ == '__main__':
     pytest.main([__file__])

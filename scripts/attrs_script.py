@@ -12,11 +12,8 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import datetime as dt
-import re
 
-import attr
-
-from anaximander.data import schema as sch
+from anaximander.data import schema as sch, tract as trc
 from anaximander.utilities import functions as fun
 
 # =============================================================================
@@ -24,15 +21,17 @@ from anaximander.utilities import functions as fun
 # =============================================================================
 
 
+@trc.tract
 class UserSchema(sch.Schema):
-    email = sch.fields.Email(key=True)
-    name = sch.fields.String(default='')
+    email = sch.Email(key=True)
+    name = sch.String(default='')
 
 
+@trc.tract
 class PurchaseSchema(sch.Schema):
-    user = sch.fields.Nested(UserSchema, key=True)
-    timestamp = sch.fields.DateTime(key=True)
-    item = sch.fields.String(key=True)
+    user = sch.Nested(UserSchema, key=True)
+    timestamp = sch.DateTime(key=True)
+    item = sch.String(key=True)
 
 
 def now():
@@ -41,7 +40,7 @@ def now():
 
 
 class PingSchema(sch.Schema):
-    timestamp = sch.fields.DateTime(default=dt.datetime.utcnow)
+    timestamp = sch.DateTime(default=dt.datetime.utcnow)
 
 
 #    with pytest.raises(sch.ValidationError):
@@ -52,7 +51,7 @@ except Exception as e:
 
 try:
     class MySchema(sch.Schema):
-        extra = sch.fields.Int()
+        extra = sch.Int()
 except Exception as e:
     assert type(e) == sch.SchemaError
 
@@ -101,4 +100,5 @@ except Exception as e:
 #    users = attr.ib()
 
 if __name__ == '__main__':
-    pass
+    joe = User.Record('joe@gmail.com', 'Joe')
+    purchase = Purchase.Record(joe, dt.datetime.utcnow(), 'hammer')

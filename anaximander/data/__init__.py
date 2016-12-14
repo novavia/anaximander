@@ -1,29 +1,41 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-This package defines Data, an abstraction that facilitate data handling.
+This package defines DataObject an abstraction that facilitate data handling.
 
-A Data class serves first and foremost as a namespace for grouping
-classes of data objects pertaining to a given type of data. For instance,
-a class UserSession(Data) indicates that there is a type of data that
+So-called DataObjects are data containers designed for multi-stage processing
+and analytics. The design originality resides in the creation of objects
+that expose pandas data structure by composition, adding metadata and methods.
+This enables manipulation of data frames through purpose-built functions
+that are encapsulated in classes dedicated to a particular meaning, subject
+to a set schema. For instance, a SessionLog class could expose a data frame
+of session logs with a predetermined schema and define a set of methods.
+
+What the Anaximander framework offers is a metaprogramming interface that
+automates the creation of DataObject subclasses. The interface simply requires
+the programmer to specify and name different schemas. From these schemas,
+so-called 'Tract' objects are created with a predictable name available
+in the global namespace. Tracts serve first and foremost as a namespace for
+grouping classes of data objects pertaining to a given type of data. For
+instance, an object UserSession indicates that there is a type of data that
 holds information about user sessions. That data may be accessed from files
 or a database table, and consumed in tabular format using pandas dataframes
-or as individual records. Anaximander offers to automate the creation of
+or as individual records. Anaximander automates the creation of
 classes to handle those use cases, and makes them accessible in the
 UserSession namespace. Hence the programmer can bet on the existence of
 classes UserSession.Schema, UserSession.Record, UserSession.Log, which
 respectively provide access to a schema, a record class and a tabular data
 class.
 
-The purpose of the Data abstraction is to deal with information content
+The purpose of the data package is to deal with information content
 rather than typical application objects. Exemples of the latter would include
 an Employee class in a payroll application or a Rectangle class in a plotting
-framework. By contrast, Data could be subclassed into UserSession, which
-is intended to capture historical information about actions taken by users of
-a website, or Trajectory, which could serve to record time series of
-moving object locations. There isn't a hard and fast rule that could
-draw a clear distinction between the two, as this is purely a matter of
-design. However, the primary purpose of this Data framework is to wrap
+framework. By contrast, a 'UserSession' tract may be created from a schema,
+with the intention to capture historical information about actions taken by
+users of a website. Similarly, 'Trajectory' could serve to record time
+series of moving object locations. There isn't a hard and fast rule that
+clearly designates what qualifies as a tract, as this is purely a matter of
+design. However, the primary purpose of the data package is to wrap
 pandas dataframes with an interface that guarantees column names and types.
 Hence it is intended for dealing with data that is most typically consumed
 in tabular form -think logs as the most obvious exemple. Individual rows
@@ -43,11 +55,10 @@ role of a structural template that serves to define semantic hierarchies
 of specialized data containers following an object-oriented paradigm; in
 other words, a marriage between 'data' and 'object' -hence the DataObject.
 
-Because the definition of a Data class hinges primarily on a schema,
+Because the definition of a data tract hinges primarily on a schema,
 the canonical mechanism for creating it is to decorate a Schema declaration.
-Alternatively, the Schema declaration can be embedded in a Data class
-declaration, or the two declarations can be written independently as long
-as a reference to the Schema class is supplied to the Data class.
+Alternatively, the Schema declaration can be embedded in a Tract object
+instantiation.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
