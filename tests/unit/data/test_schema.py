@@ -30,15 +30,15 @@ def test_field_properties():
 
     class MySchema(MyBaseSchema):
         y = sch.Bool(key=True)
-        z = sch.DateTime(serial=True)
+        z = sch.DateTime(sequential=True)
 
     x, y, z = MySchema.fields.values()
     assert MyBaseSchema.x == MySchema.x == x
     assert x.name is 'x'
     assert x.key is True
     assert y.key is True
-    assert z.serial is True
-    assert x.serial is False
+    assert z.sequential is True
+    assert x.sequential is False
     assert MyBaseSchema.fields == OrderedDict([('x', x)])
     assert MySchema.fields == OrderedDict([('x', x), ('y', y), ('z', z)])
     assert MySchema.keys == OrderedDict([('x', x), ('y', y)])

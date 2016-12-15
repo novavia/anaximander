@@ -7,15 +7,16 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-#==============================================================================
-### Import statements
-#==============================================================================
+# =============================================================================
+# Import statements
+# =============================================================================
 
 from abc import ABCMeta
 
-#==============================================================================
-### NxMeta metaclass type
-#==============================================================================
+# =============================================================================
+# NxMeta metaclass type
+# =============================================================================
+
 
 class NxMeta(ABCMeta):
     """A custom type for Anaximander metaclasses.
@@ -35,7 +36,7 @@ class NxMeta(ABCMeta):
 
     def __init__(mcl, name, bases, namespace, basename):
         """Initializes a new metaclass.
-        
+
         :param basename: base name for types the new metaclass will create.
         """
         mcl.__basename__ = basename
@@ -43,7 +44,7 @@ class NxMeta(ABCMeta):
 
 def nxmeta(archetype):
     """A metaclass constructor from a supplied archetype.
-    
+
     nxmeta creates a metaclass by subclassing the archetype's metaclass
     and modifiying its behavior based on any metadescriptors found
     in the archetype's declarations.
@@ -52,4 +53,3 @@ def nxmeta(archetype):
     bases = (type(archetype),)
     basename = archetype.__name__
     return NxMeta(name, bases, {}, basename)
-    

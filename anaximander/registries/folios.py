@@ -6,7 +6,7 @@ Implements folios i.e. specialized data structures used to build registries.
 Folios are divided into two categories: portfolios hold other folios,
 whereas documents are necessarily terminal nodes in the folio structure in
 which they reside.
-PortFolios carry a title attribute to which a 'registrable' object can be 
+PortFolios carry a title attribute to which a 'registrable' object can be
 assigned. This is primarily useful for building object hierarchies or
 genealogies.
 Documents don't have titles but carry entries, either a single entry (NxCard)
@@ -49,9 +49,9 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-#==============================================================================
-### Imports
-#==============================================================================
+# =============================================================================
+# Imports
+# =============================================================================
 
 import abc
 import weakref
@@ -67,27 +67,28 @@ from ..utilities import xprops
 __all__ = ['NxFolder', 'NxVolume',
            'NxCard', 'NxPage', 'NxScroll', 'NxSchedule']
 
-#==============================================================================
-### Base classes for registrable objects and types.
-#==============================================================================
+# =============================================================================
+# Base classes for registrable objects and types.
+# =============================================================================
+
 
 class Registrable(abc.ABC):
     """An abstract base class for registrable entities.
-    
+
     The only feature is the presence of a _folios property that holds a set.
     However in order to enable registrable objects whose class is itself
     registrable, we have to create two distinct base types that hold
     the underlying set in differently named attributes.
     """
-    
+
     @abc.abstractproperty
     def _folios(self):
         pass
-    
+
 
 class RegistrableObject(Registrable):
     """Base class for registrable objects."""
-    
+
     @property
     def _folios(self):
         if not hasattr(self, '_object_folios'):
@@ -97,21 +98,21 @@ class RegistrableObject(Registrable):
 
 class RegistrableType(abc.ABCMeta, Registrable):
     """Base class for registrable types.
-    
+
     In the case of types, initialization is necessary in order to
-    break attribute inheritance.    
+    break attribute inheritance.
     """
 
     def __init__(cls, name, bases, namespace):
         cls._type_folios = set()
-    
+
     @property
     def _folios(self):
         return self._type_folios
 
-#==============================================================================
-### Abstract base classes for folios and registries.
-#==============================================================================
+# =============================================================================
+# Abstract base classes for folios and registries.
+# =============================================================================
 
 
 class NxRegistryABC(abc.ABC):
@@ -235,9 +236,9 @@ class NxFolio(abc.ABC):
         """Primitive to __str__."""
         pass
 
-#==============================================================================
-### Portfolio classes
-#==============================================================================
+# =============================================================================
+# Portfolio classes
+# =============================================================================
 
 
 class NxPortFolio(WeakValueDictionary, NxFolio, abc.ABC):
@@ -670,9 +671,9 @@ class NxVolume(NxPortFolio):
             raise ValueError
         super().__setitem__(tab, folio)
 
-#==============================================================================
-### Document classes
-#==============================================================================
+# =============================================================================
+# Document classes
+# =============================================================================
 
 
 class NxDocumentBase(NxFolio):
@@ -1109,9 +1110,9 @@ class NxSchedule(WeakValueDictionary, NxDocument):
         """Primitive to __str__."""
         return type(self).__name__[2:] + ' | ' + fun.spformat(self)
 
-#==============================================================================
-### Folio proxies
-#==============================================================================
+# =============================================================================
+# Folio proxies
+# =============================================================================
 
 
 class NxFolioProxy(NxFolio):

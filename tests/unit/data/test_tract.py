@@ -32,7 +32,7 @@ def schemas():
 
     class PurchaseSchema(sch.Schema):
         user = sch.Nested(UserSchema, key=True)
-        timestamp = sch.DateTime(key=True, serial=True,
+        timestamp = sch.DateTime(key=True, sequential=True,
                                  default=dt.datetime.utcnow)
         item = sch.String(key=True, default='miscellaneous')
 
@@ -133,7 +133,7 @@ def test_nesting(schemas):
 
     user_data = {'name': 'Joe', 'email': 'joe@bar.com'}
     purchase_data = {'user': user_data,
-                     'timestamp': '2016-12-14T17:14:48.369685+00:00',
+                     'timestamp': '2016-12-14T17:14:48+00:00',
                      'item': 'hammer'}
     user = User.Record.load(user_data)
     purchase = Purchase.Record.load(purchase_data)

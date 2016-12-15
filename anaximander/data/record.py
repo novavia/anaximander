@@ -11,52 +11,26 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
-import abc
-
 import attr
 
-from ..utilities.xprops import weakproperty
+from ._base import SchemedDataType, SchemedDataObject
 
 # =============================================================================
 # Record base class
 # =============================================================================
 
 
-class RecordType(abc.ABCMeta):
+class RecordType(SchemedDataType):
     """Metaclass for Record classes."""
-
-    def __init__(cls, name, bases, attrs):
-        auto = attrs.pop('__auto__', False)
-        if auto:
-            cls.tract = None
-        # Ensures that a Data tract's Record class is updated if that
-        # class is subclassed.
-        elif cls.tract is not None:
-            cls.tract.set_record_class(cls)
-
-    @classmethod
-    def auto_init(mcl, name, attrs):
-        """Init method used by Tract objects for automatic creation.
-
-        This enables traceability so we can distinguish automated creation
-        from a purpose-built Record class that defines additional methods.
-        """
-        attrs['__auto__'] = True
-        return mcl(name, (Record,), attrs)
-
-    @weakproperty
-    def tract(self):
-        """Pointer to the owning Tract object."""
-        return None
+    pass
 
 
-class Record(abc.ABC, metaclass=RecordType):
+class Record(SchemedDataObject, metaclass=RecordType):
     """Abstract base class for record classes."""
 
     @property
-    def schema(self):
-        """Returns the schema type associated with self."""
-        return type(self).tract.Schema
+    def data(self):
+        return self.as_dict()
 
     @classmethod
     def load(cls, data):
@@ -110,3 +84,5 @@ class Record(abc.ABC, metaclass=RecordType):
             if validate:
                 self.validate()
             del self._validate
+
+RecordType.__archetype__ = Record

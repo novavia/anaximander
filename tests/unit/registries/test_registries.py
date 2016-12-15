@@ -7,18 +7,19 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-#==============================================================================
-### Imports
-#==============================================================================
+# =============================================================================
+# Imports
+# =============================================================================
 
-import unittest
 from unittest import TestCase
+
+import pytest
 
 from anaximander.registries import folios as fol, registries as nrg
 
-#==============================================================================
-### Registrable Item class
-#==============================================================================
+# =============================================================================
+# Registrable Item class
+# =============================================================================
 
 
 class Item(fol.RegistrableObject):
@@ -43,9 +44,9 @@ class RecursiveRegistry(nrg.NxRegistry):
     __root__ = fol.NxFolder
     __recurse__ = fol.NxFolder
 
-#==============================================================================
-### Test Cases
-#==============================================================================
+# =============================================================================
+# Test Cases
+# =============================================================================
 
 
 class TestComplexRegistry(TestCase):
@@ -198,4 +199,4 @@ class TestRecursiveRegistry(TestCase):
             registry.fetch('d')
 
 if __name__ == '__main__':
-    unittest.main(warnings='ignore')
+    pytest.main([__file__])

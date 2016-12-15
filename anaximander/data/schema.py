@@ -4,12 +4,12 @@
 Schema module for specifying data schemas.
 
 This module patches marshmallow schemas to add column semantics, which
-are stored in Fields metadata. These semantics include 'key' and 'serial'.
+are stored in Fields metadata. These semantics include 'key' and 'sequential'.
 Similar to database terminology, key fields serve to identify a record
 uniquely and are used as indexing values. Serial fields define a natural
 order, such that a set of records that otherwise share the same keys can
-be organized into series indexed by a serial field -think of a timestamp as
-the most typical situation.
+be organized into series indexed by a sequential field -think of a timestamp
+as the most typical situation.
 
 Implementation-wise, the module uses monkeypatching on marshmallow schemas.
 Hence the Anaximander Schema class is Marshmallow's Schema class, with
@@ -20,8 +20,8 @@ are as follows:
 Schema class that declares them (this contrasts with Marshmallow's
 implementation where the name attribute only exists for fields that are
 attribute of a Schema instance).
-* Fields have key, serial and description properties, the values for which
-are stored in the metadata attribute of the Field.
+* Fields have key, sequential and description properties, the values for
+which are stored in the metadata attribute of the Field.
 * Schema implements a fields property, which always return an OrderedDict
 whose order follows the declaration sequence of the fields. There is also
 a keys property which returns the subset of fields that are tagged as keys.
@@ -60,7 +60,7 @@ from marshmallow.fields import Field, Raw, Nested, String, UUID, Number, \
 from marshmallow.schema import SchemaMeta
 
 from ..utilities.functions import monkeypatch
-from ..utilities.xprops import cachedproperty, weakproperty
+from ..utilities.xprops import weakproperty
 
 
 # Compatibility check map
@@ -116,6 +116,7 @@ class SchemaOpts(msh.SchemaOpts):
     def __init__(self, meta):
         super().__init__(meta)
         self.strict = True
+        self.ordered = True
         self.record_class_name = getattr(meta, 'record_class_name', None)
 
 
@@ -143,8 +144,8 @@ class _FieldPatch:
         return self.metadata.get('key', False)
 
     @property
-    def serial(self):
-        return self.metadata.get('serial', False)
+    def sequential(self):
+        return self.metadata.get('sequential', False)
 
     @property
     def description(self):

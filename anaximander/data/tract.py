@@ -23,6 +23,7 @@ import sys
 
 import attr
 
+from ._base import DataObject
 from . import schema as sch, record as rec
 
 # =============================================================================
@@ -79,7 +80,7 @@ class Tract:
         sys.modules[schema.__module__].__dict__[name] = self
 
         # Makes and sets the record class
-        self.set_record_class(self._make_record_class())
+        self.set_class(self._make_record_class())
 
     @property
     def name(self):
@@ -130,13 +131,15 @@ class Tract:
         record_class.__bases__ = bases
         return record_class
 
-    def set_record_class(self, record_class):
-        """Sets the record class."""
-        if not issubclass(record_class, rec.Record):
+    def set_class(self, cls):
+        """Sets a DataObject class on self."""
+        if not issubclass(cls, DataObject):
             raise TractDefinitionError()
-        self.Record = record_class
-        record_class.tract = self
-        self.Schema.set_record_class(record_class)
+        archetype = cls.__archetype__
+        setattr(self, archetype.__name__, cls)
+        cls.tract = self
+        if issubclass(cls, rec.Record):
+            self.Schema.set_record_class(cls)
 
 
 def tract(cls=None, *, name=None):

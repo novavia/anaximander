@@ -7,19 +7,20 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-#==============================================================================
-### Imports
-#==============================================================================
+# =============================================================================
+# Imports
+# =============================================================================
 
-import unittest
 from unittest import TestCase
+
+import pytest
 
 from anaximander.registries.folios import Registrable
 from anaximander.meta.nxtype import NxType, nxtype
 
-#==============================================================================
-### Test Cases
-#==============================================================================
+# =============================================================================
+# Test Cases
+# =============================================================================
 
 
 class TestDeclarativeTypeCreation(TestCase):
@@ -60,4 +61,4 @@ class TestProgrammaticTypeCreation(TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(warnings='ignore')
+    pytest.main([__file__])

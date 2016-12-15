@@ -45,21 +45,22 @@ def dataset():
 
 
 class UserSchema(sch.Schema):
-    name = sch.fields.String()
-    email = sch.fields.Email(key=True)
+    email = sch.Email(key=True)
+    name = sch.String()
 
 
 class PurchaseSchema(sch.Schema):
-    user = sch.fields.Nested(UserSchema, key=True)
-    timestamp = sch.fields.DateTime(key=True)
-    item = sch.fields.String(key=True)
+    user = sch.Nested(UserSchema, key=True)
+    timestamp = sch.DateTime(key=True)
+    item = sch.String(key=True)
 
 
 class BasketSchema(sch.Schema):
-    user = sch.fields.Nested(UserSchema, key=True)
-    items = sch.fields.List(sch.fields.String())
+    user = sch.Nested(UserSchema, key=True)
+#    items = sch.List(sch.String())
 
 
+@pytest.mark.skip(reason="BasketSchema uses an illegal List field.")
 def test_bqfield():
     user = gbq.bqfield(PurchaseSchema.user)
     timestamp = gbq.bqfield(PurchaseSchema.timestamp)

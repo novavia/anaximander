@@ -7,19 +7,21 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-#==============================================================================
-### Imports
-#==============================================================================
+# =============================================================================
+# Imports
+# =============================================================================
 
 import operator as opr
-import unittest
 from unittest import TestCase
+
+import pytest
 
 from anaximander.registries import folios
 
-#==============================================================================
-### Registrable Item class
-#==============================================================================
+# =============================================================================
+# Registrable Item class
+# =============================================================================
+
 
 class ItemType(folios.RegistrableType):
     """A metaclass whose instances are registrable."""
@@ -35,20 +37,21 @@ class Item(folios.RegistrableObject, metaclass=ItemType):
     def __repr__(self):
         return 'Item[{}]'.format(self.ix)
 
-#==============================================================================
-### Test Cases
-#==============================================================================
+# =============================================================================
+# Test Cases
+# =============================================================================
 
 
 class TestRegistrable(TestCase):
 
     def test_folios_property(self):
         """Verifies that the folios property works as intended.
-        
+
         In particular, tests the independence of the property between
         a type (Item) and its instances.
         """
-        class SpecializedItem(Item): pass
+        class SpecializedItem(Item):
+            pass
         i = Item()
         si = SpecializedItem()
         i._folios.add(0)
@@ -348,4 +351,4 @@ class TestSchedule(TestCase):
         assert hardcopy_of_copy == {0: i0, 1: i1, 2: i2}
 
 if __name__ == '__main__':
-    unittest.main(warnings='ignore')
+    pytest.main([__file__])

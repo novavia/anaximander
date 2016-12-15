@@ -20,31 +20,31 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-#==============================================================================
-### Import statements
-#==============================================================================
+# =============================================================================
+# Import statements
+# =============================================================================
 
 import itertools
 import types
 
 from .nxmeta import NxMeta, nxmeta
-from ..utilities import xprops
 from ..utilities import functions as fun
 from ..registries.folios import RegistrableType
 
-#==============================================================================
-### NxType declaration
-#==============================================================================
+# =============================================================================
+# NxType declaration
+# =============================================================================
+
 
 class NxType(RegistrableType, metaclass=NxMeta, basename=None):
     """The Anaximander base metaclass.
-    
+
     The basename for NxType is set to None in order to emphasize the
     abstract nature of NxType -i.e. it is not intended to directly
-    produce any type, as this is left to concrete subclasses.    
+    produce any type, as this is left to concrete subclasses.
     """
-    __archetype__ = None #  The archetype upon which the type is built.
-    
+    __archetype__ = None  # The archetype upon which the type is built.
+
     @classmethod
     def __baptize__(mcl, basename=None, *args, **kwargs):
         """Generates a name for a programatically genereated type instance.
@@ -59,7 +59,7 @@ class NxType(RegistrableType, metaclass=NxMeta, basename=None):
         except AttributeError:
             mcl.__name_index__ = itertools.count()
             idx = next(mcl.__name_index__)
-        return basename + '_' + str(idx)        
+        return basename + '_' + str(idx)
 
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
@@ -67,7 +67,7 @@ class NxType(RegistrableType, metaclass=NxMeta, basename=None):
 
 def nxtype(basetype, *traits, name=None, **kwargs):
     """Programatically returns a type over the supplied base type.
-    
+
     :param traits: an iterable of traits to append to the new type.
     :param name: optional string, otherwise metaclass baptizing is used.
     """
@@ -78,7 +78,7 @@ def nxtype(basetype, *traits, name=None, **kwargs):
 
 def archetype(cls):
     """A class decorator that signals an archetype.
-    
+
     Archetype stand out as types in that they are designed to form the root
     of so-called 'clades', or families of classes that all share the basic
     structure. Here is how the relationship between an archetypical class

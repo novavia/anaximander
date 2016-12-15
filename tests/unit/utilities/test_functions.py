@@ -11,8 +11,9 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-import pytest
 from unittest import TestCase
+
+import pytest
 
 from anaximander.utilities import functions as fun
 
