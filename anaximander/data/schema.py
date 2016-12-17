@@ -220,8 +220,13 @@ class _SchemaMetaPatch:
 
     @property
     def keys(cls):
-        """Returns an OrderedDict of key fields in a Schema instance."""
+        """Returns an OrderedDict of key fields in a Schema."""
         return OrderedDict((k, v) for k, v in cls.fields.items() if v.key)
+
+    @property
+    def required(cls):
+        """Returns a dict of required fields in a Schema."""
+        return {k: v for k, v in cls.fields.items() if v.required}
 
     @weakproperty
     def tract(cls):

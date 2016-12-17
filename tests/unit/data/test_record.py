@@ -44,10 +44,7 @@ class TestRecord(ut.TestCase):
             date = attr.ib()
             text = attr.ib(default=None)
 
-            @property
-            def schema(self):
-                """Returns the schema type associated with self."""
-                return Schema
+        Record.schema = Schema
 
         self.schema = Schema()
         self.Record = Record

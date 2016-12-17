@@ -35,7 +35,7 @@ class Record(SchemedDataObject, metaclass=RecordType):
     @classmethod
     def load(cls, data):
         """Loads a record from a serialized data map."""
-        return cls.tract.Schema().load(data).data
+        return cls.schema().load(data).data
 
     def dump(self):
         """Serializes a record."""
