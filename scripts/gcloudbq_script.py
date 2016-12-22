@@ -15,7 +15,7 @@ from contextlib import contextmanager
 
 from gcloud import bigquery as bq
 
-from anaximander.data import schema as sch, gcloudbq as gbq
+from anaximander.data import fields, schema as sch, gcloudbq as gbq
 
 
 PROJECT_ID = 'infinite-uptime-1232'
@@ -45,19 +45,19 @@ def session():
 
 
 class UserSchema(sch.Schema):
-    name = sch.fields.String()
-    email = sch.fields.Email(key=True)
+    name = fields.String()
+    email = fields.Email(key=True)
 
 
 class PurchaseSchema(sch.Schema):
-    user = sch.fields.Nested(UserSchema, key=True)
-    timestamp = sch.fields.DateTime(key=True)
-    item = sch.fields.String(key=True)
+    user = fields.Nested(UserSchema, key=True)
+    timestamp = fields.DateTime(key=True)
+    item = fields.String(key=True)
 
 
 class BasketSchema(sch.Schema):
-    user = sch.fields.Nested(UserSchema, key=True)
-    items = sch.fields.List(sch.fields.String())
+    user = fields.Nested(UserSchema, key=True)
+    items = fields.List(fields.String())
 
 
 def test_bqfield():

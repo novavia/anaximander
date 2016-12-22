@@ -16,7 +16,7 @@ from unittest import TestCase
 
 import pytest
 
-from anaximander.data import tract, record as rec, schema as sch
+from anaximander.data import fields, tract, record as rec, schema as sch
 
 # =============================================================================
 # Test Cases
@@ -27,14 +27,14 @@ from anaximander.data import tract, record as rec, schema as sch
 def schemas():
 
     class UserSchema(sch.Schema):
-        email = sch.Email(key=True)
-        name = sch.String()
+        email = fields.Email(key=True)
+        name = fields.String()
 
     class PurchaseSchema(sch.Schema):
-        user = sch.Nested(UserSchema, key=True)
-        timestamp = sch.DateTime(key=True, sequential=True,
-                                 default=dt.datetime.utcnow)
-        item = sch.String(key=True, default='miscellaneous')
+        user = fields.Nested(UserSchema, key=True)
+        timestamp = fields.DateTime(key=True, sequential=True,
+                                    default=dt.datetime.utcnow)
+        item = fields.String(key=True, default='miscellaneous')
 
     return UserSchema, PurchaseSchema
 
@@ -150,7 +150,7 @@ def test_schema_subclassing(schemas):
 
     @tract.tract
     class PowerUserSchema(UserSchema):
-        power = sch.Bool(default=True)
+        power = fields.Bool(default=True)
     global PowerUser
     user_data = {'name': 'Joe', 'email': 'joe@bar.com', 'power': 'True'}
     user = PowerUser.Record(user_data)

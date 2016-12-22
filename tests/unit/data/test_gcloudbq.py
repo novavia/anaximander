@@ -15,7 +15,7 @@ import pytest
 
 from gcloud import bigquery as bq
 
-from anaximander.data import schema as sch, gcloudbq as gbq
+from anaximander.data import fields, schema as sch, gcloudbq as gbq
 
 
 PROJECT_ID = 'infinite-uptime-1232'
@@ -45,19 +45,19 @@ def dataset():
 
 
 class UserSchema(sch.Schema):
-    email = sch.Email(key=True)
-    name = sch.String()
+    email = fields.Email(key=True)
+    name = fields.String()
 
 
 class PurchaseSchema(sch.Schema):
-    user = sch.Nested(UserSchema, key=True)
-    timestamp = sch.DateTime(key=True)
-    item = sch.String(key=True)
+    user = fields.Nested(UserSchema, key=True)
+    timestamp = fields.DateTime(key=True)
+    item = fields.String(key=True)
 
 
 class BasketSchema(sch.Schema):
-    user = sch.Nested(UserSchema, key=True)
-#    items = sch.List(sch.String())
+    user = fields.Nested(UserSchema, key=True)
+#    items = fields.List(fields.String())
 
 
 @pytest.mark.skip(reason="BasketSchema uses an illegal List field.")

@@ -18,7 +18,7 @@ import attr
 import marshmallow as msh
 import pytest
 
-from anaximander.data import schema as sch, record as rec
+from anaximander.data import fields, schema as sch, record as rec
 
 # =============================================================================
 # Test Cases
@@ -30,9 +30,9 @@ class TestRecord(ut.TestCase):
     def setUp(self):
 
         class Schema(sch.Schema):
-            title = sch.String(key=True)
-            date = sch.Date(key=True)
-            text = sch.String()
+            title = fields.String(key=True)
+            date = fields.Date(key=True)
+            text = fields.String()
 
             @msh.post_load
             def record(self, data):

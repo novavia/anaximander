@@ -11,12 +11,15 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+import abc
 from unittest import TestCase
 
 import pytest
 
 from anaximander.registries.folios import Registrable
-from anaximander.meta.nxtype import NxType, nxtype
+from anaximander.meta.nxmeta import ArcheType
+from anaximander.meta.nxtype import NxType, nxtype, archetype, prototype
+from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
 # Test Cases
@@ -59,6 +62,40 @@ class TestProgrammaticTypeCreation(TestCase):
         self.assertTrue(issubclass(new_type, self.BaseThing))
         self.assertEqual(new_type.__name__, 'Thing_0')
 
+
+@prototype
+class Object(NxObject):
+
+    @abc.abstractproperty
+    def physical(self):
+        return NotImplemented
+
+
+class Hammer(Object):
+
+    @property
+    def physical(self):
+        return True
+
+
+class Noise(Object):
+
+    @property
+    def physical(self):
+        return False
+
+
+def test_prototype():
+    with pytest.raises(TypeError):
+        Object()
+    hammer = Hammer()
+    noise = Noise()
+#    import pdb; pdb.set_trace()
+    assert isinstance(hammer, Object)
+#    assert issubclass(type(Object), ArcheType)
+#    assert issubclass(Object, NxType)
+    assert Hammer.__archetype__ == Object
+    assert Object.__archetype__ == Object
 
 if __name__ == '__main__':
     pytest.main([__file__])

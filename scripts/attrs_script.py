@@ -13,8 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import datetime as dt
 
-from anaximander.data import schema as sch, tract as trc
-from anaximander.utilities import functions as fun
+from anaximander.data import fields, schema as sch, tract as trc
 
 # =============================================================================
 # Schemas
@@ -23,15 +22,15 @@ from anaximander.utilities import functions as fun
 
 @trc.tract
 class UserSchema(sch.Schema):
-    email = sch.Email(key=True)
-    name = sch.String(default='')
+    email = fields.Email(key=True)
+    name = fields.String(default='')
 
 
 @trc.tract
 class PurchaseSchema(sch.Schema):
-    user = sch.Nested(UserSchema, key=True)
-    timestamp = sch.DateTime(key=True)
-    item = sch.String(key=True)
+    user = fields.Nested(UserSchema, key=True)
+    timestamp = fields.DateTime(key=True)
+    item = fields.String(key=True)
 
 
 def now():
@@ -40,7 +39,7 @@ def now():
 
 
 class PingSchema(sch.Schema):
-    timestamp = sch.DateTime(default=dt.datetime.utcnow)
+    timestamp = fields.DateTime(default=dt.datetime.utcnow)
 
 
 #    with pytest.raises(sch.ValidationError):

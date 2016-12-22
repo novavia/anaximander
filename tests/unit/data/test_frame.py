@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 
 import anaximander as nx
-from anaximander.data import frame, schema
+from anaximander.data import fields, frame, schema
 
 
 NXPATH = os.path.dirname(nx.__path__[0])
@@ -80,14 +80,14 @@ def featurelog_superfluous():
 
 
 class FeatureSchema(schema.Schema):
-    device = schema.Str(key=True)
-    timestamp = schema.DateTime(key=True, sequential=True)
-    Feature_Value_0 = schema.Float()
-    Feature_Value_1 = schema.Float()
-    Feature_Value_2 = schema.Float()
-    Feature_Value_3 = schema.Float()
-    Feature_Value_4 = schema.Float()
-    Feature_Value_5 = schema.Float()
+    device = fields.Str(key=True)
+    timestamp = fields.DateTime(key=True, sequential=True)
+    Feature_Value_0 = fields.Float()
+    Feature_Value_1 = fields.Float()
+    Feature_Value_2 = fields.Float()
+    Feature_Value_3 = fields.Float()
+    Feature_Value_4 = fields.Float()
+    Feature_Value_5 = fields.Float()
 
 
 class FeatureFrame(frame.Frame):

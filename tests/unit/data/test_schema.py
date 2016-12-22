@@ -16,7 +16,7 @@ from collections import OrderedDict
 import marshmallow as msh
 import pytest
 
-from anaximander.data import schema as sch
+from anaximander.data import fields, schema as sch
 
 # =============================================================================
 # Test Cases
@@ -26,11 +26,11 @@ from anaximander.data import schema as sch
 def test_field_properties():
 
     class MyBaseSchema(sch.Schema):
-        x = sch.Int(key=True)
+        x = fields.Int(key=True)
 
     class MySchema(MyBaseSchema):
-        y = sch.Bool(key=True)
-        z = sch.DateTime(sequential=True)
+        y = fields.Bool(key=True)
+        z = fields.DateTime(sequential=True)
 
     x, y, z = MySchema.fields.values()
     assert MyBaseSchema.x == MySchema.x == x
@@ -48,7 +48,7 @@ def test_field_properties():
 def test_reserved_names():
     with pytest.raises(sch.SchemaError):
         class MySchema(sch.Schema):
-            extra = sch.Int()
+            extra = fields.Int()
 
 
 def test_field_type():
@@ -61,14 +61,14 @@ def test_field_missing():
     """Tests that specifying missing raises an error."""
     with pytest.raises(sch.SchemaError):
         class MySchema(sch.Schema):
-            x = sch.Int(missing=0)
+            x = fields.Int(missing=0)
 
 
 def test_field_sequence():
     with pytest.raises(sch.SchemaError):
         class MySchema(sch.Schema):
-            name = sch.Str()
-            key = sch.Str(key=True)
+            name = fields.Str()
+            key = fields.Str(key=True)
 
 
 if __name__ == '__main__':

@@ -20,12 +20,12 @@ from ..utilities.xprops import weakproperty
 # =============================================================================
 
 
-class DataType(abc.ABCMeta):
+class DataObjectType(abc.ABCMeta):
     """Metaclass for DataObject classes."""
     pass
 
 
-class SchemedDataType(DataType):
+class SchemedDataType(DataObjectType):
     """Metaclass for DataObject classes that implement schemas.
 
     These include Record, Frame and their derivatives.
@@ -94,7 +94,7 @@ class SchemedDataType(DataType):
 # =============================================================================
 
 
-class DataObject(abc.ABC, metaclass=DataType):
+class DataObject(abc.ABC, metaclass=DataObjectType):
     """Base class for all DataObjects."""
 
     @abc.abstractproperty

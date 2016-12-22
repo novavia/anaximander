@@ -6,7 +6,7 @@ Schema module for specifying data schemas.
 This module patches marshmallow schemas to add column semantics, which
 are stored in Fields metadata. These semantics include 'key' and 'sequential'.
 Similar to database terminology, key fields serve to identify a record
-uniquely and are used as indexing values. Serial fields define a natural
+uniquely and are used as indexing values. Sequential fields define a natural
 order, such that a set of records that otherwise share the same keys can
 be organized into series indexed by a sequential field -think of a timestamp
 as the most typical situation.
@@ -19,7 +19,7 @@ are as follows:
 * Fields have a name property, which is set even in the context of the
 Schema class that declares them (this contrasts with Marshmallow's
 implementation where the name attribute only exists for fields that are
-attribute of a Schema instance).
+attribute of a Schema *instance*).
 * Fields have key, sequential and description properties, the values for
 which are stored in the metadata attribute of the Field.
 * Schema implements a fields property, which always return an OrderedDict
@@ -52,49 +52,15 @@ Copyright (C) Novavia Solutions, LLC.
 
 from collections import OrderedDict
 
-import attr
 import marshmallow as msh
-from marshmallow.fields import Field, Raw, Nested, String, UUID, Number, \
-    Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
-    LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Str, Bool, Int
 from marshmallow.schema import SchemaMeta
 
 from ..utilities.functions import monkeypatch
 from ..utilities.xprops import weakproperty
-
-
-# Compatibility check map
-_field_check = {'Field': True,
-                'Raw': True,
-                'Nested': True,
-                'Dict': False,
-                'List': False,
-                'String': True,
-                'UUID': True,
-                'Number': True,
-                'Integer': True,
-                'Decimal': True,
-                'Boolean': True,
-                'FormattedString': True,
-                'Float': True,
-                'DateTime': True,
-                'LocalDateTime': True,
-                'Time': True,
-                'Date': True,
-                'TimeDelta': True,
-                'Url': True,
-                'URL': True,
-                'Email': True,
-                'Method': False,
-                'Function': False,
-                'Str': True,
-                'Bool': True,
-                'Int': True,
-                'Constant': False,
-                }
+from . import fields
 
 # =============================================================================
-# Marshmallow patching
+# Schema patching
 # =============================================================================
 
 
@@ -124,46 +90,6 @@ class Schema(msh.Schema):
     OPTIONS_CLASS = SchemaOpts
 
 
-class _FieldPatch:
-    """Patch of attributes and methods for Field."""
-    _name = None  # replaces name in the original implementation.
-
-    @property
-    def name(self):
-        if self.parent is None:
-            return self.metadata.get('name', None)
-        else:
-            return self._name
-
-    @name.setter
-    def name(self, value):
-        self._name = value
-
-    @property
-    def key(self):
-        return self.metadata.get('key', False)
-
-    @property
-    def sequential(self):
-        return self.metadata.get('sequential', False)
-
-    @property
-    def description(self):
-        return self.metadata.get('description', None)
-
-    def _attribute_default(self):
-        """Extracts the default attribute instantiation value from a field."""
-        default = self.default
-        if default is msh.missing:
-            return None
-        elif callable(default):
-            return attr.Factory(default)
-        else:
-            return default
-
-monkeypatch(Field, _FieldPatch)
-
-
 class _SchemaMetaPatch:
     """Patch of attributes and methods for SchemaMeta."""
 
@@ -178,7 +104,7 @@ class _SchemaMetaPatch:
                     "schema field names."
                 raise SchemaError(msg.format(k))
             v.metadata['name'] = k
-            if not _field_check.get(type(v).__name__):
+            if not fields.supported(type(v)):
                 msg = "Field type {0} for {1} is not supported."
                 raise SchemaError(msg.format(type(v).__name__, k))
             if v.missing is not msh.missing:
@@ -215,7 +141,7 @@ class _SchemaMetaPatch:
     @property
     def own_fields(cls):
         """Returns non-inherited fields."""
-        inherited = msh.schema._get_fields_by_mro(cls, Field, True)
+        inherited = msh.schema._get_fields_by_mro(cls, fields.Field, True)
         return OrderedDict(f for f in cls.fields.items() if f not in inherited)
 
     @property
