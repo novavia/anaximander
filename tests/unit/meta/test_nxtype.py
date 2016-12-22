@@ -18,7 +18,7 @@ import pytest
 
 from anaximander.registries.folios import Registrable
 from anaximander.meta.nxmeta import ArcheType
-from anaximander.meta.nxtype import NxType, nxtype, archetype, prototype
+from anaximander.meta.nxtype import NxType, nxtype, prototype
 from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
@@ -85,17 +85,33 @@ class Noise(Object):
         return False
 
 
-def test_prototype():
-    with pytest.raises(TypeError):
-        Object()
-    hammer = Hammer()
-    noise = Noise()
-#    import pdb; pdb.set_trace()
-    assert isinstance(hammer, Object)
-#    assert issubclass(type(Object), ArcheType)
-#    assert issubclass(Object, NxType)
+def test_archetype_inheritance():
+    assert issubclass(Hammer, Object)
+    assert issubclass(Noise, Object)
+    assert isinstance(Object, ArcheType)
+    assert isinstance(Object, NxType)
+    assert not isinstance(Hammer, type(Object))
+    assert type(Hammer) is not type(NxObject)
+    assert type(Object).__name__ == 'ObjectArcheType'
+    assert type(Hammer).__name__ == 'ObjectType'
+    assert isinstance(Object, type(Hammer))
     assert Hammer.__archetype__ == Object
     assert Object.__archetype__ == Object
+
+
+def test_prototype_instantiation():
+    with pytest.raises(TypeError):
+        Object()
+
+
+def test_foretype_instantiation():
+    hammer = Hammer()
+    noise = Noise()
+    assert isinstance(hammer, Object)
+    assert isinstance(noise, Object)
+    assert hammer.physical is True
+    assert noise.physical is False
+
 
 if __name__ == '__main__':
     pytest.main([__file__])

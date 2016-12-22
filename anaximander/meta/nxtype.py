@@ -78,7 +78,7 @@ class MetaDescriptor(abc.ABC):
             raise TypeError(msg)
 
 
-class NxType(RegistrableType, metaclass=NxMeta, basename=''):
+class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
     """The Anaximander base metaclass.
 
     The basename for NxType is set to None in order to emphasize the
@@ -111,9 +111,11 @@ class NxType(RegistrableType, metaclass=NxMeta, basename=''):
                 metadescriptors[k] = v
                 del namespace[k]
         namespace['__metadescriptors__'] = metadescriptors
-        return type.__new__(mcl, name, bases, namespace)
+        # Note: this is ABCMeta.__new__
+        return super().__new__(mcl, name, bases, namespace)
 
     def __init__(cls, name, bases, namespace, traits=None, **kwargs):
+        # Note: this is RegistrableType.__new__
         super().__init__(name, bases, namespace)
         # Bind the metadescriptors to the type that declared them.
         for name, md in cls.__metadescriptors__.items():

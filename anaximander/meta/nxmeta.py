@@ -11,7 +11,6 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
-from abc import ABC, ABCMeta
 import itertools
 
 # =============================================================================
@@ -20,7 +19,7 @@ import itertools
 
 
 # TODO: add TypeRegistry
-class NxMeta(ABCMeta):
+class NxMeta(type):
     """A custom type for Anaximander metaclasses.
 
     Gotcha: the instances of this class are... metaclasses! This is pushing
@@ -42,7 +41,7 @@ class NxMeta(ABCMeta):
 
     def __new__(met, name, bases, namespace,
                 basename=None, metadescriptors=None):
-        return type.__new__(met, name, bases, namespace)
+        return super().__new__(met, name, bases, namespace)
 
     def __init__(mcl, name, bases, namespace,
                  basename=None, metadescriptors=None):
@@ -90,7 +89,7 @@ class ArchMeta(NxMeta):
     """
 
     def __new__(met, name, bases, namespace):
-        return type.__new__(met, name, bases, namespace)
+        return super().__new__(met, name, bases, namespace)
 
     def __init__(mcl, name, bases, namespace):
         # Holds an archetype, the only instance of any ArcheType subclass.
@@ -148,8 +147,8 @@ class ArcheType(metaclass=ArchMeta):
             # instance is created.
             name = mcl.__basetype__.__name__
             bases = (mcl.__basetype__,)
-            archetype = type.__new__(mcl, name, bases, {})
-    #        archetype.__module__ = mcl.__basetype__.__module__
+            archetype = super().__new__(mcl, name, bases, {})
+            archetype.__module__ = mcl.__basetype__.__module__
             mcl.__archetype__ = archetype
             return mcl.__archetype__
         else:
@@ -158,18 +157,15 @@ class ArcheType(metaclass=ArchMeta):
                 raise TypeError(msg)
             basetype = mcl.__basetype__
             cls = mcl.__metatype__(name, (basetype,), namespace, **kwargs)
-            mcl.__archetype__.register(cls)
+            mcl.__archetype__.nxregister(cls)
             return cls
 
     def __init__(archetype, name, bases, namespace):
         archetype.__archetype__ = archetype
 
     # TODO: also register cls in the type registry
-    def register(archetype, cls):
-        # Hacking abc registration but not fully understanding it.
-        archetype._abc_registry.add(cls)
-        archetype._abc_cache.add(cls)
-        ABCMeta._abc_invalidation_counter += 1  # Invalidate negative cache
+    def nxregister(archetype, cls):
+        archetype.register(cls)  # registration per abc module.
         cls.__archetype__ = archetype
         return cls
 

@@ -13,7 +13,8 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 
-from anaximander.meta.nxtype import prototype
+from anaximander.meta.nxmeta import ArcheType
+from anaximander.meta.nxtype import NxType, prototype
 from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
@@ -47,3 +48,5 @@ if __name__ == '__main__':
     hammer = Hammer()
 #    import pdb; pdb.set_trace()
     assert isinstance(hammer, Object)
+    assert issubclass(type(Object), ArcheType)
+    assert issubclass(Object, NxType)

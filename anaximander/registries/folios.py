@@ -72,7 +72,7 @@ __all__ = ['NxFolder', 'NxVolume',
 # =============================================================================
 
 
-class Registrable(abc.ABC):
+class Registrable:
     """An abstract base class for registrable entities.
 
     The only feature is the presence of a _folios property that holds a set.
@@ -81,7 +81,7 @@ class Registrable(abc.ABC):
     the underlying set in differently named attributes.
     """
 
-    @abc.abstractproperty
+    @property
     def _folios(self):
         pass
 
@@ -96,7 +96,7 @@ class RegistrableObject(Registrable):
         return self._object_folios
 
 
-class RegistrableType(abc.ABCMeta, Registrable):
+class RegistrableType(type, Registrable):
     """Base class for registrable types.
 
     In the case of types, initialization is necessary in order to
