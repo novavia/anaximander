@@ -46,6 +46,7 @@ class NxMeta(type):
     instances that get called by the __init__ method and may modify the
     namespace of the NxMeta instance accordingly.
     """
+    __archetype__ = None  # Ensures the attribute exists on all metaclasses.
 
     def __new__(met, name, bases, namespace,
                 basename=None, metadescriptors=None):
@@ -173,16 +174,18 @@ class ArcheType(metaclass=ArchMeta):
             bases = (mcl.__basetype__,)
             archetype = super().__new__(mcl, name, bases, {})
             archetype.__module__ = mcl.__basetype__.__module__
+            # Set the archetype on mcl and __metatype__
+            # This is a bit overkill since mcl inherits from __metatype__
+            # but it is also safer.
+            mcl.__metatype__.__archetype__ = archetype
             mcl.__archetype__ = archetype
-            return mcl.__archetype__
+            return archetype
         else:
             if not bases == (mcl.__archetype__,):
                 msg = "Incorrect use of an ArcheType subclass."
                 raise MetaError(msg)
             basetype = mcl.__basetype__
-            overtype = kwargs.pop('overtype', None)
             cls = mcl.__metatype__(name, (basetype,), namespace, **kwargs)
-            mcl.__archetype__.nxregister(cls, overtype)
             return cls
 
     def __init__(archetype, name, bases, namespace):

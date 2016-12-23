@@ -69,15 +69,24 @@ class Object(NxObject):
     physical = mtd.TypeAttribute(validate=lambda v: isinstance(v, bool))
 
 
-class Hammer(Object, key='hammer', physical=True):
+class BaseHammer(Object, key='hammer', physical=True):
     pass
 
 
 # Note: this tests conflict between the namespace and kwargs. The
 # namespace should prevail.
-class Noise(Object, physical=True):
+class BaseNoise(Object, physical=True):
     key = 'noise'
     physical = False
+
+
+# This tests that a foretype is properly overriden in Object's cladogram
+class Hammer(BaseHammer):
+    pass
+
+
+class Noise(Object['noise']):
+    pass
 
 
 Random = nxtype(Object, 'Random', key='random')

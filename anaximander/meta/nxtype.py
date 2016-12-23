@@ -88,6 +88,12 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
     def __init__(cls, name, bases, namespace, traits=None, **kwargs):
         # Note: this is RegistrableType.__new__
         super().__init__(name, bases, namespace)
+        # If the metaclass has an __archetype__, then it attempts to
+        # register the class with that archetype.
+        archetype = type(cls).__archetype__
+        if archetype is not None:
+            overtype = kwargs.pop('overtype', None)
+            archetype.nxregister(cls, overtype)
         # Bind the metadescriptors to the type that declared them.
         for name, md in cls.__metadescriptors__.items():
             md.cls = cls
