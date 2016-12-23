@@ -30,7 +30,7 @@ from inspect import getmodule
 import sys
 import types
 
-from .metadescriptors import MetaDescriptor
+from .metadescriptors import MetaDescriptor, TypeAttribute
 from .nxmeta import NxMeta, archmeta, protometa
 from ..utilities import functions as fun
 from ..registries.folios import RegistrableType
@@ -63,28 +63,25 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
         idx = next(mcl.__counter__)
         return mcl.__basename__ + '_' + str(idx)
 
+    # Note: this is superfluous in py3.6+
     @classmethod
     def __prepare__(mcl, name, bases, **kwargs):
-        namespace = OrderedDict()
-        for k, v in mcl.__typeattributes__.items():
-            try:
-                value = kwargs[k]
-            except KeyError:
-                pass
-            else:
-                v.assign(namespace, value)
-        return namespace
+        return OrderedDict()
 
     def __new__(mcl, name, bases, namespace, traits=None, **kwargs):
         """Collects metadescriptors and creates new NxType."""
         if not len(bases) == 1:
             raise TypeError("Anaximander types admit exactly one base class.")
         metadescriptors = OrderedDict()
-        for k, v in namespace.items():
+        for k, v in OrderedDict(namespace).items():
             if isinstance(v, MetaDescriptor):
                 metadescriptors[k] = v
                 del namespace[k]
         namespace['__metadescriptors__'] = metadescriptors
+        # Assigns type attributes, which may be declared in either the
+        # namespace itself or the kwargs. If there is a conflict, the
+        # namespace declarations take precedence.
+        TypeAttribute.update(mcl, namespace, **kwargs)
         # Note: this is ABCMeta.__new__
         return super().__new__(mcl, name, bases, namespace)
 

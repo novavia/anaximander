@@ -12,6 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
+from collections import ChainMap
 
 from anaximander.utilities import xprops
 
@@ -114,6 +115,36 @@ class TypeAttribute(MetaDescriptor):
         else:
             class_or_namespace[attr] = value
 
+    @classmethod
+    def update(cls, mcl, namespace, **kwargs):
+        """Bulk assign to namespace from kwargs.
+
+        attrs:
+            mcl: a metaclass holding a __typeattributes__ dictionary.
+            namespace: a dict-like object to be supplied to a new type.
+            kwargs: a mapping containing type attribute assignments.
+
+        raises:
+            ValidationError: if at least one assignment fails per assign.
+
+        If namespace contains typeattribute keywords, these take
+        precedence over kwargs. This ensures that declarations made in
+        a type have priority over kwargs passed to the metaclass at class
+        instantiation. This order of priority is consistent with inheritance
+        rules, i.e. descriptors in a class declaration overwrite those found
+        in the class' bases that are passed to its metaclass.
+        The method also cleans up the class_or_namespace of such declarations,
+        so that the type property won't get overwritten.
+        """
+        chainmap = ChainMap(namespace, kwargs)
+        for k, v in mcl.__typeattributes__.items():
+            try:
+                value = chainmap.pop(k, chainmap[k])
+            except KeyError:
+                pass
+            else:
+                v.assign(namespace, value)
+
 
 class MetaCharacter(TypeAttribute):
     """A TypeAttribute that defines a member of a clade.
@@ -121,6 +152,21 @@ class MetaCharacter(TypeAttribute):
     Archetypes and prototypes declare metacharacters, which are used to
     register and uniquely identify types within their clade.
     """
+
+    def __init__(self, validate=None):
+        """Instantiates a MetaCharacter.
+
+        params:
+            validate (func): a validation function that will run on
+                values supplied to new types for the type attribute.
+                Should simply return True upon success.
+
+        MetaCharacters always have a default value of None, which is the
+        value that they receive in the archetype that defines them.
+        In derived types, the None value is illegal. Not passing a non-None
+        value will cause type instantiation to fail.
+        """
+        super().__init__(validate=validate)
 
     def __call__(self, mcl):
         super().__call__(mcl)

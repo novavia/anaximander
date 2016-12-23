@@ -22,6 +22,11 @@ from ..registries import registries as nrg
 # =============================================================================
 
 
+class MetaError(Exception):
+    """A specialized exception for metatyping errors."""
+    pass
+
+
 class NxMeta(type):
     """A custom type for Anaximander metaclasses.
 
@@ -108,7 +113,7 @@ class ArchMeta(NxMeta):
             if name in ('ArcheType', 'ProtoType'):
                 return
             msg = "Improper ArchMeta declaration."
-            raise TypeError(msg)
+            raise MetaError(msg)
 
 
 # TODO: could make archetype / prototype smarter by allowing metacharacters
@@ -160,7 +165,7 @@ class ArcheType(metaclass=ArchMeta):
         """Emulates NxType.__new__ as the argumenst are redirected."""
         if mcl in (ArcheType, ProtoType):
             msg = "Cannot instantiate abstract classes ArcheType / ProtoType."
-            raise TypeError(msg)
+            raise MetaError(msg)
         if mcl.__archetype__ is None:
             # In this case all arguments are ignored and the __archetype__
             # instance is created.
@@ -173,7 +178,7 @@ class ArcheType(metaclass=ArchMeta):
         else:
             if not bases == (mcl.__archetype__,):
                 msg = "Incorrect use of an ArcheType subclass."
-                raise TypeError(msg)
+                raise MetaError(msg)
             basetype = mcl.__basetype__
             overtype = kwargs.pop('overtype', None)
             cls = mcl.__metatype__(name, (basetype,), namespace, **kwargs)
@@ -188,11 +193,26 @@ class ArcheType(metaclass=ArchMeta):
         archetype.cladogram.register(archetype)
 
     def nxregister(archetype, cls, overtype=None):
-        archetype.register(cls)  # registration per abc module.
-        cls.__archetype__ = archetype
+        if any(v is None for v in cls.metacharacters):
+            msg = "Derived types of an archetype must declare non-None " + \
+                "values for all metacharacters."
+            raise MetaError(msg)
         archetype.cladogram.register(cls, *cls.metacharacters,
                                      overtype=overtype)
+        archetype.register(cls)  # registration per abc module.
+        cls.__archetype__ = archetype
         return cls
+
+    def __getitem__(archetype, key):
+        """A convenience function to pull types from the cladogram."""
+        if isinstance(key, tuple):
+            return archetype.cladogram.get(*key)
+        return archetype.cladogram.get(key)
+
+    @property
+    def foretypes(archetype):
+        """Returns an iterable of registered clade types."""
+        return archetype.cladogram.root.titles(root=False)
 
 
 def protonew(cls, *args, **kwargs):
