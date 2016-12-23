@@ -33,7 +33,7 @@ class Item(fol.RegistrableObject):
 
 
 class ComplexRegistry(nrg.NxRegistry):
-    """A registry with mixed laypeyers for testing purposes."""
+    """A registry with mixed layers for testing purposes."""
     __root__ = fol.NxFolder
     __layers__ = [('volume', fol.NxVolume),
                   ('schedule', fol.NxSchedule)]
@@ -56,15 +56,15 @@ class TestComplexRegistry(TestCase):
         registry = ComplexRegistry()
         i0, i1, i2, i3, i4 = (Item(i) for i in range(5))
         registry.register(i0, 'a', 1, 0)
-        assert i0 in list(registry['a'][1].read())
+        assert i0 in list(registry.root['a'][1].read())
         registry.register(i1, volume='a', schedule=1, key=1)
-        assert len(registry['a'][1]) == 2
+        assert len(registry.root['a'][1]) == 2
         with self.assertRaises(ValueError):  # Improper use of args / kwargs
             registry.register(i2, 'a', 2, key=2)
         registry.register(i2, 'a', 2, 2)
-        assert i2._folios == {registry['a'][2]}
+        assert i2._folios == {registry.root['a'][2]}
         registry.register(i3, 'a')
-        assert registry['a'].title == i3
+        assert registry['a'] == i3
         with self.assertRaises(KeyError):
             registry.register(i4, 'a', 1)  # Missing key.
         with self.assertRaises(KeyError):
@@ -72,11 +72,11 @@ class TestComplexRegistry(TestCase):
         with self.assertRaises(KeyError):
             registry.register(i3, vol='a', schedule=1, key=3)  # Wrong names.
         assert not registry.unregister(i0)
-        assert len(registry['a'][1]) == 2
+        assert len(registry.root['a'][1]) == 2
         assert registry.unregister(i0, 'a', 1, 0)
-        assert len(registry['a'][1]) == 1
+        assert len(registry.root['a'][1]) == 1
         assert registry.unregister(i2, 'a', 2, 2)
-        assert len(registry['a']) == 1
+        assert len(registry.root['a']) == 1
         assert not i0._folios
         assert not i2._folios
 
@@ -85,7 +85,7 @@ class TestComplexRegistry(TestCase):
         i0 = Item(0)
         registry.register(i0, 'a', 1, 0)
         copy = registry.copy()
-        assert i0 in list(copy['a'][1].read())
+        assert i0 in list(copy.root['a'][1].read())
         assert len(i0._folios) == 2
         del registry
         assert len(i0._folios) == 1
@@ -101,7 +101,7 @@ class TestComplexRegistry(TestCase):
         assert set(registry.branches('b')) == {('b', 2)}
         b0 = registry.branch('a')
         b1 = registry.branch(volume='a', schedule=1)
-        assert b0['a'][1].hardcopy() == {0: i0, 1: i1}
+        assert b0.root['a'][1].hardcopy() == {0: i0, 1: i1}
         assert len(i0._folios) == 1
         assert b0.root.height == 2
         assert b0.root.subcount == 3
@@ -113,7 +113,7 @@ class TestComplexRegistry(TestCase):
         s3 = registry.subset()
         s4 = registry.subset('x')
         assert s0.root.subcount == 3
-        assert len(s1['a']) == 1
+        assert len(s1.root['a']) == 1
         assert s2.hardcopy() == {'a': {2: {2: i2}},
                                  'b': {2: {0: i3}}}
         assert s3.root.subcount == 5
@@ -151,13 +151,13 @@ class TestRecursiveRegistry(TestCase):
         registry = RecursiveRegistry()
         i0, i1, i2 = (Item(i) for i in range(3))
         registry.register(i0, 'a', 'b')
-        assert registry['a']['b'].title == i0
+        assert registry.root['a']['b'].title == i0
         registry.register(i1, 'a', 'c')
-        assert registry['a']['c'].title == i1
+        assert registry.root['a']['c'].title == i1
         registry.register(i2, 'a', 'b')
-        assert registry['a']['b'].title == i2
+        assert registry.root['a']['b'].title == i2
         assert not i0._folios
-        assert i2._folios == {registry['a']['b']}
+        assert i2._folios == {registry.root['a']['b']}
         assert set(registry.branches('a', 'c')) == {('a', 'c')}
         assert registry.unregister(i1, 'a', 'c')
         assert registry.root.height == 2
@@ -178,25 +178,39 @@ class TestRecursiveRegistry(TestCase):
 
     def test_getters(self):
         registry = RecursiveRegistry()
-        i0, i1, i2 = (Item(i) for i in range(3))
+        i0, i1, i2, i3, i4 = (Item(i) for i in range(5))
         registry.register(i0, 'a', 'b')
         registry.register(i1, 'a', 'c')
         registry.register(i2, 'b', 'a')
+        registry.register(i3, 'b', 'c')
+        registry.register(i4, 'b', 'd')
         assert set(registry.values()) == set()
-        assert set(registry.titles()) == {i0, i1, i2}
+        assert set(registry.titles()) == {i0, i1, i2, i3, i4}
         assert set(registry.titles('a')) == {i0, i1}
         assert set(registry.titles('a', 'b')) == {i0}
-        assert set(registry.browse('b')) == {i0, i2}
-        with self.assertRaises(ValueError):
-            registry.get('a')
+        assert set(registry.browse('b')) == {i0, i2, i3, i4}
+        assert registry.get('a') is None
         assert registry.get('a', 'b') == i0
         with self.assertRaises(KeyError):
             registry.get('c')
         with self.assertRaises(ValueError):
-            registry.fetch('b')
-        assert registry.fetch('c') == i1
+            registry.fetch('c')
+        assert registry.fetch('b') is None
+        assert registry.fetch('d') == i4
         with self.assertRaises(KeyError):
-            registry.fetch('d')
+            registry.fetch('e')
+
+
+def test_hierarchy():
+    hierarchy = nrg.Hierarchy('l1', 'l2')
+    i0, i1, i2 = (Item(i) for i in range(3))
+    hierarchy.register(i0, 'a')
+    hierarchy.register(i1, 'a', 'x')
+    hierarchy.register(i2, 'b')
+    assert hierarchy.get(l1='a', l2='x') is i1
+    assert hierarchy.fetch('a') == i0
+    assert hierarchy['a', 'x'] == i1
+
 
 if __name__ == '__main__':
     pytest.main([__file__])

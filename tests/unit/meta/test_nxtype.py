@@ -17,8 +17,9 @@ from unittest import TestCase
 import pytest
 
 from anaximander.registries.folios import Registrable
+from anaximander.meta.metadescriptors import TypeAttribute, ValidationError
 from anaximander.meta.nxmeta import ArcheType
-from anaximander.meta.nxtype import NxType, nxtype, prototype
+from anaximander.meta.nxtype import NxType, nxtype, prototype, clade
 from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
@@ -66,23 +67,15 @@ class TestProgrammaticTypeCreation(TestCase):
 @prototype
 class Object(NxObject):
 
-    @abc.abstractproperty
-    def physical(self):
-        return NotImplemented
+    physical = TypeAttribute(validate=lambda v: isinstance(v, bool))
 
 
-class Hammer(Object):
-
-    @property
-    def physical(self):
-        return True
+class Hammer(Object, physical=True):
+    pass
 
 
-class Noise(Object):
-
-    @property
-    def physical(self):
-        return False
+class Noise(Object, physical=False):
+    pass
 
 
 def test_archetype_inheritance():
@@ -95,8 +88,11 @@ def test_archetype_inheritance():
     assert type(Object).__name__ == 'ObjectArcheType'
     assert type(Hammer).__name__ == 'ObjectType'
     assert isinstance(Object, type(Hammer))
-    assert Hammer.__archetype__ == Object
-    assert Object.__archetype__ == Object
+    assert Hammer.__archetype__ is Object
+    assert Object.__archetype__ is Object
+    assert type(Object).__metatype__ == type(Hammer)
+    assert clade(Hammer) is Object
+    assert clade(Noise) is Object
 
 
 def test_prototype_instantiation():
@@ -104,13 +100,32 @@ def test_prototype_instantiation():
         Object()
 
 
+def test_typeattribute():
+    hammer = Hammer()
+    noise = Noise()
+    assert 'physical' in type(Object).__typeattributes__
+    assert isinstance(type(Object).physical, property)
+    assert Hammer.physical is True
+    assert Noise.physical is False
+    assert hammer.physical is True
+    assert noise.physical is False
+    assert Hammer.typeattributes == (True,)
+    assert Noise.typeattributes == (False,)
+    with pytest.raises(AttributeError):
+        Hammer.physical = False
+    with pytest.raises(AttributeError):
+        hammer.physical = False
+    with pytest.raises(ValidationError):
+        nxtype(Object, physical="don't know")
+
+
 def test_foretype_instantiation():
     hammer = Hammer()
     noise = Noise()
     assert isinstance(hammer, Object)
     assert isinstance(noise, Object)
-    assert hammer.physical is True
-    assert noise.physical is False
+    assert clade(hammer) is Object
+    assert clade(noise) is Object
 
 
 if __name__ == '__main__':

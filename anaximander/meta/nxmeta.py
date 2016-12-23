@@ -11,14 +11,17 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
+from collections import OrderedDict
 import itertools
+
+from ..utilities import functions as fun
+from ..registries import registries as nrg
 
 # =============================================================================
 # NxMeta metaclass type
 # =============================================================================
 
 
-# TODO: add TypeRegistry
 class NxMeta(type):
     """A custom type for Anaximander metaclasses.
 
@@ -48,6 +51,8 @@ class NxMeta(type):
         """Initializes a new metaclass."""
         if basename is not None:
             mcl.__basename__ = basename
+        mcl.__typeattributes__ = OrderedDict()
+        mcl.__metacharacters__ = OrderedDict()
         if metadescriptors is not None:
             for md in metadescriptors:
                 md(mcl)  # Binds the metadescriptor to the metaclass
@@ -133,9 +138,23 @@ class ArcheType(metaclass=ArchMeta):
     called when we subclass the archetype. For that reason, the __new__
     method is constructed to redirect class creation to a functional
     metaclass once the singleton archetype has been created.
+
+    Archetypes declare one or more metacharacters whose values differentiate
+    the derived types of the archetype. Derived types are registered in a
+    Cladogram, with a key that is a tuple of its metacharacter values.
+    By default, overtyping is allowed. Hence if an existing derived type
+    of an archetype is further subclassed with the same metacharacters, it
+    will take precedence over the previous version and replace it in the
+    Cladogram. This setting can be modified in one of two ways:
+    * The archetype itself can declare __overtype__ = False, in which case
+    overtyping is generally forbidden for the corresponding clade.
+    * Otherwise, new types can be declared with the keyword argument overtype,
+    in which case whatever value is passed (True or False) will override the
+    clade's default behavior.
     """
     __basetype__ = None
     __metatype__ = None
+    __overtype__ = True  # Default setting, can be overriden in declarations.
 
     def __new__(mcl, name, bases, namespace, **kwargs):
         """Emulates NxType.__new__ as the argumenst are redirected."""
@@ -156,17 +175,23 @@ class ArcheType(metaclass=ArchMeta):
                 msg = "Incorrect use of an ArcheType subclass."
                 raise TypeError(msg)
             basetype = mcl.__basetype__
+            overtype = kwargs.pop('overtype', None)
             cls = mcl.__metatype__(name, (basetype,), namespace, **kwargs)
-            mcl.__archetype__.nxregister(cls)
+            mcl.__archetype__.nxregister(cls, overtype)
             return cls
 
     def __init__(archetype, name, bases, namespace):
         archetype.__archetype__ = archetype
+        metacharacters = archetype.__metacharacters__
+        overtype = archetype.__overtype__
+        archetype.cladogram = Cladogram(*metacharacters, overtype=overtype)
+        archetype.cladogram.register(archetype)
 
-    # TODO: also register cls in the type registry
-    def nxregister(archetype, cls):
+    def nxregister(archetype, cls, overtype=None):
         archetype.register(cls)  # registration per abc module.
         cls.__archetype__ = archetype
+        archetype.cladogram.register(cls, *cls.metacharacters,
+                                     overtype=overtype)
         return cls
 
 
@@ -202,3 +227,39 @@ def archmeta(basetype, prototype=False):
 def protometa(basetype):
     """A ProtoMeta factory function."""
     return archmeta(basetype, True)
+
+# =============================================================================
+# Type registry for clades
+# =============================================================================
+
+
+class Cladogram(nrg.Hierarchy):
+    """A specialized Hierarchy to register types in a clade."""
+
+    def __init__(self, *layer_names, overtype=True):
+        """Augments super with the overtype parameter.
+
+        if overtype is True, then types that are registered with a key
+        that is already in the cladogram overwrite the existing type.
+        Otherwise a RegistrationError is raised.
+        """
+        super().__init__(*layer_names)
+        self.overtype = overtype
+
+    def register(self, obj, *args, overtype=None, **kwargs):
+        """Adds the overtype parameter to determine whether to overwrite.
+
+        Optional overtype parameter overrides self's default setting.
+        """
+        overtype = fun.get(overtype, self.overtype)
+        if overtype is False:
+            try:
+                cls = self.get(*args, **kwargs)
+            except KeyError:
+                pass
+            else:
+                if isinstance(cls, type):
+                    msg = "{0} is already registered with the same " + \
+                        "metacharacters as {1}"
+                    raise nrg.RegistrationError(msg.format(cls, obj))
+        super().register(obj, *args, **kwargs)

@@ -25,57 +25,19 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
+from collections import OrderedDict
 from inspect import getmodule
 import sys
 import types
 
+from .metadescriptors import MetaDescriptor
 from .nxmeta import NxMeta, archmeta, protometa
 from ..utilities import functions as fun
-from ..utilities import xprops
 from ..registries.folios import RegistrableType
 
 # =============================================================================
 # NxType declaration
 # =============================================================================
-
-
-class MetaDescriptor(abc.ABC):
-    """Base class for metadescriptors.
-
-    Metadescriptors are intended to be inserted in type declarations
-    to modify behavior for derived types. Their scope is types rather than
-    objects, and thus they are declarative devices that get processed to
-    become descriptors in a metaclass, hence the name metadescriptor.
-    The NxType base metaclass systematically collects metadescriptors found
-    in type declarations, strips them from the type's namespace, and park
-    them into a __metadescriptors__ dictionary. For regular types this
-    accomplishes nothing, but if a type is decorated with @archetype or
-    @prototype, then the __metadescriptors__ dictionary is interpreted in
-    order to create a new metaclass that implements the behaviors programmed
-    in the metadescriptors.
-    Metadescriptor behavior is bound to a metaclass in two stages. In the
-    first stage, NxType passes the declaring type to each metadescriptor.
-    In the second stage, the __call__ method of the metadescriptor instance
-    is called and supplied a metaclass whose dictionary gets modified as
-    a result.
-    """
-
-    @xprops.singlesetproperty
-    def cls(self):
-        """The declaring class, set by NxType."""
-        return None
-
-    @xprops.singlesetproperty
-    def name(self):
-        """The declared name, set by NxType."""
-        return None
-
-    @abc.abstractmethod
-    def __call__(self, mcl):
-        """Adds targeted behavior to the supplied metaclass."""
-        if self.cls is None or self.name is None:
-            msg = "Cannot call unbound metadescriptor instance."
-            raise TypeError(msg)
 
 
 class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
@@ -96,17 +58,29 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
     __archetype__ = None  # The archetype upon which the type is built.
 
     @classmethod
-    def __baptize__(mcl, basetype, *traits, **kwargs):
+    def __baptize__(mcl, basetype, traits=None, **kwargs):
         """Generates a name for a programatically generated type instance."""
         idx = next(mcl.__counter__)
         return mcl.__basename__ + '_' + str(idx)
+
+    @classmethod
+    def __prepare__(mcl, name, bases, **kwargs):
+        namespace = OrderedDict()
+        for k, v in mcl.__typeattributes__.items():
+            try:
+                value = kwargs[k]
+            except KeyError:
+                pass
+            else:
+                v.assign(namespace, value)
+        return namespace
 
     def __new__(mcl, name, bases, namespace, traits=None, **kwargs):
         """Collects metadescriptors and creates new NxType."""
         if not len(bases) == 1:
             raise TypeError("Anaximander types admit exactly one base class.")
-        metadescriptors = {}
-        for k, v in dict(namespace).items():
+        metadescriptors = OrderedDict()
+        for k, v in namespace.items():
             if isinstance(v, MetaDescriptor):
                 metadescriptors[k] = v
                 del namespace[k]
@@ -125,6 +99,39 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
     def subtype(cls, *traits, name=None, **kwargs):
         """Returns a subtype, equivalent to nxtype."""
         return nxtype(cls, *traits, name=name, **kwargs)
+
+    @property
+    def typeattributes(cls):
+        """Returns a tuple of type attributes, per __typeattributes__ spec."""
+        return tuple(getattr(cls, n) for n in cls.__typeattributes__)
+
+    @property
+    def metacharacters(cls):
+        """Returns a tuple of meta characters, per __metacharacters__ spec."""
+        return tuple(getattr(cls, n) for n in cls.__metacharacters__)
+
+
+def nxtype(basetype, *traits, name=None, **kwargs):
+    """Programatically returns a type over the supplied base type.
+
+    params:
+        traits: an iterable of traits to append to the new type.
+        name: optional string, otherwise metaclass baptizing is used.
+        kwargs: keyword arguments to be passed to the metaclass.
+    """
+    metatype = type(basetype)
+    if traits:
+        kwargs['traits'] = traits
+    else:
+        kwargs.setdefault('traits', None)
+    name = fun.get(name, metatype.__baptize__(basetype, **kwargs))
+    cls = types.new_class(name, (basetype,), kwds=kwargs)
+    cls.__module__ = getmodule(sys._getframe(1))
+    return cls
+
+# =============================================================================
+# Archetype / prototype decorators
+# =============================================================================
 
 
 def archetype(cls):
@@ -164,16 +171,17 @@ def prototype(cls):
     return mcl(cls.__name__, (cls,), {})
 
 
-def nxtype(basetype, *traits, name=None, **kwargs):
-    """Programatically returns a type over the supplied base type.
+def clade(obj_or_type):
+    """Retuns the archetype that defines the object's clade, if any.
 
     params:
-        traits: an iterable of traits to append to the new type.
-        name: optional string, otherwise metaclass baptizing is used.
-        kwargs: keyword arguments to be passed to the metaclass.
+        obj_or_type: any object or type
+    returns:
+        The object's archetype if it exists. By extension, the clade of
+        a type is its base archetype if it has one. In all other cases,
+        the function simply returns None.
     """
-    metatype = type(basetype)
-    name = fun.get(name, metatype.__baptize__(basetype, *traits, **kwargs))
-    cls = types.new_class(name, (basetype,))
-    cls.__module__ = getmodule(sys._getframe(1))
-    return cls
+    try:
+        return obj_or_type.__archetype__
+    except AttributeError:
+        return None

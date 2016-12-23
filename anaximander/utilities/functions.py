@@ -124,6 +124,11 @@ def args_or_kwargs(f=None, *, tabs=1):
 # =============================================================================
 
 
+def meta(obj):
+    """Returns the metatype of an object."""
+    return type(type(obj))
+
+
 def metargs(cls):
     """Returns the name, bases and namespace of the supplied class."""
     return (cls.__name__, cls.__bases__, cls.__dict__.copy())

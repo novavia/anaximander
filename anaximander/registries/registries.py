@@ -19,6 +19,12 @@ from ..utilities import functions as fun, xprops
 # =============================================================================
 
 
+# TODO: may replace some of the standard exceptions used in this module.
+class RegistrationError(Exception):
+    """A customize Exception type for registries."""
+    pass
+
+
 class NxRegistryBase(fol.NxRegistryABC):
     """Base class for registries and subregistries."""
 
@@ -74,8 +80,11 @@ class NxRegistryBase(fol.NxRegistryABC):
     # Getters
 
     def __getitem__(self, key):
-        """Convenience function to bypass .root calls."""
-        return self.root[key]
+        """Convenience function equivalent to get."""
+        if isinstance(key, tuple):
+            return self.get(*key)
+        else:
+            return self.get(key)
 
     def _folio(self, *args, **kwargs):
         """Returns a Folio from a path specification.
@@ -316,16 +325,9 @@ class NxRegistryBase(fol.NxRegistryABC):
         :param args: a sequential registry address specification.
         :param kwargs: a named registry address specification.
         :raises KeyError: if the registry address doesn't exist.
-        :raises ValueError: if the registry address points to multiple items.
         :returns: an Registrable.
         """
-        candidates = list(self.titles(*args, *kwargs))
-        if not candidates:
-            raise KeyError
-        elif len(candidates) > 1:
-            raise ValueError
-        else:
-            return candidates.pop()
+        return self._folio(*args, **kwargs).title
 
     def fetch(self, *args, **kwargs):
         """Returns a single title or raises an exception.
@@ -339,6 +341,10 @@ class NxRegistryBase(fol.NxRegistryABC):
         :raises ValueError: if the registry address points to multiple items.
         :returns: a Registrable.
         """
+        try:
+            return self.get(*args, **kwargs)
+        except KeyError:
+            pass
         candidates = list(self.browse(*args, **kwargs))
         if not candidates:
             raise KeyError
@@ -378,7 +384,7 @@ class NxRegistryBase(fol.NxRegistryABC):
 
 
 class NxRegistry(NxRegistryBase):
-    """Base class for registries.
+    """Base class for registries, with general-purpose functionalities.
 
     Class attributes include:
     * __root__: specification of the type of folio found at the root.
@@ -541,7 +547,25 @@ class Pool(NxRegistry):
 
 
 class Hierarchy(NxRegistry):
-    """A tree-like registry of individual objects."""
+    """A set hierarchy of individual objects.
+
+    The Hierarchy is primed with a root PortFolio, and additional
+    layers are specified by name only, being automatically set to
+    the PortFolio type. This registry works with titles only.
+    """
+    __root__ = fol.NxPortFolio
+
+    def __init__(self, *layer_names):
+        layers = ((n, fol.NxPortFolio) for n in layer_names)
+        super().__init__(*layers)
+
+
+class Tree(NxRegistry):
+    """A tree-like registry of individual objects.
+
+    The Tree specifies no set levels, so it can grow recursively
+    pseudo-indefinitely.
+    """
     __root__ = fol.NxPortFolio
     __recurse__ = fol.NxPortFolio
 
@@ -561,13 +585,16 @@ class Hierarchy(NxRegistry):
 
 
 class Book(NxRegistry):
-    """A registry built as a sequence of pages."""
+    """A registry built as a sequence of unordered collections (pages)."""
     __root__ = fol.NxVolume
     __layers__ = [('page', fol.NxPage)]
 
 
 class Roll(NxRegistry):
-    """A registry made up of a single NxScroll."""
+    """A registry that stores sequential entries.
+
+    This is functionally equivalent to a weakset.
+    """
     __root__ = fol.NxScroll
 
     def register(self, obj):
@@ -579,7 +606,10 @@ class Roll(NxRegistry):
 
 
 class Directory(NxRegistry):
-    """A registry made up of a single schedule."""
+    """A registry that stores indexed entries.
+
+    This is functionally equivalent to a weakvalues dictionary.
+    """
     __root__ = fol.NxSchedule
 
     def register(self, obj, key):
