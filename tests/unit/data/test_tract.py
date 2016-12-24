@@ -53,7 +53,7 @@ class TestTract(TestCase):
         assert self.UserSchema.tract is User
         assert issubclass(User.Record, rec.Record)
         assert User.Record.__name__ == 'UserRecord'
-        assert User.Record.tract is User
+        assert User.Record.schema is self.UserSchema
 
     def test_init_with_name(self):
         global NxUser
@@ -157,22 +157,22 @@ def test_schema_subclassing(schemas):
     assert isinstance(user, User.Record)
 
 
-def test_record_subclassing(schemas):
-    """Tests subclassing a Record class."""
-    UserSchema, PurchaseSchema = schemas
-    global User, Purchase
-    tract.tract(UserSchema)
-    tract.tract(PurchaseSchema)
-
-    class UserRecord(User.Record):
-        @property
-        def greetings(self):
-            return "Hello, {0}.".format(self.name)
-
-    user_data = {'name': 'Joe', 'email': 'joe@bar.com'}
-    user = User.Record.load(user_data)
-    assert isinstance(user, UserRecord)
-    assert user.greetings == "Hello, Joe."
+#def test_record_subclassing(schemas):
+#    """Tests subclassing a Record class."""
+#    UserSchema, PurchaseSchema = schemas
+#    global User, Purchase
+#    tract.tract(UserSchema)
+#    tract.tract(PurchaseSchema)
+#
+#    class UserRecord(User.Record):
+#        @property
+#        def greetings(self):
+#            return "Hello, {0}.".format(self.name)
+#
+#    user_data = {'name': 'Joe', 'email': 'joe@bar.com'}
+#    user = User.Record.load(user_data)
+#    assert isinstance(user, UserRecord)
+#    assert user.greetings == "Hello, Joe."
 
 if __name__ == '__main__':
     pytest.main([__file__])

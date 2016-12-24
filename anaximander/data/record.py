@@ -13,20 +13,20 @@ Copyright (C) Novavia Solutions, LLC.
 
 import attr
 
-from ._base import SchemedDataType, SchemedDataObject
+from ..meta.metadescriptors import MetaCharacter
+from ..meta.nxtype import prototype
+from ..meta.nxobject import NxObject
+from .schema import Schema
 
 # =============================================================================
 # Record base class
 # =============================================================================
 
 
-class RecordType(SchemedDataType):
-    """Metaclass for Record classes."""
-    pass
+@prototype
+class Record(NxObject):
 
-
-class Record(SchemedDataObject, metaclass=RecordType):
-    """Abstract base class for record classes."""
+    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
 
     @property
     def data(self):
@@ -84,5 +84,3 @@ class Record(SchemedDataObject, metaclass=RecordType):
             if validate:
                 self.validate()
             del self._validate
-
-RecordType.__archetype__ = Record

@@ -39,12 +39,10 @@ class TestRecord(ut.TestCase):
                 return Record(**data)
 
         @attr.s
-        class Record(rec.Record):
+        class Record(rec.Record, schema=Schema):
             title = attr.ib()
             date = attr.ib()
             text = attr.ib(default=None)
-
-        Record.schema = Schema
 
         self.schema = Schema()
         self.Record = Record

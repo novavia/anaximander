@@ -91,9 +91,7 @@ class FeatureSchema(schema.Schema):
 
 
 class FeatureFrame(frame.Frame):
-    pass
-
-FeatureFrame.schema = FeatureSchema
+    schema = FeatureSchema
 
 
 def test_dtypes():

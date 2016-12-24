@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 
+from anaximander.meta.metadescriptors import MetaCharacter
 from anaximander.meta.nxmeta import ArcheType
 from anaximander.meta.nxtype import NxType, prototype
 from anaximander.meta.nxobject import NxObject
@@ -24,29 +25,21 @@ from anaximander.meta.nxobject import NxObject
 
 @prototype
 class Object(NxObject):
-
-    @abc.abstractproperty
-    def physical(self):
-        return NotImplemented
+    physical = MetaCharacter()
 
 
 class Hammer(Object):
-
-    @property
-    def physical(self):
-        return True
+    physical = True
 
 
 class Noise(Object):
+    physical = False
 
-    @property
-    def physical(self):
-        return False
 
+SpaceHammer = type(Hammer)('OtherHammer', (Object,), {}, physical='maybe')
 
 if __name__ == '__main__':
     hammer = Hammer()
-#    import pdb; pdb.set_trace()
     assert isinstance(hammer, Object)
     assert issubclass(type(Object), ArcheType)
-    assert issubclass(Object, NxType)
+    assert isinstance(Object, NxType)

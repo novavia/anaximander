@@ -31,7 +31,7 @@ import sys
 import types
 
 from .metadescriptors import MetaDescriptor, TypeAttribute
-from .nxmeta import NxMeta, archmeta, protometa
+from .nxmeta import NxMeta, archmeta, protometa, MetaError
 from ..utilities import functions as fun
 from ..registries.folios import RegistrableType
 
@@ -70,18 +70,36 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
 
     def __new__(mcl, name, bases, namespace, traits=None, **kwargs):
         """Collects metadescriptors and creates new NxType."""
+        # Check for a single base
         if not len(bases) == 1:
             raise TypeError("Anaximander types admit exactly one base class.")
+
+        # Collect and remove metadescriptors
         metadescriptors = OrderedDict()
         for k, v in OrderedDict(namespace).items():
             if isinstance(v, MetaDescriptor):
                 metadescriptors[k] = v
                 del namespace[k]
         namespace['__metadescriptors__'] = metadescriptors
+
         # Assigns type attributes, which may be declared in either the
         # namespace itself or the kwargs. If there is a conflict, the
         # namespace declarations take precedence.
         TypeAttribute.update(mcl, namespace, **kwargs)
+
+        # Special override for subtypes of archetypes
+        archetype = mcl.__archetype__
+        if archetype is not None:
+            base = bases[0]
+            # If the base is the archetype, we replace it with __basetype__
+            basetype = archetype.__basetype__
+            if base is archetype:
+                base = basetype
+            elif not issubclass(base, basetype):
+                msg = "Incorrect use of an ArcheType subclass."
+                raise MetaError(msg)
+            bases = (base,)
+
         # Note: this is ABCMeta.__new__
         return super().__new__(mcl, name, bases, namespace)
 

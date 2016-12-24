@@ -16,8 +16,10 @@ from collections import OrderedDict
 import numpy as np
 import pandas as pd
 
-from ._base import SchemedDataType, SchemedDataObject
-from . import schema as sch
+from ..meta.metadescriptors import MetaCharacter
+from ..meta.nxtype import prototype
+from ..meta.nxobject import NxObject
+from .schema import Schema
 
 # =============================================================================
 # Field mapping from Schemas to pandas / numpy
@@ -78,13 +80,10 @@ class ConformityError(FrameError):
 # =============================================================================
 
 
-class FrameType(SchemedDataType):
-    """Metaclass for Frame classes."""
-    pass
+@prototype
+class Frame(NxObject):
 
-
-class Frame(SchemedDataObject, metaclass=FrameType):
-    """Abstract base class for frame classes."""
+    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
 
     def __init__(self, data, validate=False):
         """Data can be any admissible data argument to a dataframe.
@@ -151,5 +150,3 @@ class Frame(SchemedDataObject, metaclass=FrameType):
         records = self.data.astype(str).to_dict(orient='records')
         schema = self.schema(many=True)
         schema.validate(records)
-
-FrameType.__archetype__ = Frame

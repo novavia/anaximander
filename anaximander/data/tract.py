@@ -23,8 +23,8 @@ import sys
 
 import attr
 
-from ._base import DataObject
 from . import schema as sch, record as rec
+from ..meta.nxtype import nxtype
 
 # =============================================================================
 # Tract metaclass
@@ -87,23 +87,25 @@ class Tract:
         return self._name
 
     @property
-    def bases(self):
-        """Returns 'base' tracts from Schema's bases."""
+    def base(self):
+        """Returns a 'base' tract from Schema's bases, or None."""
         base_schemas = self.Schema.base_schemas
-        return tuple(s.tract for s in base_schemas if s.tract is not None)
+        try:
+            return base_schemas[0].tract
+        except IndexError:
+            return None
 
-    def _bases(self, type_):
-        """Returns the base classes for a given DataObject type.
+    def _base(self, type_):
+        """Returns the base class for a given DataObject type.
 
         attrs:
-            type_: a DataObject base type such as Log or Record.
+            type_: a DataObject base type such as Frame or Record.
 
         returns:
-            a tuple of bases for the passed object type.
+            a base class for the passed object type.
         """
         name = type_.__name__
-        bases = (getattr(b, name, None) for b in self.bases)
-        return tuple(b for b in bases if issubclass(b, type_)) or (type_,)
+        return getattr(self.base, name, type_)
 
     def _make_record_attributes(self):
         """Extract a list of attribute specifications from Schema class."""
@@ -122,22 +124,35 @@ class Tract:
         return attrs
 
     def _make_record_class(self, name=None):
-        """Creates a record class to assign to cls."""
+        """Creates a basic record class based on self's Schema."""
         name = name or self.name + 'Record'
-        bases = self._bases(rec.Record)
+        base = self._base(rec.Record)
         attributes = self._make_record_attributes()
-        kls = rec.RecordType.auto_init(name, attributes)
-        record_class = attr.s(kls)
-        record_class.__bases__ = bases
+        kls = nxtype(base, name=name, schema=self.Schema)
+        for k, v in attributes.items():
+            setattr(kls, k, v)
+        # Terrible hack to counterharck attr's bad metaprogramming behavior
+        # We strip all base classes of __attrs_attrs__ so they cannot be
+        # collected.
+        attrs_attrs = {}
+        for c in kls.__mro__:
+            if '__attrs_attrs__' in c.__dict__:
+                attrs_attrs[c] = c.__attrs_attrs__
+                del c.__attrs_attrs__
+        # Decorate the record class.
+        record_class = attr.s(kls, these=attributes)
+        # Then put the __attrs_attrs__ back in place.
+        for k, v in attrs_attrs.items():
+            setattr(k, '__attrs_attrs__', v)
         return record_class
 
     def set_class(self, cls):
         """Sets a DataObject class on self."""
-        if not issubclass(cls, DataObject):
-            raise TractDefinitionError()
+#        if not issubclass(cls, DataObject):
+#            raise TractDefinitionError()
         archetype = cls.__archetype__
         setattr(self, archetype.__name__, cls)
-        cls.tract = self
+#        cls.tract = self
         if issubclass(cls, rec.Record):
             self.Schema.set_record_class(cls)
 

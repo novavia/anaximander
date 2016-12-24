@@ -181,11 +181,7 @@ class ArcheType(metaclass=ArchMeta):
             mcl.__archetype__ = archetype
             return archetype
         else:
-            if not bases == (mcl.__archetype__,):
-                msg = "Incorrect use of an ArcheType subclass."
-                raise MetaError(msg)
-            basetype = mcl.__basetype__
-            cls = mcl.__metatype__(name, (basetype,), namespace, **kwargs)
+            cls = mcl.__metatype__(name, bases, namespace, **kwargs)
             return cls
 
     def __init__(archetype, name, bases, namespace):
@@ -202,7 +198,8 @@ class ArcheType(metaclass=ArchMeta):
             raise MetaError(msg)
         archetype.cladogram.register(cls, *cls.metacharacters,
                                      overtype=overtype)
-        archetype.register(cls)  # registration per abc module.
+        if cls.__bases__[0] is archetype.__basetype__:
+            archetype.register(cls)  # registration per abc module.
         cls.__archetype__ = archetype
         return cls
 

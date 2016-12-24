@@ -50,9 +50,20 @@ except Exception as e:
 
 try:
     class MySchema(sch.Schema):
-        extra = sch.Int()
+        extra = fields.Int()
 except Exception as e:
     assert type(e) == sch.SchemaError
+
+
+@trc.tract
+class UserSchema(sch.Schema):
+    email = fields.Email(key=True)
+    name = fields.String()
+
+
+@trc.tract
+class PowerUserSchema(UserSchema):
+    power = fields.Bool(default=True)
 
 #def attributes(schema):
 #    """Extract a list of attribute specifications from a schema."""
