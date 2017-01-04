@@ -18,7 +18,7 @@ import pytest
 from anaximander.registries.folios import Registrable
 import anaximander.meta.metadescriptors as mtd
 from anaximander.meta.nxmeta import ArcheType, MetaError
-from anaximander.meta.nxtype import NxType, nxtype, prototype, clade
+from anaximander.meta.nxtype import NxType, nxtype, archetype, clade
 from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
@@ -63,7 +63,7 @@ class TestProgrammaticTypeCreation(TestCase):
         self.assertEqual(new_type.__name__, 'Thing_0')
 
 
-@prototype
+@archetype
 class Object(NxObject):
     key = mtd.MetaCharacter()
     physical = mtd.TypeAttribute(validate=lambda v: isinstance(v, bool))
@@ -80,7 +80,7 @@ class BaseNoise(Object, physical=True):
     physical = False
 
 
-# This tests that a foretype is properly overriden in Object's cladogram
+# This tests that a subtype is properly overriden in Object's cladogram
 class Hammer(BaseHammer):
     pass
 
@@ -138,7 +138,7 @@ def test_typeattribute():
         nxtype(Object, key='...', physical="don't know")
 
 
-def test_foretype_instantiation():
+def test_subtype_instantiation():
     hammer = Hammer()
     noise = Noise()
     random = Random()
@@ -162,7 +162,7 @@ def test_metacharacters():
 
 def test_cladogram():
     assert Object['hammer'] == Hammer
-    assert set(Object.foretypes) == {Hammer, Noise, Random}
+    assert set(Object.subtypes) == {Hammer, Noise, Random}
 
 
 if __name__ == '__main__':

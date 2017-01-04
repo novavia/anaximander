@@ -31,7 +31,7 @@ import sys
 import types
 
 from .metadescriptors import MetaDescriptor, TypeAttribute
-from .nxmeta import NxMeta, archmeta, protometa, MetaError
+from .nxmeta import NxMeta, archmeta, MetaError
 from ..utilities import functions as fun
 from ..registries.folios import RegistrableType
 
@@ -159,7 +159,7 @@ def nxtype(basetype, *traits, name=None, **kwargs):
     return cls
 
 # =============================================================================
-# Archetype / prototype decorators
+# archetype decorator
 # =============================================================================
 
 
@@ -191,12 +191,6 @@ def archetype(cls):
     of a type that derives from an archetype is also that archetype.
     """
     mcl = archmeta(cls)
-    return mcl(cls.__name__, (cls,), {})
-
-
-def prototype(cls):
-    """Decorates a class to be a prototype, i.e. an abstract archetype."""
-    mcl = protometa(cls)
     return mcl(cls.__name__, (cls,), {})
 
 

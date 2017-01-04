@@ -112,11 +112,11 @@ class MetaDescriptor(abc.ABC):
     become descriptors in a metaclass, hence the name metadescriptor.
     The NxType base metaclass systematically collects metadescriptors found
     in type declarations, strips them from the type's namespace, and park
-    them into a __metadescriptors__ dictionary. For regular types this
-    accomplishes nothing, but if a type is decorated with @archetype or
-    @prototype, then the __metadescriptors__ dictionary is interpreted in
-    order to create a new metaclass that implements the behaviors programmed
-    in the metadescriptors.
+    them into a __metadeclarations__ dictionary. For regular types this
+    accomplishes nothing, but if a type is decorated with @archetype then
+    the __metadeclarations__ dictionary is interpreted in order to create a
+    new metaclass that implements the behaviors programmed in the
+    metadescriptors.
     Metadescriptor behavior is bound to a metaclass in two stages. In the
     first stage, NxType passes the declaring type to each metadescriptor.
     In the second stage, the __call__ method of the metadescriptor instance
@@ -253,8 +253,8 @@ metacharacter_attrs = {'cls': nxattr.ib(init=False),
 class MetaCharacter(TypeAttribute):
     """A TypeAttribute that defines a member of a clade.
 
-    Archetypes and prototypes declare metacharacters, which are used to
-    register and uniquely identify types within their clade.
+    Archetypes declare metacharacters, which are used to register and
+    uniquely identify types within their clade.
     """
     pass
 
@@ -309,7 +309,7 @@ class TypeInitMethod(MetaMethod):
     """Metamethod that is executed at type initialization.
 
     typeinit methods are run in order of declaration right after a new
-    foretype is registered with its archetype.
+    subtype is registered with its archetype.
     """
     pass
 

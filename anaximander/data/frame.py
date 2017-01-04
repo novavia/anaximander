@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from ..meta.metadescriptors import MetaCharacter
-from ..meta.nxtype import prototype
+from ..meta.nxtype import archetype
 from ..meta.nxobject import NxObject
 from .schema import Schema
 
@@ -80,7 +80,7 @@ class ConformityError(FrameError):
 # =============================================================================
 
 
-@prototype
+@archetype
 class Frame(NxObject):
 
     schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))

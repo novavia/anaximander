@@ -11,11 +11,9 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-import abc
-
 from anaximander.meta.metadescriptors import MetaCharacter
 from anaximander.meta.nxmeta import ArcheType
-from anaximander.meta.nxtype import NxType, prototype
+from anaximander.meta.nxtype import NxType, archetype
 from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
@@ -23,7 +21,7 @@ from anaximander.meta.nxobject import NxObject
 # =============================================================================
 
 
-@prototype
+@archetype
 class Object(NxObject):
     physical = MetaCharacter()
 

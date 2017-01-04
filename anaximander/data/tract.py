@@ -21,7 +21,6 @@ from functools import partial
 import re
 import sys
 
-from ..utilities import nxattr
 from . import schema as sch, record as rec
 from ..meta.nxtype import nxtype
 

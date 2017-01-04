@@ -114,15 +114,20 @@ class ArchMeta(NxMeta):
             assert isinstance(type(basetype), NxMeta)
             assert isinstance(metatype, NxMeta)
         except (KeyError, AssertionError):
-            if name in ('ArcheType', 'ProtoType'):
+            if name is 'ArcheType':
                 return
             msg = "Improper ArchMeta declaration."
             raise MetaError(msg)
 
 
-# TODO: could make archetype / prototype smarter by allowing metacharacters
+# TODO: could make archetype smarter by allowing metacharacters
 # to be passed as keyword arguments in instantiation calls and directing
 # the call to the proper subtype.
+def archnew(cls, *args, **kwargs):
+    """Implementation of __new__ for ArcheType."""
+    raise TypeError("Cannot instantiate an archetype.")
+
+
 class ArcheType(metaclass=ArchMeta):
     """A special metatype base class for archetypical classes.
 
@@ -167,8 +172,8 @@ class ArcheType(metaclass=ArchMeta):
 
     def __new__(mcl, name, bases, namespace, **kwargs):
         """Emulates NxType.__new__ as the arguments are redirected."""
-        if mcl in (ArcheType, ProtoType):
-            msg = "Cannot instantiate abstract classes ArcheType / ProtoType."
+        if mcl is ArcheType:
+            msg = "Cannot instantiate abstract class ArcheType."
             raise MetaError(msg)
         if mcl.__archetype__ is None:
             # In this case all arguments are ignored and the __archetype__
@@ -192,7 +197,7 @@ class ArcheType(metaclass=ArchMeta):
         metacharacters = archetype.__metacharacters__
         overtype = archetype.__overtype__
         archetype.cladogram = Cladogram(*metacharacters, overtype=overtype)
-        archetype.cladogram.register(archetype)
+        archetype.__new__ = classmethod(archnew)
 
     def nxregister(archetype, cls, overtype=None):
         if any(v is None for v in cls.metacharacters):
@@ -221,43 +226,19 @@ class ArcheType(metaclass=ArchMeta):
             return archetype.subtype(**kwargs)
 
     @property
-    def foretypes(archetype):
+    def subtypes(archetype):
         """Returns an iterable of registered clade types."""
         return archetype.cladogram.root.titles(root=False)
 
 
-def protonew(cls, *args, **kwargs):
-    """Implementation of __new__ for ProtoTypes."""
-    raise TypeError("Cannot instantiate a prototype.")
-
-
-class ProtoType(ArcheType):
-    """A metatype base class for prototypical classes.
-
-    ProtoTypes differ from ArcheTypes in that they cannot be instantiated.
-    To enforce this behavior, the metaclass modifies the __new__ method
-    of the archetype accordingly.
-    """
-
-    def __init__(archetype, name, bases, namespace):
-        super().__init__(name, bases, namespace)
-        archetype.__new__ = classmethod(protonew)
-
-
-def archmeta(basetype, prototype=False):
+def archmeta(basetype):
     """An ArcheMeta factory function."""
     metatype = nxmeta(basetype)
     name = basetype.__name__ + 'ArcheType'
-    archmetatype = ProtoType if prototype else ArcheType
-    bases = (archmetatype, metatype)
+    bases = (ArcheType, metatype)
     namespace = {'__basetype__': basetype,
                  '__metatype__': metatype}
     return ArchMeta(name, bases, namespace)
-
-
-def protometa(basetype):
-    """A ProtoMeta factory function."""
-    return archmeta(basetype, True)
 
 # =============================================================================
 # Type registry for clades
