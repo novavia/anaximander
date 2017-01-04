@@ -78,8 +78,8 @@ class Tract:
         # Insert self in the schema's global namespace with name
         sys.modules[schema.__module__].__dict__[name] = self
 
-        # Makes and sets the record class
-        self.Record = self._record_class()
+        # Makes the record class
+        self._make_record_class()
 
     @property
     def name(self):
@@ -109,11 +109,15 @@ class Tract:
         except AttributeError:
             return type_
 
-    def _record_class(self):
+    def _make_record_class(self):
         """Creates a basic record class based on self's Schema."""
         name = self.name + 'Record'
         base = self._basetype(rec.Record)
-        return nxtype(base, name=name, schema=self.Schema)
+        nxtype(base, name=name, schema=self.Schema)
+
+    @property
+    def Record(self):
+        return rec.Record[self.Schema]
 
 
 def tract(cls=None, *, name=None):
