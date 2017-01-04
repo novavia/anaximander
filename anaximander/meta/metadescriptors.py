@@ -12,12 +12,77 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import ChainMap
+from collections import ChainMap, OrderedDict
 
-from anaximander.utilities import xprops
+from anaximander.utilities import xprops, nxattr
+
 
 # =============================================================================
-# Base metadescriptors
+# Utilities
+# =============================================================================
+
+
+# Container for metadescriptor registries found in anaximander metaclasses
+# Metaregistries maps MetaDescriptor types to a MetaRegistryFactory instance.
+# Not all MetaDescriptor types require a dedicated registry, so this is
+# implemented as an optional class decorator metaregistry.
+# Every metaregistry entry creates an OrderedDict in anaximander metaclasses.
+# However, two behaviors are possible: a metaregistry can accumulate entries
+# through inheritance chains between metaclasses, or it can be reset to an
+# empty OrderedDict in each metaclass. This option is set by adding
+# reset=True in the registry decorator (False by default).
+metaregistries = dict()
+
+
+@nxattr.s
+class MetaRegistryFactory:
+    """A utility class that facilitates the creation of metaregistries.
+
+    Note that metaregistries *do not* support multiple inheritance, which
+    is in keeping with the fact that anaximander types themselves do not
+    suppport multiple inheritance -they implement traits instead.
+    """
+    name = nxattr.ib()
+    reset = nxattr.ib(default=False)
+
+    def __call__(self, mcl):
+        """Creates an OrderedDict, copying elements if necessary.
+
+        The registry is also returned by the call.
+        """
+        try:
+            parent = getattr(mcl, self.name)
+        except AttributeError:
+            registry = OrderedDict()
+        else:
+            if self.reset is True:
+                registry = OrderedDict(parent)
+            else:
+                registry = OrderedDict()
+        setattr(mcl, self.name, registry)
+        return registry
+
+
+def metaregistry(name, reset=False):
+    """Instructs a MetaDescriptor class to add a metaregistry.
+
+    params:
+        name (str): The name given to the metaregistry in anaximander
+            metaclasses.
+        reset (bool): If True, the metaregistry is reset to an empty
+            OrderedDict in each metaclass.
+    """
+    factory = MetaRegistryFactory(name, reset)
+
+    def register(cls):
+        """Registers the decorated class in metaregistries."""
+        metaregistries[cls] = factory
+        return cls
+
+    return register
+
+# =============================================================================
+# Base metadescriptor
 # =============================================================================
 
 
@@ -26,6 +91,18 @@ class MetaDescriptorError(Exception):
     pass
 
 
+class BindingError(MetaDescriptorError):
+    """Exception invoked when metadescriptor binding fails."""
+    pass
+
+
+# Attributes for MetaDescriptor
+metadescriptor_attrs = {'cls': nxattr.ib(init=False),
+                        'name': nxattr.ib(init=False)}
+
+
+@metaregistry('__metadescriptors__')
+@nxattr.s(these=metadescriptor_attrs, init=False)
 class MetaDescriptor(abc.ABC):
     """Base class for metadescriptors.
 
@@ -57,12 +134,26 @@ class MetaDescriptor(abc.ABC):
         """The declared name, set by NxType."""
         return None
 
-    @abc.abstractmethod
+    def register(self, mcl):
+        """Registers self with the supplied metaclass."""
+        for mdtype in type(self).__mro__:
+            try:
+                registry = mcl.metaregistries[mdtype]
+            except KeyError:
+                pass
+            else:
+                registry[self.name] = self
+
     def __call__(self, mcl):
         """Adds targeted behavior to the supplied metaclass."""
         if self.cls is None or self.name is None:
-            msg = "Cannot call unbound metadescriptor instance."
-            raise TypeError(msg)
+            msg = "Cannot call metadescriptor instance without class or name."
+            raise BindingError(msg)
+        self.register(mcl)
+
+# =============================================================================
+# Type attributes
+# =============================================================================
 
 
 class ValidationError(MetaDescriptorError, ValueError):
@@ -70,24 +161,28 @@ class ValidationError(MetaDescriptorError, ValueError):
     pass
 
 
+# Attributes for TypeAttribute
+typeattribute_attrs = {'cls': nxattr.ib(init=False),
+                       'name': nxattr.ib(init=False),
+                       'default': nxattr.ib(default=None),
+                       'validate': nxattr.ib(default=None)}
+
+
+@metaregistry('__typeattributes__')
+@nxattr.s(these=typeattribute_attrs, inherit=False)
 class TypeAttribute(MetaDescriptor):
-    """A metadescriptor that sets a type keyword argument."""
+    """A metadescriptor that sets a type keyword argument.
 
-    def __init__(self, default=None, validate=None):
-        """Instantiates a TypeAttribute.
-
-        params:
-            validate (func): a validation function that will run on
-                values supplied to new types for the type attribute.
-                Should simply return True upon success.
-            default: a default value that is passed to new types in
-                case no value is supplied.
-        """
-        self.default = default
-        self.validate = validate
+    params:
+        validate (func): a validation function that will run on
+            values supplied to new types for the type attribute.
+            Should simply return True upon success.
+        default: a default value that is passed to new types in
+            case no value is supplied.
+    """
 
     def __call__(self, mcl):
-        mcl.__typeattributes__[self.name] = self
+        super().__call__(mcl)
         type_property = xprops.cachedproperty(lambda c: self.default)
         type_property.cache = '_' + self.name
         setattr(mcl, self.name, type_property)
@@ -146,28 +241,79 @@ class TypeAttribute(MetaDescriptor):
                 v.assign(namespace, value)
 
 
+# Attributes for MetaCharacter
+metacharacter_attrs = {'cls': nxattr.ib(init=False),
+                       'name': nxattr.ib(init=False),
+                       'default': nxattr.ib(default=None, init=False),
+                       'validate': nxattr.ib(default=None)}
+
+
+@metaregistry('__metacharacters__', reset=True)
+@nxattr.s(these=metacharacter_attrs, inherit=False)
 class MetaCharacter(TypeAttribute):
     """A TypeAttribute that defines a member of a clade.
 
     Archetypes and prototypes declare metacharacters, which are used to
     register and uniquely identify types within their clade.
     """
+    pass
 
-    def __init__(self, validate=None):
-        """Instantiates a MetaCharacter.
+# =============================================================================
+# Metamethods
+# =============================================================================
 
-        params:
-            validate (func): a validation function that will run on
-                values supplied to new types for the type attribute.
-                Should simply return True upon success.
 
-        MetaCharacters always have a default value of None, which is the
-        value that they receive in the archetype that defines them.
-        In derived types, the None value is illegal. Not passing a non-None
-        value will cause type instantiation to fail.
-        """
-        super().__init__(validate=validate)
+# Attributes for MetaMethod
+metamethod_attrs = {'cls': nxattr.ib(init=False),
+                    'name': nxattr.ib(init=False),
+                    '__func__': nxattr.ib()}
+
+
+@nxattr.s(these=metamethod_attrs, inherit=False)
+class MetaMethod(MetaDescriptor):
+    """A metamethod is declared in an archetype but becomes a metaclass method.
+
+    The class is merely a transport vector to pass the method from the
+    archetype to its corresponding metatype.
+    """
 
     def __call__(self, mcl):
         super().__call__(mcl)
-        mcl.__metacharacters__[self.name] = self
+        setattr(mcl, self.name, self.__func__)
+
+
+def metamethod(func):
+    """A method decorator that declares a MetaMethod."""
+    return MetaMethod(func)
+
+
+@metaregistry('__newtypemethods__')
+class NewTypeMethod(MetaMethod):
+    """Metamethod that is executed at type creation.
+
+    newtype methods are run in order of declaration as the last action in
+    NxType's __new__ method. newtype methods *must return* a type,
+    which is iteratively passed on to the next method until it is finally
+    returned by NxType's __new__.
+    """
+    pass
+
+
+def newtypemethod(func):
+    """A method decorator that declares a NewTypeMethod."""
+    return NewTypeMethod(func)
+
+
+@metaregistry('__typeinitmethods__')
+class TypeInitMethod(MetaMethod):
+    """Metamethod that is executed at type initialization.
+
+    typeinit methods are run in order of declaration right after a new
+    foretype is registered with its archetype.
+    """
+    pass
+
+
+def typeinitmethod(func):
+    """A method decorator that declares a TypeInit method."""
+    return TypeInitMethod(func)

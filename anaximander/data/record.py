@@ -13,7 +13,8 @@ Copyright (C) Novavia Solutions, LLC.
 
 import attr
 
-from ..meta.metadescriptors import MetaCharacter
+from ..utilities import nxattr
+from ..meta.metadescriptors import MetaCharacter, newtypemethod, typeinitmethod
 from ..meta.nxtype import prototype
 from ..meta.nxobject import NxObject
 from .schema import Schema
@@ -84,3 +85,32 @@ class Record(NxObject):
             if validate:
                 self.validate()
             del self._validate
+
+    @staticmethod
+    def _make_attributes(schema):
+        """Creates attributes from schema."""
+        attrs = {}
+        for k, v in schema.fields.items():
+            if v.required:
+                attrs[k] = nxattr.ib()
+            else:
+                attrs[k] = nxattr.ib(default=v._attribute_default())
+        # Special attribute _validate makes it possible to add a 'validate'
+        # option to the __init__ method of the record class, while ignoring
+        # it for most practical purposes.
+        validate = nxattr.ib(False, repr=False, cmp=False, hash=False)
+        attrs['_validate'] = validate
+        return attrs
+
+    @newtypemethod
+    def set_attributes(cls):
+        """Sets the attributes of cls and decorates it with nxattr.s."""
+        attributes = cls._make_attributes(cls.schema)
+        for k, v in attributes.items():
+            setattr(cls, k, v)
+        return nxattr.s(cls, inherit=False)
+
+    @typeinitmethod
+    def coerce_schema(cls):
+        """Coerces the schema to deserialize to cls."""
+        cls.schema.set_record_class(cls)

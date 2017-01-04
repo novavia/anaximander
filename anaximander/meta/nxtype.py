@@ -80,7 +80,7 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
             if isinstance(v, MetaDescriptor):
                 metadescriptors[k] = v
                 del namespace[k]
-        namespace['__metadescriptors__'] = metadescriptors
+        namespace['__metadeclarations__'] = metadescriptors
 
         # Assigns type attributes, which may be declared in either the
         # namespace itself or the kwargs. If there is a conflict, the
@@ -101,21 +101,29 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
             bases = (base,)
 
         # Note: this is ABCMeta.__new__
-        return super().__new__(mcl, name, bases, namespace)
+        cls = super().__new__(mcl, name, bases, namespace)
+        archetype = type(cls).__archetype__
+        if archetype is not None:
+            for method in archetype.__newtypemethods__:
+                cls = getattr(cls, method)()
+        return cls
 
     def __init__(cls, name, bases, namespace, traits=None, **kwargs):
         # Note: this is RegistrableType.__new__
         super().__init__(name, bases, namespace)
+        # Bind the metadescriptors to the type that declared them.
+        for name, md in cls.__metadeclarations__.items():
+            md.cls = cls
+            md.name = name
         # If the metaclass has an __archetype__, then it attempts to
         # register the class with that archetype.
         archetype = type(cls).__archetype__
         if archetype is not None:
             overtype = kwargs.pop('overtype', None)
             archetype.nxregister(cls, overtype)
-        # Bind the metadescriptors to the type that declared them.
-        for name, md in cls.__metadescriptors__.items():
-            md.cls = cls
-            md.name = name
+            # Execute typeinits in sequence
+            for method in archetype.__typeinitmethods__:
+                getattr(cls, method)()
 
     def subtype(cls, *traits, name=None, **kwargs):
         """Returns a subtype, equivalent to nxtype."""

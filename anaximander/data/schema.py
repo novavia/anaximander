@@ -77,13 +77,12 @@ class SchemaOpts(msh.SchemaOpts):
 
     These options include:
     * strict is set to True, irrespective or settings in Meta
-#    * add an option 'record_class_name'
+    * ordered is set to True
     """
     def __init__(self, meta):
         super().__init__(meta)
         self.strict = True
         self.ordered = True
-#        self.record_class_name = getattr(meta, 'record_class_name', None)
 
 
 class Schema(msh.Schema):

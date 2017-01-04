@@ -16,6 +16,7 @@ import itertools
 
 from ..utilities import functions as fun
 from ..registries import registries as nrg
+from .metadescriptors import metaregistries
 
 # =============================================================================
 # NxMeta metaclass type
@@ -57,8 +58,10 @@ class NxMeta(type):
         """Initializes a new metaclass."""
         if basename is not None:
             mcl.__basename__ = basename
-        mcl.__typeattributes__ = OrderedDict()
-        mcl.__metacharacters__ = OrderedDict()
+        mcl.metaregistries = {}
+        for mdtype, factory in metaregistries.items():
+            registry = factory(mcl)  # creates a metaregistry in the metaclass
+            mcl.metaregistries[mdtype] = registry
         if metadescriptors is not None:
             for md in metadescriptors:
                 md(mcl)  # Binds the metadescriptor to the metaclass
@@ -76,7 +79,7 @@ def nxmeta(basetype):
     name = basename + 'Type'
     bases = (type(basetype),)
     try:
-        metadescriptors = basetype.__metadescriptors__.values()
+        metadescriptors = basetype.__metadeclarations__.values()
     except AttributeError:
         metadescriptors = None
     return NxMeta(name, bases, {}, basename, metadescriptors)
@@ -118,8 +121,8 @@ class ArchMeta(NxMeta):
 
 
 # TODO: could make archetype / prototype smarter by allowing metacharacters
-# to be passed as keyword arguments in calls and directing instantiation
-# to the proper subtype.
+# to be passed as keyword arguments in instantiation calls and directing
+# the call to the proper subtype.
 class ArcheType(metaclass=ArchMeta):
     """A special metatype base class for archetypical classes.
 
@@ -163,7 +166,7 @@ class ArcheType(metaclass=ArchMeta):
     __overtype__ = True  # Default setting, can be overriden in declarations.
 
     def __new__(mcl, name, bases, namespace, **kwargs):
-        """Emulates NxType.__new__ as the argumenst are redirected."""
+        """Emulates NxType.__new__ as the arguments are redirected."""
         if mcl in (ArcheType, ProtoType):
             msg = "Cannot instantiate abstract classes ArcheType / ProtoType."
             raise MetaError(msg)
@@ -196,18 +199,26 @@ class ArcheType(metaclass=ArchMeta):
             msg = "Derived types of an archetype must declare non-None " + \
                 "values for all metacharacters."
             raise MetaError(msg)
+        cls.__archetype__ = archetype
         archetype.cladogram.register(cls, *cls.metacharacters,
                                      overtype=overtype)
         if cls.__bases__[0] is archetype.__basetype__:
             archetype.register(cls)  # registration per abc module.
-        cls.__archetype__ = archetype
         return cls
 
     def __getitem__(archetype, key):
         """A convenience function to pull types from the cladogram."""
         if isinstance(key, tuple):
-            return archetype.cladogram.get(*key)
-        return archetype.cladogram.get(key)
+            try:
+                return archetype.cladogram.get(*key)
+            except KeyError:
+                kwargs = dict(zip(archetype.__metacharacters__, key))
+                return archetype.subtype(**kwargs)
+        try:
+            return archetype.cladogram.get(key)
+        except KeyError:
+            kwargs = dict(zip(archetype.__metacharacters__, [key]))
+            return archetype.subtype(**kwargs)
 
     @property
     def foretypes(archetype):

@@ -14,8 +14,6 @@ Copyright (C) Novavia Solutions, LLC.
 import datetime as dt
 import unittest as ut
 
-import attr
-import marshmallow as msh
 import pytest
 
 from anaximander.data import fields, schema as sch, record as rec
@@ -34,18 +32,8 @@ class TestRecord(ut.TestCase):
             date = fields.Date(key=True)
             text = fields.String()
 
-            @msh.post_load
-            def record(self, data):
-                return Record(**data)
-
-        @attr.s
-        class Record(rec.Record, schema=Schema):
-            title = attr.ib()
-            date = attr.ib()
-            text = attr.ib(default=None)
-
         self.schema = Schema()
-        self.Record = Record
+        self.Record = rec.Record[Schema]
         self.data = {'title': 'ping',
                      'date': '2016-12-08',
                      'text': 'pong'}
