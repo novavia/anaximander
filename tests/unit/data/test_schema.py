@@ -13,7 +13,6 @@ Copyright (C) Novavia Solutions, LLC.
 
 from collections import OrderedDict
 
-import marshmallow as msh
 import pytest
 
 from anaximander.data import fields, schema as sch
@@ -49,12 +48,6 @@ def test_reserved_names():
     with pytest.raises(sch.SchemaError):
         class MySchema(sch.Schema):
             extra = fields.Int()
-
-
-def test_field_type():
-    with pytest.raises(sch.SchemaError):
-        class MySchema(sch.Schema):
-            x = msh.fields.Dict()
 
 
 def test_field_missing():

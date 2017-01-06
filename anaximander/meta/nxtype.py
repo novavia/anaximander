@@ -155,7 +155,7 @@ def nxtype(basetype, *traits, name=None, **kwargs):
         kwargs.setdefault('traits', None)
     name = fun.get(name, metatype.__baptize__(basetype, **kwargs))
     cls = types.new_class(name, (basetype,), kwds=kwargs)
-    cls.__module__ = getmodule(sys._getframe(1))
+    cls.__module__ = getmodule(sys._getframe(1)).__name__
     return cls
 
 # =============================================================================

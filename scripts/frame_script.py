@@ -11,22 +11,41 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
+from collections import Iterable
 import os
+import re
 
-import numpy as np
 import pandas as pd
 
 import anaximander as nx
-from anaximander.data import frame, schema
+from anaximander.data import frame, schema, fields
+from anaximander.data.tract import tract
 
 
 NXPATH = os.path.dirname(nx.__path__[0])
 TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
 LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
 
+MAC_RE = re.compile('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')
+
 # =============================================================================
 # Test Cases
 # =============================================================================
+
+
+class MAC(fields.Str):
+
+    @staticmethod
+    def validator(s):
+        return bool(MAC_RE.match(s))
+
+    def __new__(cls, *args, **kwargs):
+        validate = kwargs.pop('validate', [])
+        if isinstance(validate, Iterable):
+            validate = [cls.validator] + list(validate)
+        else:
+            validate = [cls.validator] + [validate]
+        return fields.Str(validate=validate, *args, **kwargs)
 
 
 def featurelog():
@@ -35,21 +54,17 @@ def featurelog():
     return dataframe
 
 
+@tract
 class FeatureSchema(schema.Schema):
-    device = schema.Str(key=True)
-    timestamp = schema.DateTime(key=True, sequential=True)
-    Feature_Value_0 = schema.Float()
-    Feature_Value_1 = schema.Float()
-    Feature_Value_2 = schema.Float()
-    Feature_Value_3 = schema.Float()
-    Feature_Value_4 = schema.Float()
-    Feature_Value_5 = schema.Float()
-
-
-class FeatureFrame(frame.Frame):
-    pass
-
-FeatureFrame.schema = FeatureSchema
+#    device = fields.Str(validate=lambda s: bool(MAC.match(s)), key=True)
+    device = MAC(key=True)
+    timestamp = fields.DateTime(key=True, sequential=True)
+    Feature_Value_0 = fields.Float()
+    Feature_Value_1 = fields.Float()
+    Feature_Value_2 = fields.Float()
+    Feature_Value_3 = fields.Float()
+    Feature_Value_4 = fields.Float()
+    Feature_Value_5 = fields.Float()
 
 
 if __name__ == '__main__':

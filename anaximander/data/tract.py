@@ -21,7 +21,7 @@ from functools import partial
 import re
 import sys
 
-from . import schema as sch, record as rec
+from . import schema as sch, record as rec, frame as frm
 from ..meta.nxtype import nxtype
 
 # =============================================================================
@@ -117,6 +117,10 @@ class Tract:
     @property
     def Record(self):
         return rec.Record[self.Schema]
+
+    @property
+    def Frame(self):
+        return frm.Frame[self.Schema]
 
 
 def tract(cls=None, *, name=None):
