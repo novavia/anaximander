@@ -253,7 +253,7 @@ metacharacter_attrs = {'cls': nxattr.ib(init=False),
 class MetaCharacter(TypeAttribute):
     """A TypeAttribute that defines a member of a clade.
 
-    Archetypes declare metacharacters, which are used to register and
+    Prototypes declare metacharacters, which are used to register and
     uniquely identify types within their clade.
     """
     pass

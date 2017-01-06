@@ -11,7 +11,6 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
-from collections import OrderedDict
 import itertools
 
 from ..utilities import functions as fun
@@ -114,18 +113,10 @@ class ArchMeta(NxMeta):
             assert isinstance(type(basetype), NxMeta)
             assert isinstance(metatype, NxMeta)
         except (KeyError, AssertionError):
-            if name is 'ArcheType':
+            if name in ('ArcheType', 'ProtoType'):
                 return
             msg = "Improper ArchMeta declaration."
             raise MetaError(msg)
-
-
-# TODO: could make archetype smarter by allowing metacharacters
-# to be passed as keyword arguments in instantiation calls and directing
-# the call to the proper subtype.
-def archnew(cls, *args, **kwargs):
-    """Implementation of __new__ for ArcheType."""
-    raise TypeError("Cannot instantiate an archetype.")
 
 
 class ArcheType(metaclass=ArchMeta):
@@ -153,18 +144,8 @@ class ArcheType(metaclass=ArchMeta):
     method is constructed to redirect class creation to a functional
     metaclass once the singleton archetype has been created.
 
-    Archetypes declare one or more metacharacters whose values differentiate
-    the derived types of the archetype. Derived types are registered in a
-    Cladogram, with a key that is a tuple of its metacharacter values.
-    By default, overtyping is allowed. Hence if an existing derived type
-    of an archetype is further subclassed with the same metacharacters, it
-    will take precedence over the previous version and replace it in the
-    Cladogram. This setting can be modified in one of two ways:
-    * The archetype itself can declare __overtype__ = False, in which case
-    overtyping is generally forbidden for the corresponding clade.
-    * Otherwise, new types can be declared with the keyword argument overtype,
-    in which case whatever value is passed (True or False) will override the
-    clade's default behavior.
+    Strict archetypes cannot declare metacharacters, but this is enabled
+    by ProtoType, which specializes ArcheType.
     """
     __basetype__ = None
     __metatype__ = None
@@ -172,7 +153,7 @@ class ArcheType(metaclass=ArchMeta):
 
     def __new__(mcl, name, bases, namespace, **kwargs):
         """Emulates NxType.__new__ as the arguments are redirected."""
-        if mcl is ArcheType:
+        if mcl in (ArcheType, ProtoType):
             msg = "Cannot instantiate abstract class ArcheType."
             raise MetaError(msg)
         if mcl.__archetype__ is None:
@@ -195,64 +176,124 @@ class ArcheType(metaclass=ArchMeta):
     def __init__(archetype, name, bases, namespace):
         archetype.__archetype__ = archetype
         metacharacters = archetype.__metacharacters__
-        overtype = archetype.__overtype__
-        archetype.cladogram = Cladogram(*metacharacters, overtype=overtype)
-        archetype.__new__ = classmethod(archnew)
-
-    def nxregister(archetype, cls, overtype=None):
-        if any(v is None for v in cls.metacharacters):
-            msg = "Derived types of an archetype must declare non-None " + \
-                "values for all metacharacters."
+        if metacharacters:
+            msg = "ArcheTypes do not accept metacharacters, use a " + \
+                "ProtoType instead."
             raise MetaError(msg)
+        archetype.type_registry = ArchRegistry()
+
+    def nxregister(archetype, cls, **kwargs):
         cls.__archetype__ = archetype
-        archetype.cladogram.register(cls, *cls.metacharacters,
-                                     overtype=overtype)
+        archetype.type_registry.register(cls)
         if cls.__bases__[0] is archetype.__basetype__:
             archetype.register(cls)  # registration per abc module.
         return cls
 
-    def __getitem__(archetype, key):
-        """A convenience function to pull types from the cladogram."""
-        if isinstance(key, tuple):
-            try:
-                return archetype.cladogram.get(*key)
-            except KeyError:
-                kwargs = dict(zip(archetype.__metacharacters__, key))
-                return archetype.subtype(**kwargs)
-        try:
-            return archetype.cladogram.get(key)
-        except KeyError:
-            kwargs = dict(zip(archetype.__metacharacters__, [key]))
-            return archetype.subtype(**kwargs)
-
     @property
     def subtypes(archetype):
         """Returns an iterable of registered clade types."""
-        return archetype.cladogram.root.titles(root=False)
+        return archetype.type_registry.values()
 
 
-def archmeta(basetype):
+# TODO: could make prototypes smarter by allowing metacharacters
+# to be passed as keyword arguments in instantiation calls and directing
+# the call to the proper subtype.
+def protonew(cls, *args, **kwargs):
+    """Implementation of __new__ for ProtoTypes."""
+    raise TypeError("Cannot instantiate an prototype.")
+
+
+class ProtoType(ArcheType):
+    """A ProtoType is an ArcheType that declares metacharacters.
+
+    Prototypes declare one or more metacharacters whose values differentiate
+    the derived types of the archetype. Derived types are registered in a
+    type_registry, with a key that is a tuple of its metacharacter values.
+    By default, overtyping is allowed. Hence if an existing derived type
+    of an archetype is further subclassed with the same metacharacters, it
+    will take precedence over the previous version and replace it in the
+    type_registry. This setting can be modified in one of two ways:
+    * The archetype itself can declare __overtype__ = False, in which case
+    overtyping is generally forbidden for the corresponding clade.
+    * Otherwise, new types can be declared with the keyword argument overtype,
+    in which case whatever value is passed (True or False) will override the
+    clade's default behavior.
+    """
+
+    def __init__(prototype, name, bases, namespace):
+        prototype.__archetype__ = prototype
+        metacharacters = prototype.__metacharacters__
+        overtype = prototype.__overtype__
+        prototype.type_registry = ProtoRegistry(*metacharacters,
+                                                overtype=overtype)
+        prototype.__new__ = classmethod(protonew)
+
+    def nxregister(prototype, cls, **kwargs):
+        if any(v is None for v in cls.metacharacters):
+            msg = "Derived types of an prototype must declare non-None " + \
+                "values for all metacharacters."
+            raise MetaError(msg)
+        cls.__archetype__ = prototype
+        overtype = kwargs.get('overtype', None)
+        prototype.type_registry.register(cls, *cls.metacharacters,
+                                         overtype=overtype)
+        if cls.__bases__[0] is prototype.__basetype__:
+            prototype.register(cls)  # registration per abc module.
+        return cls
+
+    def __getitem__(prototype, key):
+        """A convenience function to pull types from the type registry."""
+        if isinstance(key, tuple):
+            try:
+                return prototype.type_registry.get(*key)
+            except KeyError:
+                kwargs = dict(zip(prototype.__metacharacters__, key))
+                return prototype.subtype(**kwargs)
+        try:
+            return prototype.type_registry.get(key)
+        except KeyError:
+            kwargs = dict(zip(prototype.__metacharacters__, [key]))
+            return prototype.subtype(**kwargs)
+
+    @property
+    def subtypes(prototype):
+        """Returns an iterable of registered clade types."""
+        return prototype.type_registry.root.titles(root=False)
+
+
+def archmeta(basetype, prototype=False):
     """An ArcheMeta factory function."""
     metatype = nxmeta(basetype)
-    name = basetype.__name__ + 'ArcheType'
-    bases = (ArcheType, metatype)
+    name = basetype.__name__ + ('ProtoType' if prototype else 'ArcheType')
+    archmetatype = ProtoType if prototype else ArcheType
+    bases = (archmetatype, metatype)
     namespace = {'__basetype__': basetype,
                  '__metatype__': metatype}
     return ArchMeta(name, bases, namespace)
+
+
+def protometa(basetype):
+    """A ProtoMeta factory function."""
+    return archmeta(basetype, True)
 
 # =============================================================================
 # Type registry for clades
 # =============================================================================
 
 
-class Cladogram(nrg.Hierarchy):
-    """A specialized Hierarchy to register types in a clade."""
+class ArchRegistry(nrg.Pool):
+    """A Pool to register subtypes of an ArcheType."""
+    pass
+
+
+class ProtoRegistry(nrg.Hierarchy):
+    """A specialized Hierarchy to register subtypes of a ProtoType."""
 
     def __init__(self, *layer_names, overtype=True):
         """Augments super with the overtype parameter.
 
         if overtype is True, then types that are registered with a key
-        that is already in the cladogram overwrite the existing type.
+        that is already in the type_registry overwrite the existing type.
         Otherwise a RegistrationError is raised.
         """
         super().__init__(*layer_names)

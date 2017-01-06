@@ -97,6 +97,10 @@ class NxRegistryBase(fol.NxRegistryABC):
         :raises KeyError: if no matching path can be found.
         :returns: an NxFolio.
         """
+        if isinstance(self.root, fol.NxDocument):
+            if args or kwargs:
+                raise KeyError
+            return self.root
         path = self._path(*args, **kwargs)
         return self.root.retrieve(*path)
 
@@ -486,6 +490,8 @@ class NxRegistry(NxRegistryBase):
 
     def unregister(self, obj, *args, **kwargs):
         """Unregisters object if found, otherwise silences exceptions."""
+        if isinstance(self.root, fol.NxDocument):
+            return self.root.unregister(obj)
         path = self._path(*args, **kwargs)
         try:
             folio = self.root.retrieve(*path)

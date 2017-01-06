@@ -33,6 +33,9 @@ FEATURELOG_SHUFFLED_PATH = os.path.join(TEST_DATA_DIR,
                                         'featurelog_shuffled.csv')
 FEATURELOG_SUPERFLUOUS_PATH = os.path.join(TEST_DATA_DIR,
                                            'featurelog_superfluous.csv')
+FEATURELOG_INVALID_PATH = os.path.join(TEST_DATA_DIR, 'featurelog_invalid.csv')
+
+MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 
 # =============================================================================
 # Test Cases
@@ -79,8 +82,16 @@ def featurelog_superfluous():
     return dataframe
 
 
+@pytest.fixture
+def featurelog_invalid():
+    """Returns a dataframe with invalid values."""
+    dataframe = pd.read_csv(FEATURELOG_INVALID_PATH)
+    dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+    return dataframe
+
+
 class FeatureSchema(schema.Schema):
-    device = fields.Str(key=True)
+    device = fields.ReStr(key=True, pattern=MAC_PATTERN)
     timestamp = fields.DateTime(key=True, sequential=True)
     Feature_Value_0 = fields.Float()
     Feature_Value_1 = fields.Float()
@@ -151,6 +162,9 @@ class TestFrame(TestCase):
         log = featurelog()
         frame = FeatureFrame(log, validate=True)
         assert frame.data.equals(log)
+        invalid_log = featurelog_invalid()
+        with pytest.raises(schema.ValidationError):
+            frame = FeatureFrame(invalid_log, validate=True)
 
 if __name__ == '__main__':
     pytest.main([__file__])

@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import pytest
 
 import anaximander.meta.metadescriptors as mtd
-from anaximander.meta.nxtype import nxtype, archetype
+from anaximander.meta.nxtype import nxtype, prototype
 from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
@@ -24,7 +24,7 @@ from anaximander.meta.nxobject import NxObject
 
 @pytest.fixture
 def C():
-    @archetype
+    @prototype
     class C(NxObject):
         x = mtd.MetaCharacter()
         message = 'Hello, World!'

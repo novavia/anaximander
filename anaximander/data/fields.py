@@ -19,9 +19,10 @@ import re
 
 import attr
 import marshmallow as msh
-from marshmallow.fields import Field, Raw, Nested, String, UUID, Number, \
-    Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
-    LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Str, Bool, Int
+from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
+    Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
+    LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
+    Str, Bool, Int, Constant
 
 from ..utilities.functions import monkeypatch
 
@@ -29,35 +30,34 @@ from ..utilities.functions import monkeypatch
 # Utilities
 # =============================================================================
 
-
 # Compatibility check map
-_field_check = {'Field': True,
-                'Raw': True,
-                'Nested': True,
-                'Dict': False,
-                'List': False,
-                'String': True,
-                'UUID': True,
-                'Number': True,
-                'Integer': True,
-                'Decimal': True,
-                'Boolean': True,
-                'FormattedString': True,
-                'Float': True,
-                'DateTime': True,
-                'LocalDateTime': True,
-                'Time': True,
-                'Date': True,
-                'TimeDelta': True,
-                'Url': True,
-                'URL': True,
-                'Email': True,
-                'Method': False,
-                'Function': False,
-                'Str': True,
-                'Bool': True,
-                'Int': True,
-                'Constant': False,
+_field_check = {Field: True,
+                Raw: True,
+                Nested: True,
+                Dict: False,
+                List: False,
+                String: True,
+                UUID: True,
+                Number: True,
+                Integer: True,
+                Decimal: True,
+                Boolean: True,
+                FormattedString: True,
+                Float: True,
+                DateTime: True,
+                LocalDateTime: True,
+                Time: True,
+                Date: True,
+                TimeDelta: True,
+                Url: True,
+                URL: True,
+                Email: True,
+                Method: False,
+                Function: False,
+                Str: True,
+                Bool: True,
+                Int: True,
+                Constant: False,
                 }
 
 
@@ -70,7 +70,7 @@ def supported(field_type):
     assumed to be a purpose-built custom subclass.
     """
     if issubclass(field_type, Field):
-        return _field_check.get(field_type.__name__, True)
+        return _field_check.get(field_type, True)
     raise TypeError("Non Field subclass supplied to supported.")
 
 # =============================================================================
@@ -157,3 +157,6 @@ class ReString(String):
     def match(self, s):
         """Returns True if string s matches self's pattern, False otherwise."""
         return bool(self._re.match(s))
+
+# Alias
+ReStr = ReString

@@ -17,48 +17,58 @@ import numpy as np
 import pandas as pd
 
 from ..meta.metadescriptors import MetaCharacter
-from ..meta.nxtype import archetype
+from ..meta.nxtype import prototype
 from ..meta.nxobject import NxObject
 from .schema import Schema
+from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
+    Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
+    LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
+    Str, Bool, Int, Constant
 
 # =============================================================================
 # Field mapping from Schemas to pandas / numpy
 # =============================================================================
 
 
-_field_map = {'Field': np.dtype('object'),
-              'Raw': np.dtype('object'),
-              'Nested': np.dtype('object'),
-              'Dict': NotImplemented,
-              'List': NotImplemented,
-              'String': np.dtype('object'),
-              'UUID': np.dtype('object'),
-              'Number': np.dtype('float'),
-              'Integer': np.dtype('int'),
-              'Decimal': np.dtype('float'),
-              'Boolean': np.dtype('bool'),
-              'FormattedString': np.dtype('object'),
-              'Float': np.dtype('float'),
-              'DateTime': np.dtype('datetime64[ns]'),
-              'LocalDateTime': np.dtype('datetime64[ns]'),
-              'Time': np.dtype('datetime64[ns]'),
-              'Date': np.dtype('datetime64[ns]'),
-              'TimeDelta': np.dtype('timedelta64[ns]'),
-              'Url': np.dtype('object'),
-              'URL': np.dtype('object'),
-              'Email': np.dtype('object'),
-              'Method': NotImplemented,
-              'Function': NotImplemented,
-              'Str': NotImplemented,
-              'Bool': NotImplemented,
-              'Int': NotImplemented,
-              'Constant': NotImplemented,
+_field_map = {Field: np.dtype('object'),
+              Raw: np.dtype('object'),
+              Nested: np.dtype('object'),
+              Dict: NotImplemented,
+              List: NotImplemented,
+              String: np.dtype('object'),
+              UUID: np.dtype('object'),
+              Number: np.dtype('float'),
+              Integer: np.dtype('int'),
+              Decimal: np.dtype('float'),
+              Boolean: np.dtype('bool'),
+              FormattedString: np.dtype('object'),
+              Float: np.dtype('float'),
+              DateTime: np.dtype('datetime64[ns]'),
+              LocalDateTime: np.dtype('datetime64[ns]'),
+              Time: np.dtype('datetime64[ns]'),
+              Date: np.dtype('datetime64[ns]'),
+              TimeDelta: np.dtype('timedelta64[ns]'),
+              Url: np.dtype('object'),
+              URL: np.dtype('object'),
+              Email: np.dtype('object'),
+              Method: NotImplemented,
+              Function: NotImplemented,
+              Str: np.dtype('object'),
+              Bool: NotImplemented,
+              Int: NotImplemented,
+              Constant: NotImplemented,
               }
 
 
 def dtype(field):
     """Returns a BiqQuery field type from a Schema field or NotImpemented."""
-    return _field_map.get(type(field).__name__, NotImplemented)
+    ftype = type(field)
+    for ft in ftype.__mro__:
+        try:
+            return _field_map[ft]
+        except KeyError:
+            pass
+    raise TypeError("Non-field type {0} passed to dtype.".format(field))
 
 
 def dtypes(schema):
@@ -80,7 +90,7 @@ class ConformityError(FrameError):
 # =============================================================================
 
 
-@archetype
+@prototype
 class Frame(NxObject):
 
     schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))

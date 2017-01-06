@@ -31,7 +31,7 @@ import sys
 import types
 
 from .metadescriptors import MetaDescriptor, TypeAttribute
-from .nxmeta import NxMeta, archmeta, MetaError
+from .nxmeta import NxMeta, archmeta, protometa, MetaError, ProtoType
 from ..utilities import functions as fun
 from ..registries.folios import RegistrableType
 
@@ -119,8 +119,7 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
         # register the class with that archetype.
         archetype = type(cls).__archetype__
         if archetype is not None:
-            overtype = kwargs.pop('overtype', None)
-            archetype.nxregister(cls, overtype)
+            archetype.nxregister(cls, **kwargs)
             # Execute typeinits in sequence
             for method in archetype.__typeinitmethods__:
                 getattr(cls, method)()
@@ -128,6 +127,17 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
     def subtype(cls, *traits, name=None, **kwargs):
         """Returns a subtype, equivalent to nxtype."""
         return nxtype(cls, *traits, name=name, **kwargs)
+
+    @property
+    def archetype(cls):
+        return cls.__archetype__
+
+    @property
+    def prototype(cls):
+        if isinstance(cls.__archetype__, ProtoType):
+            return cls.__archetype__
+        else:
+            return None
 
     @property
     def typeattributes(cls):
@@ -159,7 +169,7 @@ def nxtype(basetype, *traits, name=None, **kwargs):
     return cls
 
 # =============================================================================
-# archetype decorator
+# archetype / prototype decorators
 # =============================================================================
 
 
@@ -191,6 +201,12 @@ def archetype(cls):
     of a type that derives from an archetype is also that archetype.
     """
     mcl = archmeta(cls)
+    return mcl(cls.__name__, (cls,), {})
+
+
+def prototype(cls):
+    """Decorates a class to be a prototype, i.e. an abstract archetype."""
+    mcl = protometa(cls)
     return mcl(cls.__name__, (cls,), {})
 
 

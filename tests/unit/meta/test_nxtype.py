@@ -18,7 +18,7 @@ import pytest
 from anaximander.registries.folios import Registrable
 import anaximander.meta.metadescriptors as mtd
 from anaximander.meta.nxmeta import ArcheType, MetaError
-from anaximander.meta.nxtype import NxType, nxtype, archetype, clade
+from anaximander.meta.nxtype import NxType, nxtype, archetype, prototype, clade
 from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
@@ -63,7 +63,24 @@ class TestProgrammaticTypeCreation(TestCase):
         self.assertEqual(new_type.__name__, 'Thing_0')
 
 
+def test_archetype_limitations():
+    """Tests that archetype cannot implement metacharacters."""
+    with pytest.raises(MetaError):
+        @archetype
+        class Object(NxObject):
+            key = mtd.MetaCharacter()
+
+
 @archetype
+class User(NxObject):
+    demographics = mtd.TypeAttribute()
+
+
+class UrbanUser(User, demographics='urban'):
+    pass
+
+
+@prototype
 class Object(NxObject):
     key = mtd.MetaCharacter()
     physical = mtd.TypeAttribute(validate=lambda v: isinstance(v, bool))
@@ -100,7 +117,7 @@ def test_archetype_inheritance():
     assert isinstance(Object, NxType)
     assert not isinstance(Hammer, type(Object))
     assert type(Hammer) is not type(NxObject)
-    assert type(Object).__name__ == 'ObjectArcheType'
+    assert type(Object).__name__ == 'ObjectProtoType'
     assert type(Hammer).__name__ == 'ObjectType'
     assert isinstance(Object, type(Hammer))
     assert Hammer.__archetype__ is Object
@@ -160,7 +177,10 @@ def test_metacharacters():
         nxtype(Object)
 
 
-def test_cladogram():
+def test_type_registry():
+    with pytest.raises(TypeError):
+        User['urban']
+    assert set(User.subtypes) == {UrbanUser}
     assert Object['hammer'] == Hammer
     assert set(Object.subtypes) == {Hammer, Noise, Random}
 
