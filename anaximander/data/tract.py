@@ -46,6 +46,10 @@ class Tract:
     This is justified by the fact that the tract primarily serves as
     a namespace to access classes (e.g. Production.Record, Production.Log).
     """
+    # Mapping of types to attribute names under a Tract object
+    __attributes__ = {sch.Schema: 'Schema',
+                      rec.NxRecord: 'Record',
+                      frm.NxFrame: 'Frame'}
 
     def __init__(self, schema, name=None):
         """Initializes a Tract.
@@ -97,12 +101,12 @@ class Tract:
         """Returns the base class for a given DataObject type.
 
         attrs:
-            type_: a DataObject base type such as Frame or Record.
+            type_: a DataObject base type such as NxFrame or NxRecord.
 
         returns:
             a base class for the passed object type.
         """
-        name = type_.__name__
+        name = self.__attributes__[type_]
         try:
             return getattr(self.base, name, type_)
         except AttributeError:
@@ -111,16 +115,16 @@ class Tract:
     def _make_record_class(self):
         """Creates a basic record class based on self's Schema."""
         name = self.name + 'Record'
-        base = self._basetype(rec.Record)
+        base = self._basetype(rec.NxRecord)
         nxtype(base, name=name, schema=self.Schema)
 
     @property
     def Record(self):
-        return rec.Record[self.Schema]
+        return rec.NxRecord[self.Schema]
 
     @property
     def Frame(self):
-        return frm.Frame[self.Schema]
+        return frm.NxFrame[self.Schema]
 
 
 def tract(cls=None, *, name=None):

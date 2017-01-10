@@ -16,7 +16,7 @@ import attr
 from ..utilities import nxattr
 from ..meta.metadescriptors import MetaCharacter, newtypemethod, typeinitmethod
 from ..meta.nxtype import prototype
-from ..meta.nxobject import NxObject
+from .object import DataObject
 from .schema import Schema
 
 # =============================================================================
@@ -25,7 +25,7 @@ from .schema import Schema
 
 
 @prototype
-class Record(NxObject):
+class NxRecord(DataObject):
 
     schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
 

@@ -66,7 +66,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 
 from . import quantities
-#from . import data
+from . import data
 from . import fields
 from . import schema
 from . import record

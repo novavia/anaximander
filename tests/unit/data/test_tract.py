@@ -51,7 +51,7 @@ class TestTract(TestCase):
         assert User.name == 'User'
         assert User.Schema is self.UserSchema
         assert self.UserSchema.tract is User
-        assert issubclass(User.Record, rec.Record)
+        assert issubclass(User.Record, rec.NxRecord)
         assert User.Record.__name__ == 'UserRecord'
         assert User.Record.schema is self.UserSchema
 

@@ -18,7 +18,7 @@ import pandas as pd
 
 from ..meta.metadescriptors import MetaCharacter
 from ..meta.nxtype import prototype
-from ..meta.nxobject import NxObject
+from .object import DataObject
 from .schema import Schema
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
@@ -91,7 +91,7 @@ class ConformityError(FrameError):
 
 
 @prototype
-class Frame(NxObject):
+class NxFrame(DataObject):
 
     schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
 

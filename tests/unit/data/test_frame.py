@@ -101,7 +101,7 @@ class FeatureSchema(schema.Schema):
     Feature_Value_5 = fields.Float()
 
 
-class FeatureFrame(frame.Frame):
+class FeatureFrame(frame.NxFrame):
     schema = FeatureSchema
 
 

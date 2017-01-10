@@ -33,7 +33,7 @@ class TestRecord(ut.TestCase):
             text = fields.String()
 
         self.schema = Schema()
-        self.Record = rec.Record[Schema]
+        self.Record = rec.NxRecord[Schema]
         self.data = {'title': 'ping',
                      'date': '2016-12-08',
                      'text': 'pong'}
