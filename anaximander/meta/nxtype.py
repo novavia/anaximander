@@ -25,7 +25,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import OrderedDict
+from collections import Iterable, OrderedDict
 from inspect import getmodule
 import sys
 import types
@@ -33,7 +33,12 @@ import types
 from .metadescriptors import MetaDescriptor, TypeAttribute
 from .nxmeta import NxMeta, archmeta, protometa, MetaError, ProtoType
 from ..utilities import functions as fun
+from ..registries import registries as reg
 from ..registries.folios import RegistrableType
+
+
+__all__ = ['nxtype', 'archetype', 'prototype', 'clade', 'noregistry',
+           'directory', 'pool']
 
 # =============================================================================
 # NxType declaration
@@ -109,7 +114,7 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
         return cls
 
     def __init__(cls, name, bases, namespace, traits=None, **kwargs):
-        # Note: this is RegistrableType.__new__
+        # Note: this is RegistrableType.__init__
         super().__init__(name, bases, namespace)
         # Bind the metadescriptors to the type that declared them.
         for name, md in cls.__metadeclarations__.items():
@@ -123,6 +128,24 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
             # Execute typeinits in sequence
             for method in archetype.__typeinitmethods__:
                 getattr(cls, method)()
+        # Check for a registry directive, which should either be:
+        # * None, meaning that there is no registration on the type's
+        # instance -and the behavior propagates to subtypes.
+        # * An InstanceRegistry helper function, which provides an
+        # InstanceRegistry factory.
+        try:
+            registry = kwargs['registry']
+        except KeyError:
+            try:
+                if cls.__registry__.scope == 'type':
+                    cls.__registry__ = cls.__registry__.child()
+            except AttributeError:
+                cls.__registry__ = NoRegistry()
+        else:
+            if registry is None:
+                cls.__registry__ = NoRegistry()
+            else:
+                cls.__registry__ = registry()
 
     def subtype(cls, *traits, name=None, **kwargs):
         """Returns a subtype, equivalent to nxtype."""
@@ -148,6 +171,15 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
     def metacharacters(cls):
         """Returns a tuple of meta characters, per __metacharacters__ spec."""
         return tuple(getattr(cls, n) for n in cls.__metacharacters__)
+
+    def __getitem__(cls, key):
+        registry = cls.__registry__
+        if not isinstance(registry, Directory):
+            return NotImplemented
+        if isinstance(key, tuple):
+            return registry.get(*key)
+        else:
+            return registry.get(key)
 
 
 def nxtype(basetype, *traits, name=None, **kwargs):
@@ -224,3 +256,143 @@ def clade(obj_or_type):
         return obj_or_type.__archetype__
     except AttributeError:
         return None
+
+# =============================================================================
+# Instance indexes
+# =============================================================================
+
+
+class InstanceRegistry:
+    """A specialization of NxRegistry for type-level object registries.
+
+    The mixin adds the regkey attribute, which takes either None, a single
+    string or a tuple of attribute names from which the registration key of
+    an instance will be determined, if necessary.
+    It defaults to None, which works with non-indexed
+    registries. The regkey specification needs to be consistent with
+    any registry layer specification -i.e. same number or same number plus
+    one if the registry implements an NxSchedule.
+    The mixin also adds the scope attribute, which takes either the value
+    'type' or 'clade'.
+    With value 'type', Indexes are reset for every subtype of a type that
+    defines an index. So in practice, each subtype defines its own index and
+    instances are kept separated.
+    With value 'clade', there is a single Index for instances of the type
+    that declares the index and all of its subtypes, unless one of the
+    subtype makes its own index declaration.
+    """
+
+    def __init__(self, *args, regkey=None, scope='clade', **kwargs):
+        super().__init__(*args, **kwargs)
+        self._initargs = args
+        kwargs.update(regkey=regkey, scope=scope)
+        self._initkwargs = kwargs
+        self.regkey = regkey
+        self.scope = scope
+
+        def registration_path_none(inst):
+            """Returns an instance registration path if regkey is None."""
+            return ()
+
+        def registration_path_single(inst):
+            """Returns an instance registration path is regkey is a string."""
+            return (getattr(inst, regkey),)
+
+        def registration_path_tuple(inst):
+            """Returns an instance registration path if regkey is a tuple."""
+            return (getattr(inst, k) for k in regkey)
+
+        if regkey is None:
+            self.registration_path = registration_path_none
+        elif isinstance(regkey, str):
+            self.registration_path = registration_path_single
+        elif isinstance(regkey, Iterable):
+            self.registration_path = registration_path_tuple
+        else:
+            raise TypeError("Incorrect type passed to regkey.")
+
+    def register(self, obj):
+        super().register(obj, *self.registration_path(obj))
+
+    def unregister(self, obj):
+        super().unregister(obj, *self.registration_path(obj))
+
+    def child(self):
+        """Returns a new instance with the same parameters.
+
+        This is used to create fresh registries in subtypes when the scope
+        of registration is individual types.
+        """
+        return type(self)(*self._initargs, **self._initkwargs)
+
+
+class NoRegistry(InstanceRegistry):
+    """A mock registry, used so that every NxType has a consistent interface.
+
+    NxTypes that don't register their instances still have a __registry__
+    attribute that is a NoRegistry instance.
+    """
+
+    def __init__(self):
+        self.scope = 'clade'
+
+    class Error(Exception):
+        """Raised when calling unimplemented NxRegistry functionality."""
+        pass
+
+    def register(self, obj):
+        pass
+
+    def unregister(self, obj):
+        pass
+
+    def child(self):
+        return type(self)()
+
+    def __getattr__(self, name):
+        if name in dir(reg.NxRegistry):
+            msg = "NoRegistry doesn't implement this functionality."
+            raise self.Error(msg)
+        raise AttributeError
+
+
+def noregistry():
+    """Helper function for NoRegistry specfications."""
+    def factory():
+        return NoRegistry()
+    return factory
+
+
+class Directory(InstanceRegistry, reg.Directory):
+    pass
+
+
+def directory(regkey, scope='clade'):
+    """Helper function for Directory specifications.
+
+    params:
+        regkey (str): The instance attribute used for registration.
+        scope: 'type' or 'clade', per InstanceRegistry specification.
+    returns:
+        A Directory factory.
+    """
+    def factory():
+        return Directory(regkey=regkey, scope=scope)
+    return factory
+
+
+class Pool(InstanceRegistry, reg.Pool):
+    pass
+
+
+def pool(scope='clade'):
+    """Helper function for Directory specifications.
+
+    params:
+        scope: 'type' or 'clade', per InstanceRegistry specification.
+    returns:
+        A Directory factory.
+    """
+    def factory():
+        return Pool(scope=scope)
+    return factory

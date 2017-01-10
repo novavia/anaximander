@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Test module for schemas.
+Test module for record.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.

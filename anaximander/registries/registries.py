@@ -400,7 +400,7 @@ class NxRegistry(NxRegistryBase):
     * __recurse__: accepts a PortFolio type that is used recursively beyond.
     specified layers.
     """
-    __root__ = None  # Placeholder for the folio type of the root.
+    __root__ = fol.NxPortFolio  # Placeholder for the folio type of the root.
     __layers__ = ()  # Placeholder for the name and type of folio layers.
     __recurse__ = None  # Placeholder for a recursive folio type.
 
@@ -544,6 +544,9 @@ class Pool(NxRegistry):
     """A simple registry that provides membership functionality only."""
     __root__ = fol.NxPage
 
+    def __init__(self):
+        super().__init__()
+
     def register(self, obj):
         self.root.register(obj)
         return True
@@ -575,6 +578,9 @@ class Tree(NxRegistry):
     __root__ = fol.NxPortFolio
     __recurse__ = fol.NxPortFolio
 
+    def __init__(self):
+        super().__init__()
+
     def register(self, obj, *args, **kwargs):
         path = self._path(*args, **kwargs)
         folio = self.recurse(obj)
@@ -595,13 +601,19 @@ class Book(NxRegistry):
     __root__ = fol.NxVolume
     __layers__ = [('page', fol.NxPage)]
 
+    def __init__(self):
+        super().__init__()
+
 
 class Roll(NxRegistry):
     """A registry that stores sequential entries.
 
-    This is functionally equivalent to a weakset.
+    This is functionally equivalent to a weak sorted set.
     """
     __root__ = fol.NxScroll
+
+    def __init__(self):
+        super().__init__()
 
     def register(self, obj):
         self.root.register(obj)
@@ -618,9 +630,18 @@ class Directory(NxRegistry):
     """
     __root__ = fol.NxSchedule
 
+    def __init__(self):
+        super().__init__()
+
     def register(self, obj, key):
-        self.root.register(obj)
+        self.root.register(obj, key)
         return True
 
     def unregister(self, obj, key):
         return self.root.unregister(obj, key)
+
+    def get(self, key):
+        return self.root.get(key)
+
+    def fetch(self, key):
+        return self.root.get(key)

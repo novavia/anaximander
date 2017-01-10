@@ -14,13 +14,15 @@ Copyright (C) Novavia Solutions, LLC.
 import pytest
 
 from anaximander.utilities import nxattr as attr
+from anaximander.meta.nxobject import NxObject
+from anaximander.meta.nxtype import directory
 
 # =============================================================================
 # Test Cases
 # =============================================================================
 
 
-def test_attributes():
+def test_inherit():
 
     @attr.s
     class C:
@@ -42,6 +44,28 @@ def test_attributes():
     # Note that 'y' is left out (inherit=False), although E does have a
     # class attribute named 'y'.
     assert E.__attrs_attrs__ == (E.x, E.z)
+
+
+def test_super():
+
+    i = 0
+
+    @attr.s
+    class C(NxObject, registry=directory('x')):
+        x = attr.ib()
+
+    @attr.s
+    class D(C):
+
+        def __attrs_post_init__(self):
+            nonlocal i
+            i += 1
+
+    c = C(0)
+    d = D(1)
+    assert i == 1
+    assert C[0] == c
+    assert C[1] == D[1] == d
 
 
 if __name__ == '__main__':

@@ -17,6 +17,8 @@ from collections import ChainMap, OrderedDict
 from anaximander.utilities import xprops, nxattr
 
 
+__all__ = ['TypeAttribute', 'MetaCharacter', 'metamethod', 'typeinitmethod']
+
 # =============================================================================
 # Utilities
 # =============================================================================
@@ -70,7 +72,8 @@ def metaregistry(name, reset=False):
         name (str): The name given to the metaregistry in anaximander
             metaclasses.
         reset (bool): If True, the metaregistry is reset to an empty
-            OrderedDict in each metaclass.
+            OrderedDict in each metaclass. Otherwise, metaregistry content
+            is copied from the parent metaclass.
     """
     factory = MetaRegistryFactory(name, reset)
 

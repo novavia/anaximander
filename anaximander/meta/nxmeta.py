@@ -99,6 +99,7 @@ class ArchMeta(NxMeta):
     __archetype__ instance. __metatype__ is the metaclass responsible for
     creating subtypes of the __archetype__. It is normally created by
     nxmeta.
+    * Sets up a type registry.
     """
 
     def __new__(met, name, bases, namespace):
@@ -117,6 +118,8 @@ class ArchMeta(NxMeta):
                 return
             msg = "Improper ArchMeta declaration."
             raise MetaError(msg)
+        # Note: this gets overriden in the case of a ProtoType
+        mcl.registry = ArchRegistry()
 
 
 class ArcheType(metaclass=ArchMeta):
@@ -180,11 +183,10 @@ class ArcheType(metaclass=ArchMeta):
             msg = "ArcheTypes do not accept metacharacters, use a " + \
                 "ProtoType instead."
             raise MetaError(msg)
-        archetype.type_registry = ArchRegistry()
 
     def nxregister(archetype, cls, **kwargs):
         cls.__archetype__ = archetype
-        archetype.type_registry.register(cls)
+        type(archetype).registry.register(cls)
         if cls.__bases__[0] is archetype.__basetype__:
             archetype.register(cls)  # registration per abc module.
         return cls
@@ -192,7 +194,7 @@ class ArcheType(metaclass=ArchMeta):
     @property
     def subtypes(archetype):
         """Returns an iterable of registered clade types."""
-        return archetype.type_registry.values()
+        return type(archetype).registry.values()
 
 
 # TODO: could make prototypes smarter by allowing metacharacters
@@ -208,11 +210,11 @@ class ProtoType(ArcheType):
 
     Prototypes declare one or more metacharacters whose values differentiate
     the derived types of the archetype. Derived types are registered in a
-    type_registry, with a key that is a tuple of its metacharacter values.
+    type registry, with a key that is a tuple of its metacharacter values.
     By default, overtyping is allowed. Hence if an existing derived type
     of an archetype is further subclassed with the same metacharacters, it
     will take precedence over the previous version and replace it in the
-    type_registry. This setting can be modified in one of two ways:
+    type registry. This setting can be modified in one of two ways:
     * The archetype itself can declare __overtype__ = False, in which case
     overtyping is generally forbidden for the corresponding clade.
     * Otherwise, new types can be declared with the keyword argument overtype,
@@ -224,8 +226,8 @@ class ProtoType(ArcheType):
         prototype.__archetype__ = prototype
         metacharacters = prototype.__metacharacters__
         overtype = prototype.__overtype__
-        prototype.type_registry = ProtoRegistry(*metacharacters,
-                                                overtype=overtype)
+        type(prototype).registry = ProtoRegistry(*metacharacters,
+                                                 overtype=overtype)
         prototype.__new__ = classmethod(protonew)
 
     def nxregister(prototype, cls, **kwargs):
@@ -235,22 +237,23 @@ class ProtoType(ArcheType):
             raise MetaError(msg)
         cls.__archetype__ = prototype
         overtype = kwargs.get('overtype', None)
-        prototype.type_registry.register(cls, *cls.metacharacters,
-                                         overtype=overtype)
+        type(prototype).registry.register(cls, *cls.metacharacters,
+                                          overtype=overtype)
         if cls.__bases__[0] is prototype.__basetype__:
             prototype.register(cls)  # registration per abc module.
         return cls
 
     def __getitem__(prototype, key):
         """A convenience function to pull types from the type registry."""
+        type_registry = type(prototype).registry
         if isinstance(key, tuple):
             try:
-                return prototype.type_registry.get(*key)
+                return type_registry.get(*key)
             except KeyError:
                 kwargs = dict(zip(prototype.__metacharacters__, key))
                 return prototype.subtype(**kwargs)
         try:
-            return prototype.type_registry.get(key)
+            return type_registry.get(key)
         except KeyError:
             kwargs = dict(zip(prototype.__metacharacters__, [key]))
             return prototype.subtype(**kwargs)
@@ -258,7 +261,7 @@ class ProtoType(ArcheType):
     @property
     def subtypes(prototype):
         """Returns an iterable of registered clade types."""
-        return prototype.type_registry.root.titles(root=False)
+        return type(prototype).registry.root.titles(root=False)
 
 
 def archmeta(basetype, prototype=False):
@@ -293,7 +296,7 @@ class ProtoRegistry(nrg.Hierarchy):
         """Augments super with the overtype parameter.
 
         if overtype is True, then types that are registered with a key
-        that is already in the type_registry overwrite the existing type.
+        that is already in the type registry overwrite the existing type.
         Otherwise a RegistrationError is raised.
         """
         super().__init__(*layer_names)

@@ -7,8 +7,11 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
-__all__ = ['utilities']
-
 
 from . import utilities
+from . import registries
+from . import meta
+from . import data
 
+
+__all__ = ['utilities', 'registries', 'meta', 'data']
