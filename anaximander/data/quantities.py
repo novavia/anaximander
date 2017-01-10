@@ -12,6 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from anaximander.utilities import nxattr
+from anaximander.meta.nxtype import directory
 from anaximander.meta.nxobject import NxObject
 
 # =============================================================================
@@ -19,13 +20,12 @@ from anaximander.meta.nxobject import NxObject
 # =============================================================================
 
 
-def isstring(s):
-    """Returns True if s is a string, False otherwise."""
-    return isinstance(s, str)
-
-
 @nxattr.s
-class Quantity(NxObject):
+class Quantity(NxObject, registry=directory('name')):
     """A class that holds a name and a unit."""
-    name = nxattr.ib(validator=isstring)
-    unit = nxattr.ib(validator=isstring)
+    name = nxattr.ib(validator=nxattr.validators.instance_of(str))
+    unit = nxattr.ib(validator=nxattr.validators.instance_of(str))
+
+    def __attrs_post_init__(self):
+        """Adds instances to the module's dictionary so they are persisted."""
+        globals()[self.name] = self

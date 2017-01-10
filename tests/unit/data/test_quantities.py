@@ -13,7 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import pytest
 
-from anaximander.data.quantities import Quantity
+from anaximander.data import quantities as qnt
 
 # =============================================================================
 # Test Cases
@@ -21,9 +21,14 @@ from anaximander.data.quantities import Quantity
 
 
 def test_instantiation():
-    speed = Quantity('speed', 'mph')
-    assert Quantity['speed'].unit == 'mph'
-
+    qnt.Quantity('speed', 'mph')
+    assert qnt.Quantity['speed'].unit == 'mph'
+    assert qnt.speed == qnt.Quantity['speed']
+    qnt.Quantity('speed', 'kph')
+    assert qnt.Quantity['speed'].unit == 'kph'
+    assert qnt.speed == qnt.Quantity['speed']
+    with pytest.raises(TypeError):
+        qnt.Quantity(0, 0)
 
 if __name__ == '__main__':
     pytest.main([__file__])
