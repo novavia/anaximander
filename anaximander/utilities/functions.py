@@ -38,6 +38,13 @@ def lmap(*args):
     caller_locals = sys._getframe(1).f_locals
     return {k: v for k, v in caller_locals.items() if k in args}
 
+
+def typechecker(*types):
+    """Returns a callable equivalent to isinstance."""
+    def checker(obj):
+        return isinstance(obj, types)
+    return checker
+
 # =============================================================================
 # String formatting
 # =============================================================================

@@ -197,7 +197,11 @@ def nxtype(basetype, *traits, name=None, **kwargs):
         kwargs.setdefault('traits', None)
     name = fun.get(name, metatype.__baptize__(basetype, **kwargs))
     cls = types.new_class(name, (basetype,), kwds=kwargs)
-    cls.__module__ = getmodule(sys._getframe(1)).__name__
+    # Assigns the caller's module to the new class by default.
+    try:
+        cls.__module__ = getmodule(sys._getframe(1)).__name__
+    except AttributeError:  # Interactive mode
+        cls.__module__ = basetype.__module__
     return cls
 
 # =============================================================================

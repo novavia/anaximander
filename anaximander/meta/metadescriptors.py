@@ -181,12 +181,18 @@ class TypeAttribute(MetaDescriptor):
             values supplied to new types for the type attribute.
             Should simply return True upon success.
         default: a default value that is passed to new types in
-            case no value is supplied.
+            case no value is supplied. Defaults to None. The default can
+            also be a callable that takes a type as its only argument. In
+            that case, the value of the attribute for a type is computed
+            dynamically upon first call.
     """
 
     def __call__(self, mcl):
         super().__call__(mcl)
-        type_property = xprops.cachedproperty(lambda c: self.default)
+        if callable(self.default):
+            type_property = xprops.cachedproperty(lambda c: self.default(c))
+        else:
+            type_property = xprops.cachedproperty(lambda c: self.default)
         type_property.cache = '_' + self.name
         setattr(mcl, self.name, type_property)
         inst_property = property(lambda i: getattr(type(i), self.name))
