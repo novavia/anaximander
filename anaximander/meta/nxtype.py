@@ -30,7 +30,7 @@ from inspect import getmodule
 import sys
 import types
 
-from .metadescriptors import MetaDescriptor, TypeAttribute
+from .metadescriptors import MetaDescriptor, TypeAttribute, MetaMethod
 from .nxmeta import NxMeta, archmeta, protometa, MetaError, ProtoType
 from ..utilities import functions as fun
 from ..registries import registries as reg
@@ -125,6 +125,10 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
         archetype = type(cls).__archetype__
         if archetype is not None:
             archetype.nxregister(cls, **kwargs)
+            # Execute metamethods in sequence
+            for method in archetype.__metamethods__:
+                metaname = MetaMethod.metaname(method)
+                getattr(cls, metaname)()
             # Execute typeinits in sequence
             for method in archetype.__typeinitmethods__:
                 getattr(cls, method)()

@@ -39,10 +39,19 @@ def C():
         def identity(cls):
             cls.message += 'My x is {0}'.format(cls.x)
 
-        @mtd.metamethod
+        @mtd.typemethod
         def greet(cls):
             print(cls.message)
             return True
+
+        @mtd.metamethod
+        def __repr__(cls):
+            type_repr = 'C[{}]'.format(cls.x)
+
+            def inst_repr(self):
+                return '<' + type_repr + '>'
+
+            return inst_repr
 
     nxtype(C, x=0)
 
@@ -54,12 +63,13 @@ def test_registries(C):
     registries = C[0].metaregistries
     assert C.__metadescriptors__ == registries[mtd.MetaDescriptor]
     assert list(registries[mtd.MetaDescriptor]) == ['x', 'reset_message',
-                                                    'identity', 'greet']
+                                                    'identity', 'greet',
+                                                    '__repr__']
     assert list(C.__metacharacters__) == ['x']
     assert list(C.__typeinitmethods__) == ['identity']
 
 
-def test_metamethod(C):
+def test_typemethod(C):
     """Tests method is transferred to the metaclass."""
     inst = C[0]()
     assert C.greet() is True
@@ -87,6 +97,12 @@ def test_typeattribute():
     assert Concrete.z == Concrete().z == 1
     with pytest.raises(mtd.ValidationError):
         nxtype(Object, x=None)
+
+
+def test_metamethod(C):
+    inst = C[0]()
+    assert hasattr(type(C), '_set__repr__')
+    assert repr(inst) == '<C[0]>'
 
 
 if __name__ == '__main__':

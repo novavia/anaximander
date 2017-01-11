@@ -17,7 +17,8 @@ from collections import ChainMap, OrderedDict
 from anaximander.utilities import xprops, nxattr
 
 
-__all__ = ['TypeAttribute', 'MetaCharacter', 'metamethod', 'typeinitmethod']
+__all__ = ['TypeAttribute', 'MetaCharacter', 'typeinitmethod',
+           'newtypemethod', 'metamethod']
 
 # =============================================================================
 # Utilities
@@ -25,7 +26,7 @@ __all__ = ['TypeAttribute', 'MetaCharacter', 'metamethod', 'typeinitmethod']
 
 
 # Container for metadescriptor registries found in anaximander metaclasses
-# Metaregistries maps MetaDescriptor types to a MetaRegistryFactory instance.
+# 'metaregistries' maps MetaDescriptor types to a MetaRegistryFactory instance.
 # Not all MetaDescriptor types require a dedicated registry, so this is
 # implemented as an optional class decorator metaregistry.
 # Every metaregistry entry creates an OrderedDict in anaximander metaclasses.
@@ -268,19 +269,19 @@ class MetaCharacter(TypeAttribute):
     pass
 
 # =============================================================================
-# Metamethods
+# Typemethods
 # =============================================================================
 
 
-# Attributes for MetaMethod
-metamethod_attrs = {'cls': nxattr.ib(init=False),
+# Attributes for TypeMethod
+typemethod_attrs = {'cls': nxattr.ib(init=False),
                     'name': nxattr.ib(init=False),
                     '__func__': nxattr.ib()}
 
 
-@nxattr.s(these=metamethod_attrs, inherit=False)
-class MetaMethod(MetaDescriptor):
-    """A metamethod is declared in an archetype but becomes a metaclass method.
+@nxattr.s(these=typemethod_attrs, inherit=False)
+class TypeMethod(MetaDescriptor):
+    """A TypeMethod is declared in an archetype but becomes a metaclass method.
 
     The class is merely a transport vector to pass the method from the
     archetype to its corresponding metatype.
@@ -291,14 +292,14 @@ class MetaMethod(MetaDescriptor):
         setattr(mcl, self.name, self.__func__)
 
 
-def metamethod(func):
-    """A method decorator that declares a MetaMethod."""
-    return MetaMethod(func)
+def typemethod(func):
+    """A method decorator that declares a TypeMethod."""
+    return TypeMethod(func)
 
 
 @metaregistry('__newtypemethods__')
-class NewTypeMethod(MetaMethod):
-    """Metamethod that is executed at type creation.
+class NewTypeMethod(TypeMethod):
+    """TypeMethod that is executed at type creation.
 
     newtype methods are run in order of declaration as the last action in
     NxType's __new__ method. newtype methods *must return* a type,
@@ -314,8 +315,8 @@ def newtypemethod(func):
 
 
 @metaregistry('__typeinitmethods__')
-class TypeInitMethod(MetaMethod):
-    """Metamethod that is executed at type initialization.
+class TypeInitMethod(TypeMethod):
+    """Typemethod that is executed at type initialization.
 
     typeinit methods are run in order of declaration right after a new
     subtype is registered with its archetype.
@@ -326,3 +327,63 @@ class TypeInitMethod(MetaMethod):
 def typeinitmethod(func):
     """A method decorator that declares a TypeInit method."""
     return TypeInitMethod(func)
+
+
+# =============================================================================
+# MetaMethod
+# =============================================================================
+
+
+# Attributes for MetaMethod
+metamethod_attrs = {'cls': nxattr.ib(init=False),
+                    'name': nxattr.ib(init=False),
+                    '__func__': nxattr.ib()}
+
+
+@metaregistry('__metamethods__')
+@nxattr.s(these=metamethod_attrs, inherit=False)
+class MetaMethod(MetaDescriptor):
+    """A MetaMethod wraps a closure to generate type-specific methods.
+
+    Methods decorated with @metamathod must return methods, which are
+    automatically assigned to new subtypes of an archetype that declares
+    the metamathod.
+    By convention, if the decorated method is named 'f', a method
+    will be created in the metaclass named '_set_f'. As the name
+    implies, a call by a given type to _set_f will set f on that type,
+    by running the decorated method and assign the return value.
+    If the decorated method uses a trailing underscore, as in '_f', the
+    metaclass method uses the same convention, i.e. '_set__f'. If the
+    decorated method is a dunder method, then one underscore is skipped
+    for clarity, i.e. '__f__' results in a '_set__f__' method in the
+    metaclass. Usage with leading double underscore that is not dunder is
+    not provided for and the results are unknown. MetaMethod provides a
+    static method that computes the metaclass method name.
+    Methods decorated with @metamethod should take a single argument cls.
+    In that, the methods that are generated may have a different signature
+    than the method declared in the archetype.
+    """
+
+    @staticmethod
+    def metaname(name):
+        try:
+            if name[:2] == '__' and name[-2:] == '__':
+                return '_set' + name
+        except KeyError:
+            pass
+        return '_set' + '_' + 'name'
+
+    def __call__(self, mcl):
+        super().__call__(mcl)
+
+        def setter(cls):
+            """Sets a method on the supplied type."""
+            method = self.__func__(cls)
+            setattr(cls, self.name, method)
+
+        setattr(mcl, self.metaname(self.name), setter)
+
+
+def metamethod(func):
+    """A method decorator that declares a MetaMethod."""
+    return MetaMethod(func)
