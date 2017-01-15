@@ -25,6 +25,7 @@ from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Str, Bool, Int, Constant
 
 from ..utilities.functions import monkeypatch
+from .data import NxScalar, ValidationError as DataValidationError
 
 # =============================================================================
 # Utilities
@@ -118,6 +119,10 @@ class _FieldPatch:
 monkeypatch(msh.fields.Field, _FieldPatch)
 
 
+class FieldError(Exception):
+    """Customized exception raised for incorrect Field instantiation."""
+    pass
+
 # =============================================================================
 # Additional Field classes
 # =============================================================================
@@ -130,13 +135,16 @@ class ReString(String):
     the regular expression. Any match validates an input string.
     """
 
-    def __init__(self, default=msh.missing, attribute=None, load_from=None,
-                 dump_to=None, error=None, pattern='.*', validate=None,
+    def __init__(self, pattern='.*', default=msh.missing, attribute=None,
+                 load_from=None, dump_to=None, error=None, validate=None,
                  required=False, allow_none=None, load_only=False,
                  dump_only=False, missing=msh.missing, error_messages=None,
                  **metadata):
         self._pattern = pattern
-        self._re = re.compile(pattern)
+        try:
+            self._re = re.compile(pattern)
+        except TypeError:
+            raise FieldError("The pattern of a ReString must be a string.")
         if validate is None:
             validate = self.match
         elif isinstance(validate, Iterable):
@@ -160,3 +168,35 @@ class ReString(String):
 
 # Alias
 ReStr = ReString
+
+
+class Scalar(Field):
+    """A field that expects NxScalar values, whose type is specified."""
+
+    def __init__(self, datatype=NxScalar, default=msh.missing,
+                 attribute=None, load_from=None, dump_to=None, error=None,
+                 validate=None, required=False, allow_none=None,
+                 load_only=False, dump_only=False, missing=msh.missing,
+                 error_messages=None, **metadata):
+        if not issubclass(datatype, NxScalar):
+            raise FieldError("Non NxDataType passed to DataField.")
+        self.datatype = datatype
+        super().__init__(default=default, attribute=attribute,
+                         load_from=load_from, dump_to=dump_to, error=error,
+                         validate=validate, required=required,
+                         allow_none=allow_none, load_only=load_only,
+                         dump_only=dump_only, missing=missing,
+                         error_messages=error_messages, **metadata)
+
+    def _serialize(self, value, attr, obj):
+        """Expects value to be of type datatype, returns native python type."""
+        if not isinstance(value, self.datatype):
+            self.fail('type')
+        return value.data.item()
+
+    def _deserialize(self, value, attr, data_):
+        """Marshals value to a datatype."""
+        try:
+            return self.datatype(value)
+        except DataValidationError:
+            self.fail('validator_failed')

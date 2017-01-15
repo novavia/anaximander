@@ -14,7 +14,8 @@ Copyright (C) Novavia Solutions, LLC.
 import marshmallow as msh
 import pytest
 
-from anaximander.data import fields, schema as sch
+from anaximander.data import fields, schema as sch, quantities as qnt
+from anaximander.data.data import NxScalar
 
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 
@@ -39,6 +40,27 @@ def test_restring():
     assert MySchema().validate(good_mac) == {}
     with pytest.raises(sch.ValidationError):
         MySchema().validate(bad_mac)
+
+
+def test_scalar():
+    speed = qnt.Quantity('speed', 'mph')
+
+    class SpeedMPH(NxScalar):
+        quantity = speed
+
+    class MySchema(sch.Schema):
+        mph = fields.Scalar(SpeedMPH)
+
+    data = {'mph': 65.}
+    obj = MySchema().load(data).data
+    assert str(obj['mph']) == '65.0 mph'
+    dump = MySchema().dump(obj).data
+    assert dump == data
+    assert type(dump['mph']) is float
+
+    bad_data = {'mph': '?'}
+    with pytest.raises(sch.ValidationError):
+        MySchema().load(bad_data)
 
 
 if __name__ == '__main__':

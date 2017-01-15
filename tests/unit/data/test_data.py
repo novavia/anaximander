@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 
 from anaximander.data import quantities as qnt
-from anaximander.data.data import NxData
+from anaximander.data.data import NxScalar
 
 # =============================================================================
 # Test Cases
@@ -28,10 +28,10 @@ def datatypes():
     speed = qnt.Quantity('speed', 'mph')
     speed.register_unit('kph', 0.621371)
 
-    class SpeedMPH(NxData):
+    class SpeedMPH(NxScalar):
         quantity = speed
 
-    class SpeedKPH(NxData):
+    class SpeedKPH(NxScalar):
         quantity = speed
         unit = 'kph'
         precision = 2
@@ -57,6 +57,12 @@ def test_instance(datatypes):
     assert repr(skph) == "<SpeedKPH(100.0, metadata={'uncertainty': 5})>"
     assert str(skph) == '100.00 kph'
 
+
+def test_comparisons(datatypes):
+    SpeedMPH, SpeedKPH = datatypes
+    assert SpeedMPH(65) == SpeedMPH(65)
+    assert SpeedKPH(100.005) == SpeedKPH(100)
+    assert not SpeedMPH(65.005) == SpeedMPH(65)
 
 if __name__ == '__main__':
     pytest.main([__file__])

@@ -88,7 +88,7 @@ def test_typeattribute():
 
     @archetype
     class Object(NxObject):
-        x = mtd.TypeAttribute(validate=fun.typechecker(int))
+        x = mtd.TypeAttribute(validate=fun.typecheck(int))
         y = mtd.TypeAttribute(default=1)
         z = mtd.TypeAttribute(default=lambda c: c.y)
     Concrete = nxtype(Object, x=0)

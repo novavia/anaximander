@@ -9,6 +9,11 @@ Copyright (C) Novavia Solutions, LLC.
 
 
 class ComparableMixin(object):
+    """Mixin class to provide comparison methods.
+
+    Usage requires that classes that implement this mixin define a method
+    _cmpkey, which is used as the basis for comparison between instances.
+    """
 
     def _compare(self, other, method):
         try:

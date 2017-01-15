@@ -117,10 +117,11 @@ class MetaDescriptor(abc.ABC):
     The NxType base metaclass systematically collects metadescriptors found
     in type declarations, strips them from the type's namespace, and park
     them into a __metadeclarations__ dictionary. For regular types this
-    accomplishes nothing, but if a type is decorated with @archetype then
-    the __metadeclarations__ dictionary is interpreted in order to create a
-    new metaclass that implements the behaviors programmed in the
-    metadescriptors.
+    accomplishes nothing immediately but the __metadeclarations__ are
+    inherited and possibly updated by children classes. However if a type is
+    decorated with @archetype then the __metadeclarations__ dictionary is
+    interpreted in order to create a new metaclass that implements the
+    behaviors programmed in the metadescriptors.
     Metadescriptor behavior is bound to a metaclass in two stages. In the
     first stage, NxType passes the declaring type to each metadescriptor.
     In the second stage, the __call__ method of the metadescriptor instance
@@ -187,6 +188,9 @@ class TypeAttribute(MetaDescriptor):
             that case, the value of the attribute for a type is computed
             dynamically upon first call.
     """
+    # The reset token is used to reset the cached value of type attributes
+    # whose default is a callable.
+    _reset_token = object()
 
     def __call__(self, mcl):
         super().__call__(mcl)
@@ -214,7 +218,8 @@ class TypeAttribute(MetaDescriptor):
             try:
                 assert self.validate(value)
             except AssertionError:
-                raise ValidationError()
+                if value is not self._reset_token:
+                    raise ValidationError()
         if isinstance(class_or_namespace, type):
             setattr(class_or_namespace, attr, value)
         else:
@@ -246,9 +251,59 @@ class TypeAttribute(MetaDescriptor):
             try:
                 value = chainmap.pop(k, chainmap[k])
             except KeyError:
+                # If the TypeAttribute is callable, we set the cache to
+                # the reset token so the new type has a chance to define
+                # its own value.
+                if callable(v.default):
+                    v.assign(namespace, cls._reset_token)
                 pass
             else:
                 v.assign(namespace, value)
+
+    def _reset(self, type_):
+        """Used to reset type cache to override inheritance.
+
+        This applies when self has a callable default but a new type
+        inherits a cached value from its base. If that cached value
+        was the default from its base, then we want to rerun the callable
+        default. Otherwise the assignment made in the base of one of its
+        superclass persists.
+        Note that this leaves open a corner case in which there was a
+        manual assignment of a TypeAttribute that happens to be the
+        default value of one of the base types. In that case, the value
+        will be overriden even though it was not the intention. Solving
+        this corner case would require additional flags which creates
+        complexity for a seemingly extremely marginal occurrence. But this
+        note is here as a warning.
+        """
+        if not callable(self.default):
+            return
+        attr = '_' + self.name
+        try:
+            assignment = getattr(type_, attr)
+            if assignment is not self._reset_token:
+                return
+        except AttributeError:
+            return
+        base = type_.__base__
+        try:
+            cache = getattr(base, attr)
+        except AttributeError:
+            setattr(type_, attr, self.default(type_))
+            return
+        if cache == self.default(base):
+            setattr(type_, attr, self.default(type_))
+        else:
+            delattr(type_, attr)
+
+    @classmethod
+    def reset(cls, type_):
+        """Iteratively resets TypeAttributes on supplied type_.
+
+        See TypeAttribute._reset for details.
+        """
+        for ta in type(type_).__typeattributes__.values():
+            ta._reset(type_)
 
 
 # Attributes for MetaCharacter
@@ -347,7 +402,7 @@ class MetaMethod(MetaDescriptor):
 
     Methods decorated with @metamathod must return methods, which are
     automatically assigned to new subtypes of an archetype that declares
-    the metamathod.
+    the metamathod, unless the subtype redefines a method of the same name.
     By convention, if the decorated method is named 'f', a method
     will be created in the metaclass named '_set_f'. As the name
     implies, a call by a given type to _set_f will set f on that type,

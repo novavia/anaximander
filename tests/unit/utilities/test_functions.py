@@ -43,10 +43,10 @@ class TestAttributeHandling(TestCase):
         assert fun.lmap('i0', 'i2') == {'i0': i0, 'i2': i2}
 
 
-def test_typechecker():
-    assert fun.typechecker(int)(0)
-    assert not fun.typechecker(int)('a')
-    assert fun.typechecker(tuple, list)([])
+def test_typecheck():
+    assert fun.typecheck(int)(0)
+    assert not fun.typecheck(int)('a')
+    assert fun.typecheck(tuple, list)([])
 
 
 class TestStringFormatting(TestCase):

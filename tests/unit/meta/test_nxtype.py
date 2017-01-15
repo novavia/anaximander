@@ -114,7 +114,7 @@ def proto_clade():
     class Noise(Object['noise']):
         pass
 
-    Random = nxtype(Object, 'Random', key='random')
+    Random = nxtype(Object, name='Random', key='random')
 
     return (Object, BaseHammer, BaseNoise, Hammer, Noise, Random)
 

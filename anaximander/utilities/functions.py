@@ -39,7 +39,7 @@ def lmap(*args):
     return {k: v for k, v in caller_locals.items() if k in args}
 
 
-def typechecker(*types):
+def typecheck(*types):
     """Returns a callable equivalent to isinstance."""
     def checker(obj):
         return isinstance(obj, types)
