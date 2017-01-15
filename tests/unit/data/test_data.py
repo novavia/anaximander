@@ -53,7 +53,7 @@ def test_instance(datatypes):
     assert smph.data == np.float(65)
     assert smph.metadata == {}
     assert repr(smph) == '<SpeedMPH(65.0)>'
-    assert str(smph) == '65.0 mph'
+    assert str(smph) == '65.00000 mph'
     assert repr(skph) == "<SpeedKPH(100.0, metadata={'uncertainty': 5})>"
     assert str(skph) == '100.00 kph'
 
@@ -63,6 +63,25 @@ def test_comparisons(datatypes):
     assert SpeedMPH(65) == SpeedMPH(65)
     assert SpeedKPH(100.005) == SpeedKPH(100)
     assert not SpeedMPH(65.005) == SpeedMPH(65)
+    # This is a bit of a corner case, because precision is defined
+    # in SpeedKPH but not SpeedMPH. So this makes sense from the
+    # standpoint of the API, but that's obviously weird and error-prone...
+    assert SpeedKPH(100) == SpeedMPH(62.14)
+    assert SpeedMPH(62.14) != SpeedKPH(100)
+    assert SpeedMPH(62.14) > SpeedKPH(100)
+    assert SpeedKPH(100) <= SpeedMPH(62.14)
+    assert not SpeedKPH(100) < SpeedMPH(62.14)
+    assert SpeedMPH(62.1) < SpeedKPH(100)
+    assert SpeedKPH(100) >= SpeedMPH(62.1)
+    assert SpeedKPH(100) > SpeedMPH(62.1)
+    assert not SpeedKPH(100) > SpeedMPH(62.13)
+
+
+def test_conversion(datatypes):
+    SpeedMPH, SpeedKPH = datatypes
+    speed_mph = SpeedKPH(100).convert(SpeedMPH)
+    assert type(speed_mph) is SpeedMPH
+    assert speed_mph == SpeedMPH(62.1371)
 
 if __name__ == '__main__':
     pytest.main([__file__])

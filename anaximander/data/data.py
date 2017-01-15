@@ -79,13 +79,13 @@ class NxScalar(NxData):
         functions are available. Defaults to None.
     * dtype: a numpy.dtype specification that indicates how instance values
         should be stored. Defaults to float64.
-    * precision: an optional integer value used for printing instances if
-        dtype is a float.
+    * precision: an optional integer value used for comparing and printing
+        instances. Default to 5, i.e. 1e-5 precision.
     """
     quantity = TypeAttribute(validate=fun.typecheck(Quantity))
     unit = TypeAttribute(default=default_unit, validate=fun.typecheck(str))
     dtype = TypeAttribute(default=np.dtype('float64'))
-    precision = TypeAttribute(validate=fun.typecheck(int))
+    precision = TypeAttribute(validate=fun.typecheck(int), default=5)
 
     @classmethod
     def cast(cls, value):
@@ -120,44 +120,56 @@ class NxScalar(NxData):
     def __lt__(self, other):
         self_val, other_val = self._compare(other)
         if self.precision is not None:
-            return self_val < other_val - 10 ** self.precision
+            return self_val < other_val - 10 ** -self.precision
         else:
             return self_val < other_val
 
     def __le__(self, other):
         self_val, other_val = self._compare(other)
         if self.precision is not None:
-            return self_val <= other_val + 10 ** self.precision
+            return self_val <= other_val + 10 ** -self.precision
         else:
             return self_val <= other_val
 
     def __eq__(self, other):
         self_val, other_val = self._compare(other)
         if self.precision is not None:
-            return np.abs(self_val - other_val) <= 10 ** self.precision
+            return np.abs(self_val - other_val) <= 10 ** -self.precision
         else:
             return self_val == other_val
 
     def __ge__(self, other):
         self_val, other_val = self._compare(other)
         if self.precision is not None:
-            return self_val >= other_val - 10 ** self.precision
+            return self_val >= other_val - 10 ** -self.precision
         else:
             return self_val >= other_val
 
     def __gt__(self, other):
         self_val, other_val = self._compare(other)
         if self.precision is not None:
-            return self_val > other_val + 10 ** self.precision
+            return self_val > other_val + 10 ** -self.precision
         else:
             return self_val > other_val
 
     def __ne__(self, other):
         self_val, other_val = self._compare(other)
         if self.precision is not None:
-            return np.abs(self_val - other_val) > 10 ** self.precisionn
+            return np.abs(self_val - other_val) > 10 ** -self.precision
         else:
             return self_val != other_val
+
+    def convert(self, datatype=None):
+        """Converts self to a NxScalar of specified type.
+
+        The destination datatype must have the same quantity.
+        """
+        if self.quantity is None:
+            return NotImplemented
+        if datatype.quantity is not datatype.quantity:
+            raise TypeError("Can only convert NxScalar within same quantity.")
+        data = self.quantity.convert(self._data, self.unit, datatype.unit)
+        return datatype(data, **self.metadata)
 
     @metamethod
     def __repr__(cls):
