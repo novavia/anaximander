@@ -57,6 +57,7 @@ from marshmallow.schema import SchemaMeta
 
 from ..utilities.functions import monkeypatch
 from ..utilities.xprops import weakproperty
+from .exceptions import DataError
 from . import fields
 
 # =============================================================================
@@ -64,7 +65,7 @@ from . import fields
 # =============================================================================
 
 
-class SchemaError(Exception):
+class SchemaError(DataError):
     """A customized error class for schema-related errors."""
     pass
 

@@ -18,6 +18,7 @@ import pandas as pd
 
 from ..meta.metadescriptors import MetaCharacter
 from ..meta.nxtype import prototype
+from .exceptions import DataError
 from .object import DataObject
 from .schema import Schema
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
@@ -76,7 +77,7 @@ def dtypes(schema):
     return OrderedDict([(k, dtype(v)) for k, v in schema.fields.items()])
 
 
-class FrameError(Exception):
+class FrameError(DataError):
     """Specialized exception for Frames."""
     pass
 

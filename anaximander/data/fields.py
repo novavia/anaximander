@@ -25,7 +25,8 @@ from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Str, Bool, Int, Constant
 
 from ..utilities.functions import monkeypatch
-from .data import NxScalar, ValidationError as DataValidationError
+from .exceptions import DataError, ValidationError as DataValidationError
+from .data import NxScalar
 
 # =============================================================================
 # Utilities
@@ -119,7 +120,7 @@ class _FieldPatch:
 monkeypatch(msh.fields.Field, _FieldPatch)
 
 
-class FieldError(Exception):
+class FieldError(DataError):
     """Customized exception raised for incorrect Field instantiation."""
     pass
 

@@ -324,6 +324,39 @@ class MetaCharacter(TypeAttribute):
     pass
 
 # =============================================================================
+# Typeproperties
+# =============================================================================
+
+
+# Attributes for TypeProperty
+typeproperty_attrs = {'cls': nxattr.ib(init=False),
+                      'name': nxattr.ib(init=False),
+                      '__func__': nxattr.ib()}
+
+
+@nxattr.s(these=typeproperty_attrs, inherit=False)
+class TypeProperty(MetaDescriptor):
+    """A property of a type that is accessible to type instances.
+
+    Type properties function very much like Type attributes, except that
+    their evaluation is always computed rather than cached. Like with
+    Type attributes, a regular instance property is created as well, such
+    that the type property evaluatio is accessible from objects.
+    Note that this implementation is limited to read-only properties.
+    """
+
+    def __call__(self, mcl):
+        super().__call__(mcl)
+        setattr(mcl, self.name, property(self.__func__))
+        inst_property = property(lambda i: getattr(type(i), self.name))
+        setattr(self.cls, self.name, inst_property)
+
+
+def typeproperty(func):
+    """A method decorator that declares a TypeProperty."""
+    return TypeProperty(func)
+
+# =============================================================================
 # Typemethods
 # =============================================================================
 
@@ -382,6 +415,9 @@ class TypeInitMethod(TypeMethod):
 def typeinitmethod(func):
     """A method decorator that declares a TypeInit method."""
     return TypeInitMethod(func)
+
+
+
 
 
 # =============================================================================

@@ -21,6 +21,7 @@ from functools import partial
 import re
 import sys
 
+from .exceptions import DataError
 from . import schema as sch, record as rec, frame as frm
 from ..meta.nxtype import nxtype
 
@@ -29,7 +30,7 @@ from ..meta.nxtype import nxtype
 # =============================================================================
 
 
-class TractError(Exception):
+class TractError(DataError):
     """Base exception type for Tract-related errors."""
     pass
 

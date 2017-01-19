@@ -14,13 +14,14 @@ Copyright (C) Novavia Solutions, LLC.
 from anaximander.utilities import nxattr
 from anaximander.meta.nxtype import directory
 from anaximander.meta.nxobject import NxObject
+from .exceptions import DataError
 
 # =============================================================================
 # Quantity class
 # =============================================================================
 
 
-class UnitError(Exception):
+class UnitError(DataError):
     """Customized Exception class for errors associated with Quantity units."""
     pass
 

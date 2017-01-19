@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Data module, which defines the Data archetype.
+Data module, which defines the Data archetypes.
 
 This version only supports univariate data types. Support for multi-variate
 types based on compound numpy dtypes is planned for future release.
@@ -21,11 +21,12 @@ import numpy as np
 from anaximander.utilities import functions as fun
 from anaximander.meta.nxtype import archetype
 from anaximander.meta.metadescriptors import TypeAttribute, metamethod
+from .exceptions import ValidationError
 from .object import DataObject
 from .quantities import Quantity
 
 # =============================================================================
-# Quantity class
+# NxData class and derived archetypes NxSclar and NxVector
 # =============================================================================
 
 
@@ -39,11 +40,6 @@ def default_unit(cls):
         return cls.quantity.measure
     except AttributeError:
         return None
-
-
-class ValidationError(Exception):
-    """Custom exception raised if improper values are passed to NxData."""
-    pass
 
 
 class NxData(DataObject):
@@ -166,7 +162,7 @@ class NxScalar(NxData):
         """
         if self.quantity is None:
             return NotImplemented
-        if datatype.quantity is not datatype.quantity:
+        if datatype.quantity is not self.quantity:
             raise TypeError("Can only convert NxScalar within same quantity.")
         data = self.quantity.convert(self._data, self.unit, datatype.unit)
         return datatype(data, **self.metadata)

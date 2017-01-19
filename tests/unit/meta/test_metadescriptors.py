@@ -29,6 +29,7 @@ def C():
     class C(NxObject):
         x = mtd.MetaCharacter()
         message = 'Hello, World!'
+        _greetings = 0
 
         @mtd.newtypemethod
         def reset_message(cls):
@@ -38,11 +39,17 @@ def C():
         @mtd.typeinitmethod
         def identity(cls):
             cls.message += 'My x is {0}'.format(cls.x)
+            cls._greetings = 0
 
         @mtd.typemethod
         def greet(cls):
             print(cls.message)
+            cls._greetings += 1
             return True
+
+        @mtd.typeproperty
+        def greetings(cls):
+            return cls._greetings
 
         @mtd.metamethod
         def __repr__(cls):
@@ -64,7 +71,7 @@ def test_registries(C):
     assert C.__metadescriptors__ == registries[mtd.MetaDescriptor]
     assert list(registries[mtd.MetaDescriptor]) == ['x', 'reset_message',
                                                     'identity', 'greet',
-                                                    '__repr__']
+                                                    'greetings', '__repr__']
     assert list(C.__metacharacters__) == ['x']
     assert list(C.__typeinitmethods__) == ['identity']
 
@@ -103,6 +110,14 @@ def test_metamethod(C):
     inst = C[0]()
     assert hasattr(type(C), '_set__repr__')
     assert repr(inst) == '<C[0]>'
+
+
+def test_typeproperty(C):
+    inst = C[0]()
+    assert C.greetings == C[0].greetings == inst.greetings == 0
+    C[0].greet()
+    assert C.greetings == 0
+    assert C[0].greetings == inst.greetings == 1
 
 
 if __name__ == '__main__':
