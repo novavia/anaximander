@@ -63,5 +63,13 @@ def test_conversion(datatypes):
     assert skph.data[0] == 25 / 0.621371
 
 
+def test_indexing(datatypes):
+    SpeedMPH, _ = datatypes
+    smph = NxSeries[SpeedMPH]([25, 35, 55, 65])
+    assert smph[0] == SpeedMPH(25)
+    assert type(smph[0:2]) is NxSeries[SpeedMPH]
+    assert len(smph[0:2]) == 2
+
+
 if __name__ == '__main__':
     pytest.main([__file__])
