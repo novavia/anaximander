@@ -19,18 +19,21 @@ import pandas as pd
 from ..meta.metadescriptors import MetaCharacter
 from ..meta.nxtype import prototype
 from .exceptions import DataError
-from .object import DataObject
+from .base import IndexedDataObject, DataSlicingError
 from .schema import Schema
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
-    Str, Bool, Int, Constant
+    Str, Bool, Int, Constant, Scalar
+from .record import NxRecord
+from .series import NxSeries
 
 # =============================================================================
 # Field mapping from Schemas to pandas / numpy
 # =============================================================================
 
 
+# TODO: add Scalar
 _field_map = {Field: np.dtype('object'),
               Raw: np.dtype('object'),
               Nested: np.dtype('object'),
@@ -64,6 +67,8 @@ _field_map = {Field: np.dtype('object'),
 def dtype(field):
     """Returns a BiqQuery field type from a Schema field or NotImpemented."""
     ftype = type(field)
+    if issubclass(ftype, Scalar):
+        return field.datatype.dtype
     for ft in ftype.__mro__:
         try:
             return _field_map[ft]
@@ -91,16 +96,62 @@ class ConformityError(FrameError):
 # =============================================================================
 
 
+class _FrameIndexProxy(object):
+    """Wraps pandas indexer object to return NxData objects."""
+
+    def __init__(self, nxdata, pdidx):
+        """Instantiated with a NxFrame and a pandas accessor.
+
+        A pandas accessor is any pandas object that implement __getitem__
+        on the underlying series with which the instance was created.
+        """
+        self._nxdata = nxdata
+        self._pdidx = pdidx
+
+    def __getitem__(self, key):
+        data = self._pdidx.__getitem__(key)
+        context = self._nxdata.context
+        if isinstance(data, pd.DataFrame):
+            try:
+                return type(self._nxdata)(data, context=context)
+            except ConformityError:
+                msg = "Slice cannot be cast into a DataObject."
+                raise DataSlicingError(msg)
+        if isinstance(data, pd.Series):
+            # If index is subset of the frame's columns, then data is a record
+            if set(data.index).issubset(set(self._nxdata.schema.fields)):
+                rtype = NxRecord[self._nxdata.schema]
+                return rtype(data, context=context)
+            else:
+                stype = NxSeries[self._nxdata.schema]
+                return stype(data, context=context)
+        # Otherwise the function returns a scalar but since we don't
+        # know where it's coming from (i.e. NxData or not) the function
+        # raises an exception.
+        # This is clearly a flaw but to fix it would require delving deep
+        # into pandsas indexing and intercepting all the scenarios by
+        # which a scalar is returned through direct slicing of a DataFrame.
+        # Two alternative possibilities exist:
+        # * Directly slice self.data to get a numpy scalar
+        # * Do a slice of a slice, i.e. either slice a column or slice
+        # a row, which will return an NxData object or a numpy object
+        # as appropriate.
+        else:
+            raise DataSlicingError(msg)
+
+
 @prototype
-class NxFrame(DataObject):
+class NxFrame(IndexedDataObject):
 
     schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
 
-    def __init__(self, data, validate=False):
+    def __init__(self, data, context=None, validate=False):
         """Data can be any admissible data argument to a dataframe.
 
         params:
-            data: a DataFrame of data argument to a DataFrame
+            data: a DataFrame of data argument to a DataFrame.
+            context: Optional context to populate DataObject's context
+                weak property.
             validate: if True, the entire data gets validated against the
                 class' schema. Must be used intentionally as there is a
                 performance penalty.
@@ -109,6 +160,9 @@ class NxFrame(DataObject):
         validation to verify conformity between the DataFrame's column names
         and types and the class' Schema (see cast method).
         """
+        if isinstance(data, NxFrame):
+            context = context or data.context
+            data = data.data
         self._data = self.cast(data)
         if validate:
             self.validate()

@@ -53,7 +53,7 @@ def test_scalar():
 
     data = {'mph': 65.}
     obj = MySchema().load(data).data
-    assert str(obj['mph']) == '65.00000 mph'
+    assert str(obj['mph']) == '65.0 mph'
     dump = MySchema().dump(obj).data
     assert dump == data
     assert type(dump['mph']) is float

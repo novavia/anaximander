@@ -49,13 +49,13 @@ def test_type_creation(datatypes):
 def test_instance(datatypes):
     SpeedMPH, SpeedKPH = datatypes
     smph = SpeedMPH(np.float(65))
-    skph = SpeedKPH(np.float(100), uncertainty=5)
+    skph = SpeedKPH(np.float(100))
     assert smph.data == np.float(65)
-    assert smph.metadata == {}
+    assert smph.context is None
     assert repr(smph) == '<SpeedMPH(65.0)>'
-    assert str(smph) == '65.00000 mph'
-    assert repr(skph) == "<SpeedKPH(100.0, metadata={'uncertainty': 5})>"
-    assert str(skph) == '100.00 kph'
+    assert str(smph) == '65.0 mph'
+    assert repr(skph) == "<SpeedKPH(100.0)>"
+    assert str(skph) == '1e+02 kph'
 
 
 def test_comparisons(datatypes):

@@ -107,6 +107,7 @@ class _FieldPatch:
     def description(self):
         return self.metadata.get('description', None)
 
+    @property
     def _attribute_default(self):
         """Extracts the default attribute instantiation value from a field."""
         default = self.default

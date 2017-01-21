@@ -17,6 +17,7 @@ import unittest as ut
 import pytest
 
 from anaximander.data import fields, schema as sch, record as rec
+from anaximander.data.data import NxFloat
 
 # =============================================================================
 # Test Cases
@@ -30,13 +31,13 @@ class TestRecord(ut.TestCase):
         class Schema(sch.Schema):
             title = fields.String(key=True)
             date = fields.Date(key=True)
-            text = fields.String()
+            value = fields.Scalar(NxFloat)
 
         self.schema = Schema()
         self.Record = rec.NxRecord[Schema]
         self.data = {'title': 'ping',
                      'date': '2016-12-08',
-                     'text': 'pong'}
+                     'value': 3.5}
 
     def test_load(self):
         record = self.schema.load(self.data).data
@@ -52,17 +53,17 @@ class TestRecord(ut.TestCase):
         record = self.schema.load(self.data).data
         assert record.as_dict() == {'title': 'ping',
                                     'date': dt.date(2016, 12, 8),
-                                    'text': 'pong'}
+                                    'value': NxFloat(3.5)}
 
     def test_as_tuple(self):
         record = self.schema.load(self.data).data
-        assert record.as_tuple() == ('ping', dt.date(2016, 12, 8), 'pong')
+        assert record.as_tuple() == ('ping', dt.date(2016, 12, 8),
+                                     NxFloat(3.5))
 
     def test_validate(self):
         record = self.schema.load(self.data).data
         record.validate()
-        del self.data['text']
-        record = self.Record(**self.data)
+        record = self.Record(title='ping', date='pong')
         with pytest.raises(sch.ValidationError):
             record.validate()
 

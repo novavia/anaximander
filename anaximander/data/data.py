@@ -22,7 +22,7 @@ from anaximander.utilities import functions as fun
 from anaximander.meta.nxtype import archetype
 from anaximander.meta.metadescriptors import TypeAttribute, metamethod
 from .exceptions import ValidationError
-from .object import DataObject
+from .base import DataObject
 from .quantities import Quantity
 
 # =============================================================================
@@ -45,17 +45,16 @@ def default_unit(cls):
 class NxData(DataObject):
     """An abstract base type for NxData."""
 
-    def __init__(self, data, **metadata):
+    def __init__(self, data, context=None):
+        if isinstance(data, NxData):
+            context = context or data.context
+            data = data._data
         self._data = self.cast(data)
-        self._metadata = metadata
+        self.context = context
 
     @property
     def data(self):
         return self._data
-
-    @property
-    def metadata(self):
-        return self._metadata
 
     @abc.abstractclassmethod
     def cast(cls, value):
@@ -93,10 +92,10 @@ class NxScalar(NxData):
 
     @metamethod
     def _compare(cls):
-        """Comparison primitve for instances. EXCLUDES METADATA.
+        """Comparison primitve for instances.
 
         Comparisons are based on the underlying data value alone. Evaluating
-        equal does not imply that two instances share the same metadata.
+        equal does not imply that two instances share the same context.
         """
         if cls.quantity is not None:
             def convert(a, b):
@@ -165,36 +164,19 @@ class NxScalar(NxData):
         if datatype.quantity is not self.quantity:
             raise TypeError("Can only convert NxScalar within same quantity.")
         data = self.quantity.convert(self._data, self.unit, datatype.unit)
-        return datatype(data, **self.metadata)
+        return datatype(data, self.context)
 
-    @metamethod
-    def __repr__(cls):
-        """Repr method factory."""
-        type_name = cls.__name__
+    def __repr__(self):
+        type_name = type(self).__name__
+        return '<{t}({d})>'.format(t=type_name, d=self._data)
 
-        def inst_repr(self):
-            left_str = '<{t}({d}'.format(t=type_name, d=self._data)
-            if self.metadata:
-                right_str = ', metadata={})>'.format(self._metadata)
-            else:
-                right_str = ')>'
-            return left_str + right_str
-        return inst_repr
+    def __str__(self):
+        units = '' if self.unit is None else ' ' + self.unit
+        return '{s._data:.{s.precision}}'.format(s=self) + units
 
-    @metamethod
-    def __str__(cls):
-        """Print method factory."""
-        if cls.precision is not None:
-            p = cls.precision
-            dataformat = lambda d: '{:.{p}f}'.format(d, p=p)
-        else:
-            dataformat = str
-        units = '' if cls.unit is None else ' ' + cls.unit
 
-        def inst_str(self):
-            return dataformat(self._data) + units
-
-        return inst_str
+NxFloat = NxScalar.subtype(name='NxFloat')
+NxInt = NxScalar.subtype(name='NxInt', dtype=np.dtype('int'))
 
 
 class NxVector(NxData):

@@ -11,12 +11,15 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
+from functools import wraps
+
 import attr
 
 from ..utilities import nxattr
 from ..meta.metadescriptors import MetaCharacter, newtypemethod, typeinitmethod
 from ..meta.nxtype import prototype
-from .object import DataObject
+from .base import DataObject
+from .fields import Scalar
 from .schema import Schema
 
 # =============================================================================
@@ -47,8 +50,6 @@ class NxRecord(DataObject):
 
         See attr.asdict for documentation on keyword arguments.
         """
-        filter = kwargs.pop('filter', lambda a, v: True)
-        kwargs['filter'] = self.attr_filter(filter)
         return attr.asdict(self, **kwargs)
 
     def as_tuple(self, **kwargs):
@@ -56,8 +57,6 @@ class NxRecord(DataObject):
 
         See attr.astuple for documentation on keyword arguments.
         """
-        filter = kwargs.pop('filter', lambda a, v: True)
-        kwargs['filter'] = self.attr_filter(filter)
         return attr.astuple(self, **kwargs)
 
     def validate(self):
@@ -70,37 +69,41 @@ class NxRecord(DataObject):
         schema = self.schema()
         schema.validate(schema.dump(self).data)
 
-    @classmethod
-    def attr_filter(cls, filter):
-        """Composes a filter with the class' base filter."""
-        return lambda a, v: False if a.name == '_validate' else filter(a, v)
-
-    def __attrs_post_init__(self):
-        """Additional __init__ procedure -see attrs doc. for details."""
-        try:
-            validate = self._validate
-        except AttributeError:
-            pass  # Fails silently
-        else:
-            if validate:
-                self.validate()
-            del self._validate
-
     @staticmethod
     def _make_attributes(schema):
         """Creates attributes from schema."""
         attrs = {}
         for k, v in schema.fields.items():
-            if v.required:
-                attrs[k] = nxattr.ib()
+            if isinstance(v, Scalar):
+                convert = v.datatype
             else:
-                attrs[k] = nxattr.ib(default=v._attribute_default())
-        # Special attribute _validate makes it possible to add a 'validate'
-        # option to the __init__ method of the record class, while ignoring
-        # it for most practical purposes.
-        validate = nxattr.ib(False, repr=False, cmp=False, hash=False)
-        attrs['_validate'] = validate
+                convert = None
+            if v.required:
+                attrs[k] = nxattr.ib(convert=convert)
+            else:
+                attrs[k] = nxattr.ib(default=v._attribute_default,
+                                     convert=convert)
         return attrs
+
+    @staticmethod
+    def _decorate_init(init):
+        """An __init__ method decorator for subtypes.
+
+        The decorator adds two keyword arguments:
+        * context, to populate DataObject's weak property context.
+        * validate, to optionally validate the inputs. Note that this
+        is not done very efficiently in the current implementation.
+        """
+        @wraps(init)
+        def wrapped(*args, **kwargs):
+            context = kwargs.pop('context', None)
+            validate = kwargs.pop('validate', False)
+            init(*args, **kwargs)
+            self = kwargs.get('self', args[0])
+            self.context = context
+            if validate:
+                self.validate()
+        return wrapped
 
     @newtypemethod
     def set_attributes(cls):
@@ -108,7 +111,9 @@ class NxRecord(DataObject):
         attributes = cls._make_attributes(cls.schema)
         for k, v in attributes.items():
             setattr(cls, k, v)
-        return nxattr.s(cls, inherit=False)
+        cls = nxattr.s(cls, inherit=False)
+        cls.__init__ = cls._decorate_init(cls.__init__)
+        return cls
 
     @typeinitmethod
     def coerce_schema(cls):
