@@ -14,6 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 from functools import wraps
 
 import attr
+import pandas as pd
 
 from ..utilities import nxattr
 from ..meta.metadescriptors import MetaCharacter, newtypemethod, typeinitmethod
@@ -32,9 +33,13 @@ class NxRecord(DataObject):
 
     schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
 
+    # XXX: note that this implementation is weak:
+    # * field order is not guaranteed
+    # * dates and times are converted to strings
     @property
     def data(self):
-        return self.as_dict()
+        """Returns a pandas-based view of self, i.e. a Series."""
+        return pd.Series(self.dump())
 
     @classmethod
     def load(cls, data):

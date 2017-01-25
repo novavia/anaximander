@@ -28,19 +28,21 @@ def test_field_properties():
         x = fields.Int(key=True)
 
     class MySchema(MyBaseSchema):
-        y = fields.Bool(key=True)
-        z = fields.DateTime(sequential=True)
+        y = fields.DateTime(key=True, sequential=True)
+        z = fields.Bool()
 
     x, y, z = MySchema.fields.values()
     assert MyBaseSchema.x == MySchema.x == x
     assert x.name is 'x'
     assert x.key is True
     assert y.key is True
-    assert z.sequential is True
+    assert y.sequential is True
     assert x.sequential is False
     assert MyBaseSchema.fields == OrderedDict([('x', x)])
     assert MySchema.fields == OrderedDict([('x', x), ('y', y), ('z', z)])
     assert MySchema.keys == OrderedDict([('x', x), ('y', y)])
+    assert MySchema.nskeys == OrderedDict([('x', x)])
+    assert MySchema.seqkey == 'y'
     assert MySchema.own_fields == OrderedDict([('y', y), ('z', z)])
 
 
@@ -62,6 +64,13 @@ def test_field_sequence():
         class MySchema(sch.Schema):
             name = fields.Str()
             key = fields.Str(key=True)
+
+
+def test_unique_sequential_key():
+    with pytest.raises(sch.SchemaError):
+        class MySchema(sch.Schema):
+            a = fields.Int(key=True, sequential=True)
+            b = fields.Int(key=True, sequential=True)
 
 
 if __name__ == '__main__':

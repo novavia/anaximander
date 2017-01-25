@@ -69,8 +69,10 @@ def test_indexing(datatypes):
     assert smph[0] == SpeedMPH(25)
     assert type(smph[0:2]) is NxSeries[SpeedMPH]
     assert len(smph[0:2]) == 2
-    assert type(smph[smph.values > 50]) is NxSeries[SpeedMPH]
-    assert smph[smph.values > 50].data.data == np.array([55, 65])
+    assert type(smph.loc[0:2]) is NxSeries[SpeedMPH]
+    assert len(smph.loc[0:2]) == 3
+    assert type(smph[smph.data.values > 50]) is NxSeries[SpeedMPH]
+    assert smph[smph.data.values > 50].data.data == np.array([55, 65])
 
 
 if __name__ == '__main__':

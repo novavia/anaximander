@@ -49,8 +49,8 @@ class Tract:
     """
     # Mapping of types to attribute names under a Tract object
     __attributes__ = {sch.Schema: 'Schema',
-                      rec.NxRecord: 'Record',
-                      frm.NxFrame: 'Frame'}
+                      rec.NxRecord: 'Record',}
+#                      frm.NxFrame: 'Frame'}
 
     def __init__(self, schema, name=None):
         """Initializes a Tract.
@@ -123,9 +123,9 @@ class Tract:
     def Record(self):
         return rec.NxRecord[self.Schema]
 
-    @property
-    def Frame(self):
-        return frm.NxFrame[self.Schema]
+#    @property
+#    def Frame(self):
+#        return frm.NxFrame[self.Schema]
 
 
 def tract(cls=None, *, name=None):

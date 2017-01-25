@@ -56,7 +56,7 @@ import marshmallow as msh
 from marshmallow.schema import SchemaMeta
 
 from ..utilities.functions import monkeypatch
-from ..utilities.xprops import weakproperty
+from ..utilities.xprops import weakproperty, cachedproperty
 from .exceptions import DataError
 from . import fields
 
@@ -125,6 +125,12 @@ class _SchemaMetaPatch:
                         "fields."
                     raise SchemaError(msg.format(k))
             setattr(cls, k, v)
+        seqkeys = {k for k, v in cls.keys.items() if v.sequential}
+        if len(seqkeys) > 1:
+            msg = "A schema cannot feature more than one sequential key field."
+            raise SchemaError(msg)
+        elif len(seqkeys) == 1:
+            cls._seqkey = seqkeys.pop()
 
     @property
     def base_schemas(cls):
@@ -150,9 +156,24 @@ class _SchemaMetaPatch:
         return OrderedDict((k, v) for k, v in cls.fields.items() if v.key)
 
     @property
+    def nskeys(cls):
+        """Returns an OrderedDict of non-sequential key fields in a Schema."""
+        pairs = ((k, v) for k, v in cls.keys.items() if not v.sequential)
+        return OrderedDict(pairs)
+
+    @cachedproperty
+    def seqkey(cls):
+        """Returns the name of the only sequential key or None.
+
+        This is set in the __init__ method as there has to be an integrity
+        check.
+        """
+        return None
+
+    @property
     def required(cls):
         """Returns a dict of required fields in a Schema."""
-        return {k: v for k, v in cls.fields.items() if v.required}
+        return OrderedDict((k, v) for k, v in cls.fields.items() if v.required)
 
     @weakproperty
     def tract(cls):

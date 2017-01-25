@@ -12,14 +12,16 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import OrderedDict
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 import pandas as pd
 
-from ..meta.metadescriptors import MetaCharacter
-from ..meta.nxtype import prototype
+from ..utilities.functions import spformat
+from ..meta.metadescriptors import TypeAttribute, MetaCharacter, typeproperty
+from ..meta.nxtype import prototype, clade
 from .exceptions import DataError
-from .base import IndexedDataObject, DataSlicingError
+from .base import IndexedDataObject
 from .schema import Schema
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
@@ -33,7 +35,6 @@ from .series import NxSeries
 # =============================================================================
 
 
-# TODO: add Scalar
 _field_map = {Field: np.dtype('object'),
               Raw: np.dtype('object'),
               Nested: np.dtype('object'),
@@ -82,6 +83,11 @@ def dtypes(schema):
     return OrderedDict([(k, dtype(v)) for k, v in schema.fields.items()])
 
 
+def rqdtypes(schema):
+    """Reurns an OrderedDict of dtypes for required fieldd only."""
+    return OrderedDict([(k, dtype(v)) for k, v in schema.required.items()])
+
+
 class FrameError(DataError):
     """Specialized exception for Frames."""
     pass
@@ -96,56 +102,17 @@ class ConformityError(FrameError):
 # =============================================================================
 
 
-class _FrameIndexProxy(object):
-    """Wraps pandas indexer object to return NxData objects."""
+class NxDataFrame(IndexedDataObject):
+    """A read-only data table with strong column semantic enforcement."""
+    schema = None  # placeholder for schema in concrete classes
+    kcols = []  # placeholder for non-sequential schema key field names.
+    sqcol = None  # placeholder for possible sequential key field name.
 
-    def __init__(self, nxdata, pdidx):
-        """Instantiated with a NxFrame and a pandas accessor.
+    @typeproperty
+    def rowtype(cls):
+        return NxRecord[cls.schema]
 
-        A pandas accessor is any pandas object that implement __getitem__
-        on the underlying series with which the instance was created.
-        """
-        self._nxdata = nxdata
-        self._pdidx = pdidx
-
-    def __getitem__(self, key):
-        data = self._pdidx.__getitem__(key)
-        context = self._nxdata.context
-        if isinstance(data, pd.DataFrame):
-            try:
-                return type(self._nxdata)(data, context=context)
-            except ConformityError:
-                msg = "Slice cannot be cast into a DataObject."
-                raise DataSlicingError(msg)
-        if isinstance(data, pd.Series):
-            # If index is subset of the frame's columns, then data is a record
-            if set(data.index).issubset(set(self._nxdata.schema.fields)):
-                rtype = NxRecord[self._nxdata.schema]
-                return rtype(data, context=context)
-            else:
-                stype = NxSeries[self._nxdata.schema]
-                return stype(data, context=context)
-        # Otherwise the function returns a scalar but since we don't
-        # know where it's coming from (i.e. NxData or not) the function
-        # raises an exception.
-        # This is clearly a flaw but to fix it would require delving deep
-        # into pandsas indexing and intercepting all the scenarios by
-        # which a scalar is returned through direct slicing of a DataFrame.
-        # Two alternative possibilities exist:
-        # * Directly slice self.data to get a numpy scalar
-        # * Do a slice of a slice, i.e. either slice a column or slice
-        # a row, which will return an NxData object or a numpy object
-        # as appropriate.
-        else:
-            raise DataSlicingError(msg)
-
-
-@prototype
-class NxFrame(IndexedDataObject):
-
-    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
-
-    def __init__(self, data, context=None, validate=False):
+    def __init__(self, data=None, context=None, validate=False):
         """Data can be any admissible data argument to a dataframe.
 
         params:
@@ -160,16 +127,13 @@ class NxFrame(IndexedDataObject):
         validation to verify conformity between the DataFrame's column names
         and types and the class' Schema (see cast method).
         """
-        if isinstance(data, NxFrame):
+        if isinstance(data, NxDataFrame):
             context = context or data.context
             data = data.data
         self._data = self.cast(data)
         if validate:
             self.validate()
-
-    @property
-    def data(self):
-        return self._data.copy()
+        self.context = context
 
     @classmethod
     def cast(cls, data):
@@ -185,29 +149,38 @@ class NxFrame(IndexedDataObject):
         * reorders columns to match the schema if necessary.
         """
         df = pd.DataFrame(data)
-        df_dtypes = OrderedDict(df.dtypes)
         columns = []
         conversions = {}
-        sc_fields = cls.schema.fields.items()
-        sc_dtypes = dtypes(cls.schema).items()
-        for (col, field), (_, dtype) in zip(sc_fields, sc_dtypes):
-            try:
-                col_type = df_dtypes[col]
-            except KeyError:
-                if field.required:
-                    msg = "Data is missing required field."
-                    raise ConformityError(msg)
-            else:
-                columns.append(col)
-                if col_type != dtype:
-                    conversions[col] = dtype
-        dataframe = df[columns]
+        if df.empty:
+            dtypes_ = rqdtypes(cls.schema)
+            columns = list(dtypes_)
+            dtype_ = pd.Series(dtypes_)
+            dataframe = pd.DataFrame(columns=columns, dtype=dtype_)
+        else:
+            df_dtypes = OrderedDict(df.dtypes)
+            sc_fields = cls.schema.fields.items()
+            sc_dtypes = dtypes(cls.schema).items()
+            for (col, field), (_, dtype) in zip(sc_fields, sc_dtypes):
+                try:
+                    col_type = df_dtypes[col]
+                except KeyError:
+                    if field.required:
+                        msg = "Data is missing required field."
+                        raise ConformityError(msg)
+                else:
+                    columns.append(col)
+                    if col_type != dtype:
+                        conversions[col] = dtype
+            dataframe = df[columns]
         if conversions:
             try:
                 dataframe = dataframe.astype(conversions)
             except ValueError:
                 msg = "Data cannot be cast to required types."
                 raise ConformityError(msg)
+        if cls.sqcol is not None:
+            dataframe.index = dataframe[cls.sqcol]
+        dataframe.sort_index(inplace=True)
         return dataframe
 
     def validate(self):
@@ -215,3 +188,123 @@ class NxFrame(IndexedDataObject):
         records = self.data.astype(str).to_dict(orient='records')
         schema = self.schema(many=True)
         schema.validate(records)
+
+    @property
+    def distinct(self):
+        """Returns distinct combinations in kcols columns."""
+        if not self.kcols:
+            return list()
+        recs = self._data[self.kcols].drop_duplicates().to_records(index=False)
+        return list(recs)
+
+    def __repr__(self):
+        base = '<{arc}[{dt}]({content})>'
+        return base.format(arc=clade(self).__name__,
+                           dt=self.schema.__name__,
+                           content=spformat(self._data, 'row'))
+
+    def __str__(self):
+        return self._data.__str__()
+
+
+@prototype
+class NxDataCollection(NxDataFrame):
+    """An NxDataFrame with no indexing capabilities besides row sequence."""
+    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
+    kcols = TypeAttribute(default=lambda c: list(c.schema.nskeys))
+    sqcol = TypeAttribute(default=lambda c: c.schema.seqkey)
+
+
+@prototype
+class NxDataMapping(NxDataFrame, traits=(Mapping,)):
+    """An NxDataFrame indexed by non-sequential key fields in the schema."""
+    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
+    kcols = TypeAttribute(default=lambda c: list(c.schema.nskeys))
+    sqcol = TypeAttribute(default=lambda c: c.schema.seqkey)
+
+    def __iter__(self):
+        if self.kcols:
+            return iter(self.distinct)
+        else:
+            return iter(self.index)
+
+    def __getitem__(self, key):
+        """Selects any number of rows and returns appropriate DataObject.
+
+        If self.kcols is an empty list, this method is equivalent to iloc.
+
+        Otherwise the method sccepts the following key arguments:
+        * A scalar value, corresponding to the first column in cls.kcols.
+        * A list, providing multiple values for the first column in cls.kcols.
+        * A tuple, of which the elements are interpreted to match the columns
+        in cls.kcols. A None value is a wild card that will not downselect.
+        * If a tuple, the tuple can contain lists of values that will be
+        matched against the appropriate key column.
+
+        The return value is cast to the appropriate type as follows:
+        * If the downselected data features more than one value of combination
+        of values in the key columns, an NxDataMapping of the same type is
+        returned.
+        * If the downselected data features a single value or combination
+        of value in the key columns, there are three possibilities:
+            * If the schema features a sequential key field, then the
+            return value is an NxDataSequence for the same schema.
+            * Otherwise, if there are multiple rows, the return value is an
+            NxDataCollection for the same schema.
+            * If there is no sequential key field in the schema and the
+            downselected data features a single row, then an NxRecord is
+            returned.
+
+        If no row can be selected, a KeyError is raised.
+        """
+        if not self.kcols:
+            return self.iloc.__getitem__(key)
+        if isinstance(key, tuple):
+            conditions = []
+            for v, c in zip(key, self.kcols):
+                if isinstance(v, list):
+                    condition = self._data[c].isin(v)
+                else:
+                    condition = self._data[c] == v
+            conditions.append(condition)
+            data = self._data[np.logical_and.reduce(conditions)]
+        else:
+            col = self.kcols[0]
+            if isinstance(key, list):
+                data = self._data[self._data[col].isin(key)]
+            else:
+                data = self._data[self._data[col] == key]
+        if data.empty:
+            raise KeyError()
+        if len(data.drop_duplicates(subset=self.kcols)) == 1:
+            schema = self.schema
+            if self.sqcol is not None:
+                return NxDataSequence[schema](data, context=self.context)
+            elif len(data) > 1:
+                return NxDataCollection[schema](data, context=self.context)
+            else:
+                return NxRecord[schema](data.ix[0], context=self.context)
+        else:
+            return type(self)(data, context=self.context)
+
+
+@prototype
+class NxDataSequence(NxDataFrame, traits=(Sequence,)):
+    """An NxDataFrame indexed by a unique sequential key field."""
+    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
+    kcols = TypeAttribute(default=lambda c: list(c.schema.nskeys))
+    sqcol = TypeAttribute(default=lambda c: c.schema.seqkey)
+
+    def __init__(self, data, context=None, validate=False):
+        super().__init__(data, context, validate)
+        self.verify()
+
+    def __getitem__(self, key):
+        """Equivalent to self.iloc.__getitem__."""
+        return self.iloc.__getitem__(key)
+
+    def verify(self):
+        """Checks that the underlying data has a unique key wrt. kcols."""
+        if len(self.distinct) > 1:
+            msg = "DataSequence {0} features distinct values in key fields."
+            raise ConformityError(msg.format(self))

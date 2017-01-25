@@ -175,8 +175,10 @@ class NxScalar(NxData):
         return '{s._data:.{s.precision}}'.format(s=self) + units
 
 
-NxFloat = NxScalar.subtype(name='NxFloat')
+NxFloat = NxScalar.subtype(name='NxFloat', dtype=np.dtype('float'))
 NxInt = NxScalar.subtype(name='NxInt', dtype=np.dtype('int'))
+NxBool = NxScalar.subtype(name='NxBool', dtype=np.dtype('bool'))
+NxStr = NxScalar.subtype(name='NxStr', dtype=np.dtype('str'))
 
 
 class NxVector(NxData):

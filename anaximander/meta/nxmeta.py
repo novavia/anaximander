@@ -211,7 +211,7 @@ class ArcheType(metaclass=ArchMeta):
 # the call to the proper subtype.
 def protonew(cls, *args, **kwargs):
     """Implementation of __new__ for ProtoTypes."""
-    raise TypeError("Cannot instantiate an prototype.")
+    raise TypeError("Cannot instantiate a prototype.")
 
 
 class ProtoType(ArcheType):

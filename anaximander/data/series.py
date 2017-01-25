@@ -22,33 +22,12 @@ import pandas as pd
 from anaximander.utilities.functions import spformat
 from anaximander.meta.nxtype import prototype
 from anaximander.meta.metadescriptors import MetaCharacter, typeproperty
-from .base import IndexedDataObject
+from .base import IndexedDataObject, RowSlicer
 from .data import NxData
 
 # =============================================================================
 # NxSeries prototype
 # =============================================================================
-
-
-class _SeriesIndexProxy(object):
-    """Wraps pandas indexer object to return NxData objects."""
-
-    def __init__(self, nxdata, pdidx):
-        """Instantiated with a NxSeries and a pandas accessor.
-
-        A pandas accessor is any pandas object that implement __getitem__
-        on the underlying series with which the instance was created.
-        """
-        self._nxdata = nxdata
-        self._pdidx = pdidx
-
-    def __getitem__(self, arg):
-        data = self._pdidx.__getitem__(arg)
-        context = self._nxdata.context
-        if isinstance(data, pd.Series):
-            return type(self._nxdata)(data, context=context)
-        else:
-            return self._nxdata.datatype(data, context=context)
 
 
 @prototype
@@ -59,8 +38,11 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
     self.datatype.dtype, i.e. the dtype of the NxDataType that is the
     metacharacter value of concrete NxSeries subtypes.
     """
-    _index_proxy_type = _SeriesIndexProxy
     datatype = MetaCharacter(validate=lambda s: issubclass(s, NxData))
+
+    @typeproperty
+    def rowtype(cls):
+        return cls.datatype
 
     @typeproperty
     def dtype(cls):
@@ -87,24 +69,24 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
         self._data = pd.Series(data, index, self.datatype.dtype, copy=True)
         self.context = context
 
-    @property
-    def data(self):
-        return self._data.copy()
+    def __getitem__(self, key):
+        """Slices self horizontally.
 
-#    def __getitem__(self, key):
-#        """Similar to pandas.Series, label-based, but returns NxData object."""
-#        if isinstance(data, pd.Series):
-#            return type(self._nxdata)(data, context=context)
-#        else:
-#            return self._nxdata.datatype(data, context=context)
-
-    def __len__(self):
-        return self._data.size
+        This emulates pd.Series.__getitem__, where both integer and label
+        keys are allowed. Note that if the index is integer-based, the
+        method will behave like expected in Python, i.e. s[0:1] returns
+        a series with a single item. This is in contrast to s.loc[0:1] which
+        returns two.
+        """
+        return RowSlicer(self, self._data).__getitem__(key)
 
     def __repr__(self):
         base = '<NxSeries[{dt}]({content})>'
         return base.format(dt=self.datatype.__name__,
                            content=spformat(self._data))
+
+    def __str__(self):
+        return self._data.__str__()
 
     def convert(self, datatype=None):
         """Converts self to a NxSeries of specified datatype.
