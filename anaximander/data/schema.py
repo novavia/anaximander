@@ -177,7 +177,7 @@ class _SchemaMetaPatch:
 
     @weakproperty
     def tract(cls):
-        """A pointer to a host Tract object, if any."""
+        """A pointer to a host DataTract object, if any."""
         return None
 
     def set_record_class(cls, record_class):

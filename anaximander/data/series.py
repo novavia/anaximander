@@ -66,7 +66,7 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
             index = index or data.index
             context = context or data.context
             data = data.data
-        self._data = pd.Series(data, index, self.datatype.dtype, copy=True)
+        self._data = pd.Series(data, index, self.datatype.dtype)
         self.context = context
 
     def __getitem__(self, key):

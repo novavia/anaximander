@@ -46,7 +46,7 @@ def session():
 
 class UserSchema(sch.Schema):
     name = fields.String()
-    email = fields.Email(key=True)
+    email = fields.Email()
 
 
 class PurchaseSchema(sch.Schema):
@@ -57,7 +57,6 @@ class PurchaseSchema(sch.Schema):
 
 class BasketSchema(sch.Schema):
     user = fields.Nested(UserSchema, key=True)
-    items = fields.List(fields.String())
 
 
 def test_bqfield():

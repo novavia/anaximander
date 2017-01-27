@@ -22,6 +22,8 @@ import pytest
 import anaximander as nx
 from anaximander.data import fields, frame, schema
 from anaximander.data.record import NxRecord
+from anaximander.data.series import NxSeries
+from anaximander.data.data import NxFloat
 
 
 NXPATH = os.path.dirname(nx.__path__[0])
@@ -96,47 +98,46 @@ def featurelog_invalid():
 class FeatureSchema(schema.Schema):
     device = fields.ReStr(key=True, pattern=MAC_PATTERN)
     timestamp = fields.DateTime(key=True, sequential=True)
-    Feature_Value_0 = fields.Float()
-    Feature_Value_1 = fields.Float()
-    Feature_Value_2 = fields.Float()
-    Feature_Value_3 = fields.Float()
-    Feature_Value_4 = fields.Float()
-    Feature_Value_5 = fields.Float()
+    Feature_Value_0 = fields.Scalar(NxFloat)
+    Feature_Value_1 = fields.Scalar(NxFloat)
+    Feature_Value_2 = fields.Scalar(NxFloat)
+    Feature_Value_3 = fields.Scalar(NxFloat)
+    Feature_Value_4 = fields.Scalar(NxFloat)
+    Feature_Value_5 = fields.Scalar(NxFloat)
 
 
 class FeatureSchemaMultKeys(schema.Schema):
     device = fields.ReStr(key=True, pattern=MAC_PATTERN)
     timestamp = fields.DateTime(key=True, sequential=True)
-    Feature_Value_0 = fields.Float(key=True)
-    Feature_Value_1 = fields.Float()
-    Feature_Value_2 = fields.Float()
+    Feature_Value_0 = fields.Scalar(NxFloat, key=True)
+    Feature_Value_1 = fields.Scalar(NxFloat)
+    Feature_Value_2 = fields.Scalar(NxFloat)
 
 
 class FeatureSchemaNoKey(schema.Schema):
     device = fields.ReStr(pattern=MAC_PATTERN)
     timestamp = fields.DateTime(sequential=True)
-    Feature_Value_0 = fields.Float(True)
-    Feature_Value_1 = fields.Float()
-    Feature_Value_2 = fields.Float()
+    Feature_Value_0 = fields.Scalar(NxFloat)
+    Feature_Value_1 = fields.Scalar(NxFloat)
+    Feature_Value_2 = fields.Scalar(NxFloat)
+    Feature_Value_3 = fields.Scalar(NxFloat)
+    Feature_Value_4 = fields.Scalar(NxFloat)
+    Feature_Value_5 = fields.Scalar(NxFloat)
 
 
 class FeatureSchemaNoSequentialKey(schema.Schema):
     device = fields.ReStr(key=True, pattern=MAC_PATTERN)
     timestamp = fields.DateTime(sequential=True)
-    Feature_Value_0 = fields.Float()
-    Feature_Value_1 = fields.Float()
-    Feature_Value_2 = fields.Float()
+    Feature_Value_0 = fields.Scalar(NxFloat)
+    Feature_Value_1 = fields.Scalar(NxFloat)
+    Feature_Value_2 = fields.Scalar(NxFloat)
 
 
 class FeatureSchemaSequentialKey(schema.Schema):
     timestamp = fields.DateTime(key=True, sequential=True)
-    Feature_Value_0 = fields.Float()
-    Feature_Value_1 = fields.Float()
-    Feature_Value_2 = fields.Float()
-
-
-class FeatureFrame(frame.NxDataFrame):
-    schema = FeatureSchema
+    Feature_Value_0 = fields.Scalar(NxFloat)
+    Feature_Value_1 = fields.Scalar(NxFloat)
+    Feature_Value_2 = fields.Scalar(NxFloat)
 
 
 class FeatureMapping(frame.NxDataMapping):
@@ -195,11 +196,11 @@ def test_dtypes():
 class TestFrame(TestCase):
 
     def test_empty(self):
-        assert FeatureFrame().empty
+        assert FeatureMapping().empty
 
     def test_cast(self):
         native_log = LOG.astype({'timestamp': np.dtype('object')})
-        cast = FeatureFrame.cast(native_log)
+        cast = FeatureMappingNK.cast(native_log)
         # Casts converts the timestamp back to datetime
         assert cast.equals(LOG)
         assert not cast.equals(native_log)
@@ -207,38 +208,38 @@ class TestFrame(TestCase):
     def test_cast_partial(self):
         """Tests with a dataframe missing non-essential columns."""
         log = featurelog_partial()
-        cast = FeatureFrame.cast(log)
+        cast = FeatureMappingNK.cast(log)
         assert cast.equals(log)
 
     def test_cast_no_device(self):
         """Tests with a dataframe missing key column 'device'."""
         log = featurelog_no_device()
         with pytest.raises(frame.ConformityError):
-            FeatureFrame.cast(log)
+            FeatureMapping.cast(log)
 
     def test_cast_shuffled(self):
         """Tests with a dataframe whose columns are out of sequence."""
         log = featurelog_shuffled()
-        cast = FeatureFrame.cast(log)
+        cast = FeatureMappingNK.cast(log)
         assert frame.dtypes(FeatureSchema) == OrderedDict(cast.dtypes)
 
     def test_cast_superfluous(self):
         """Tests with a dataframe with a superfluous column."""
         log = featurelog_superfluous()
-        cast = FeatureFrame.cast(log)
+        cast = FeatureMappingNK.cast(log)
         assert len(log.columns) == len(cast.columns) + 1
         assert frame.dtypes(FeatureSchema) == OrderedDict(cast.dtypes)
 
     def test_init(self):
-        frame = FeatureFrame(LOG)
+        frame = FeatureMappingNK(LOG)
         assert frame.data.equals(LOG)
 
     def test_validate(self):
-        frame = FeatureFrame(LOG, validate=True)
+        frame = FeatureMappingNK(LOG, validate=True)
         assert frame.data.equals(LOG)
         invalid_log = featurelog_invalid()
         with pytest.raises(schema.ValidationError):
-            frame = FeatureFrame(invalid_log, validate=True)
+            frame = FeatureMappingNK(invalid_log, validate=True)
 
 
 class TestMapping(TestCase):
@@ -352,6 +353,20 @@ class TestSequence(TestCase):
         assert len(seq[0:1]) == 1
         assert isinstance(seq[0], NxRecord)
 
+
+class TestColumnProxy(TestCase):
+
+    def test_type_assignments(self):
+        assert all(isinstance(getattr(FeatureMapping, col), property)
+                   for col in FeatureSchema.fields)
+
+    def test_proxy(self):
+        log = FeatureMappingNK(LOG)
+        assert isinstance(log.device, frame.ColumnProxy)
+        assert isinstance(log.device(), pd.Series)
+        assert log.device().equals(LOG.device)
+        assert isinstance(log.Feature_Value_0(), NxSeries)
+        assert log.Feature_Value_0().data.equals(LOG.Feature_Value_0)
 
 if __name__ == '__main__':
     pytest.main([__file__])

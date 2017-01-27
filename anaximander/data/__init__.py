@@ -14,7 +14,7 @@ of session logs with a predetermined schema and define a set of methods.
 What the Anaximander framework offers is a metaprogramming interface that
 automates the creation of DataObject subclasses. The interface simply requires
 the programmer to specify and name different schemas. From these schemas,
-so-called 'Tract' objects are created with a predictable name available
+so-called 'DataTract' objects are created with a predictable name available
 in the global namespace. Tracts serve first and foremost as a namespace for
 grouping classes of data objects pertaining to a given type of data. For
 instance, an object UserSession indicates that there is a type of data that
@@ -57,7 +57,7 @@ other words, a marriage between 'data' and 'object' -hence the DataObject.
 
 Because the definition of a data tract hinges primarily on a schema,
 the canonical mechanism for creating it is to decorate a Schema declaration.
-Alternatively, the Schema declaration can be embedded in a Tract object
+Alternatively, the Schema declaration can be embedded in a DataTract object
 instantiation.
 
 This module is part of the Anaximander project.

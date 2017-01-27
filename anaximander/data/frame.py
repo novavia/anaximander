@@ -17,8 +17,10 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from ..utilities.functions import spformat
-from ..meta.metadescriptors import TypeAttribute, MetaCharacter, typeproperty
+from ..utilities import functions as fun
+from ..utilities import nxattr
+from ..meta.metadescriptors import TypeAttribute, MetaCharacter, \
+    typeinitmethod, typeproperty
 from ..meta.nxtype import prototype, clade
 from .exceptions import DataError
 from .base import IndexedDataObject
@@ -26,7 +28,7 @@ from .schema import Schema
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
-    Str, Bool, Int, Constant, Scalar
+    Str, Bool, Int, Constant, NxDataField, Scalar
 from .record import NxRecord
 from .series import NxSeries
 
@@ -197,11 +199,17 @@ class NxDataFrame(IndexedDataObject):
         recs = self._data[self.kcols].drop_duplicates().to_records(index=False)
         return list(recs)
 
+    @typeinitmethod
+    def _assign_column_proxies(cls):
+        """Sets column proxy properties at type creation."""
+        for name, field in cls.schema.fields.items():
+            setattr(cls, name, ColumnProxy.propertyfactory(field))
+
     def __repr__(self):
         base = '<{arc}[{dt}]({content})>'
         return base.format(arc=clade(self).__name__,
                            dt=self.schema.__name__,
-                           content=spformat(self._data, 'row'))
+                           content=fun.spformat(self._data, 'row'))
 
     def __str__(self):
         return self._data.__str__()
@@ -308,3 +316,56 @@ class NxDataSequence(NxDataFrame, traits=(Sequence,)):
         if len(self.distinct) > 1:
             msg = "DataSequence {0} features distinct values in key fields."
             raise ConformityError(msg.format(self))
+
+# =============================================================================
+# Column Proxy class
+# =============================================================================
+
+
+@nxattr.s
+class ColumnProxy:
+    """A reference to a column in a NxDataFrame.
+
+    NxDataFrames carry properties named after their columns that return
+    ColumnProxy objects. The ColumnProxy serves to provide metadata
+    information and summarization methods, and upon being called, it will
+    return the underlying data, either as an NxSeries object or a regular
+    pandas Series.
+
+    Params:
+        frame: an NxDataFrame
+        field: a schema field
+    """
+    frame = nxattr.ib(validator=nxattr.validators.instance_of(NxDataFrame))
+    field = nxattr.ib()
+
+    @property
+    def column(self):
+        """Returns the corresponding column name."""
+        return self.field.name
+
+    @property
+    def dtype(self):
+        """Returns the dtype of the underlying data."""
+        return self.frame.data.dtypes[self.column]
+
+    @property
+    def ftype(self):
+        """Returns the field type."""
+        return type(self.field)
+
+    def __call__(self):
+        series = self.frame.data[self.column]
+        if isinstance(self.field, NxDataField):
+            datatype = self.field.datatype
+            context = self.frame.context
+            return NxSeries[datatype](series, context=context)
+        else:
+            return series
+
+    @classmethod
+    def propertyfactory(cls, field):
+        """Returns a property based on supplied field."""
+        doc = """Returns a ColumnProxy object for column {c}"""
+        doc.format(c=field.name)
+        return property(lambda self: cls(self, field), doc=doc)

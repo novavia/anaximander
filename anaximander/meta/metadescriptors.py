@@ -416,10 +416,6 @@ def typeinitmethod(func):
     """A method decorator that declares a TypeInit method."""
     return TypeInitMethod(func)
 
-
-
-
-
 # =============================================================================
 # MetaMethod
 # =============================================================================

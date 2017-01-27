@@ -172,7 +172,12 @@ class ReString(String):
 ReStr = ReString
 
 
-class Scalar(Field):
+class NxDataField(Field):
+    """Base class for Scalar and Vector fields."""
+    pass
+
+
+class Scalar(NxDataField):
     """A field that expects NxScalar values, whose type is specified."""
 
     def __init__(self, datatype=NxScalar, default=msh.missing,

@@ -46,7 +46,7 @@ class TestTract(TestCase):
 
     def test_init(self):
         global User
-        tract.Tract(self.UserSchema)
+        tract.DataTract(self.UserSchema)
         assert 'User' in globals()
         assert User.name == 'User'
         assert User.Schema is self.UserSchema
@@ -57,7 +57,7 @@ class TestTract(TestCase):
 
     def test_init_with_name(self):
         global NxUser
-        tract.Tract(self.UserSchema, name='NxUser')
+        tract.DataTract(self.UserSchema, name='NxUser')
         assert 'NxUser' in globals()
         assert NxUser.name == 'NxUser'
         assert NxUser.Schema is self.UserSchema
@@ -70,13 +70,13 @@ class TestTract(TestCase):
 
         global NxUser
         with pytest.raises(tract.TractDefinitionError):
-            tract.Tract(NxUserModel)
-        tract.Tract(NxUserModel, 'NxUser')
+            tract.DataTract(NxUserModel)
+        tract.DataTract(NxUserModel, 'NxUser')
         assert NxUserModel.tract is NxUser
 
     def test_make_record_class(self):
         global User
-        tract.Tract(self.UserSchema)
+        tract.DataTract(self.UserSchema)
         assert hasattr(User.Record, 'email')
         assert hasattr(User.Record, 'name')
 

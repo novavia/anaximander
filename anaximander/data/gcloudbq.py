@@ -11,37 +11,58 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
-import re
-
-from googleapiclient.errors import HttpError
 from gcloud import bigquery as bq
+from pandas.io import gbq as pdgbq
 
 from ..utilities import functions as fun
+from ..meta.nxtype import prototype
+from ..meta.metadescriptors import MetaCharacter
+from . import channel as chn
+from .tract import DataTract
 
 # =============================================================================
 # Custom exceptions
 # =============================================================================
 
 
-# XXX: not sure about keeping.
-class _HttpErrorPatch:
-    """A patch to extract messages from HttpErrors."""
-
-    @property
-    def message(self):
-        string = self.content.decode()
-        match = re.search('(?<="message": )".*"', string)
-        if match is None:
-            msg = "Could not extract message from {0}"
-            raise AttributeError(msg.format(self))
-        return match.group(0).strip('"')
-
-fun.monkeypatch(HttpError, _HttpErrorPatch)
-
-
 class BigQueryException(Exception):
     """Exception related to BigQuery administration."""
     pass
+
+
+class QueryException(Exception):
+    """Exception related to querying."""
+    pass
+
+
+class _QueryResultsPatch:
+    """Adds a row generator for convenience."""
+
+    def fetch_all(self):
+        """A row generator."""
+        if not self.complete:
+            self.run()
+        pg_token = None
+        while True:
+            rows, _, pg_token = self.fetch_data(page_token=pg_token)
+            for row in rows:
+                yield row
+            if not pg_token:
+                break
+
+    def all(self):
+        """Returns all results as a list."""
+        return list(self.fetch_all())
+
+    def first(self):
+        """Returns the first row if it exists or raise QueryException."""
+        try:
+            return next(self.fetch_all())
+        except StopIteration:
+            msg = "Query returns no results."
+            raise QueryException(msg)
+
+fun.monkeypatch(bq.query.QueryResults, _QueryResultsPatch)
 
 # =============================================================================
 # Field mapping
@@ -129,3 +150,86 @@ def bqschema(schema):
         return [bqfield(f) for f in schema.fields.values()]
     except ValueError:
         raise ValueError("Schema cannot be serialized.")
+
+
+# =============================================================================
+# Channel, Loader and Dumper specializations
+# =============================================================================
+
+
+class BigQueryChannel(chn.DataChannel):
+
+    @property
+    def table(self):
+        """Alias for the channel's store, which is always a table."""
+        return self.store
+
+    @classmethod
+    def from_dataset(cls, dataset, tract, tbname=None):
+        """Instantiates a channel from a BQ Dataset instance.
+
+        Args:
+            dataset: a BigQuery Dataset instance per official API.
+            tract: a DataTract instance.
+            tbname: an optional table name. By default, the method
+                assumes that the tables in the dataset follow tract
+                naming conventions, but this can be overriden by
+                specifying the table name.
+
+        Returns:
+            a BigQueryChannel instance.
+        """
+        tbname = tbname or tract.tbname
+        table = dataset.table(tbname)
+        if not table.exists():
+            msg = "Cannot create a channel to a non-existing table."
+            raise BigQueryException(msg)
+        table.reload()
+        return cls(tract, table)
+
+    def rawquery(self, sql, **kwargs):
+        return GBQRawDataQuery(self, sql, **kwargs)
+
+    def query(self, *args, **kwargs):
+        return GBQDataQuery(self, *args, **kwargs)
+
+
+class _QBQDataQuery(chn.DataLoader):
+    """A primitive for concrete Query classes."""
+
+    def __run__(self):
+        project = self.channel.table.project
+        return pdgbq.read_gbq(self.sql, project, **self.kwargs)
+
+
+class GBQRawDataQuery(_QBQDataQuery):
+    """A query that is instantiated with a raw SQl string.
+
+    Args:
+        channel: A BigQueryChannel instance.
+        sql: A complete sql query statement.
+        kwargs: keyword arguments that are passed to pandas.io.gbq.read_gbq.
+    """
+
+    def __init__(self, channel, sql, **kwargs):
+        super().__init__(channel)
+        self.sql = sql
+        self.kwargs = kwargs
+
+
+# TODO: define interface --work iteratively starting with simple statements.
+@prototype
+class GBQDataQuery(_QBQDataQuery):
+    """A query with a simplified interface for simple statements.
+
+    Args:
+        channel: A BigQueryChannel instance.
+        # TODO:
+        rest is TBD.
+    """
+    tract = MetaCharacter(validate=fun.typecheck(DataTract))
+
+    def __init__(self, channel, *args, **kwargs):
+        super().__init__(channel)
+        self.sql = self.generate_sql(*args, **kwargs)
+        self.kwargs = kwargs

@@ -90,6 +90,9 @@ class NxScalar(NxData):
         except ValueError:
             raise ValidationError
 
+    def __hash__(self):
+        return hash(self._data)
+
     @metamethod
     def _compare(cls):
         """Comparison primitve for instances.

@@ -13,7 +13,6 @@ Copyright (C) Novavia Solutions, LLC.
 
 from functools import wraps
 
-import attr
 import pandas as pd
 
 from ..utilities import nxattr
@@ -55,14 +54,14 @@ class NxRecord(DataObject):
 
         See attr.asdict for documentation on keyword arguments.
         """
-        return attr.asdict(self, **kwargs)
+        return nxattr.asdict(self, **kwargs)
 
     def as_tuple(self, **kwargs):
         """Returns self's field attributes in tuple form.
 
         See attr.astuple for documentation on keyword arguments.
         """
-        return attr.astuple(self, **kwargs)
+        return nxattr.astuple(self, **kwargs)
 
     def validate(self):
         """Validates an instance against the schema.

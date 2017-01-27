@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-This module defines the Tract class.
+This module defines the DataTract class.
 
-Tract objects hold references to multiple classes that implement
+DataTract objects hold references to multiple classes that implement
 different structures around a common data schema. These include
 single record containers as well as containers for tabular data based
-on pandas' DataFrame. The primary role of Tract objects is to provide
+on pandas' DataFrame. The primary role of DataTract objects is to provide
 a namespace with consistent attributes.
 
 This module is part of the Anaximander project.
@@ -26,34 +26,36 @@ from . import schema as sch, record as rec, frame as frm
 from ..meta.nxtype import nxtype
 
 # =============================================================================
-# Tract metaclass
+# DataTract class
 # =============================================================================
 
 
 class TractError(DataError):
-    """Base exception type for Tract-related errors."""
+    """Base exception type for DataTract-related errors."""
     pass
 
 
 class TractDefinitionError(TractError):
-    """Raised when the definition of a Tract fails."""
+    """Raised when the definition of a DataTract fails."""
     pass
 
 
-class Tract:
+class DataTract:
     """A container for a Schema and related DataObject classes.
 
     By convention, a tract's name should be camelcase, as if it was a class.
     This is justified by the fact that the tract primarily serves as
     a namespace to access classes (e.g. Production.Record, Production.Log).
     """
-    # Mapping of types to attribute names under a Tract object
+    # Mapping of types to attribute names under a DataTract object
     __attributes__ = {sch.Schema: 'Schema',
-                      rec.NxRecord: 'Record',}
-#                      frm.NxFrame: 'Frame'}
+                      rec.NxRecord: 'Record',
+                      frm.NxDataCollection: 'Collection',
+                      frm.NxDataSequence: 'Sequence',
+                      frm.NxDataMapping: 'Mapping'}
 
-    def __init__(self, schema, name=None):
-        """Initializes a Tract.
+    def __init__(self, schema, name=None, tbname=None):
+        """Initializes a DataTract.
 
         attrs:
             schema: a Schema *class*
@@ -79,6 +81,7 @@ class Tract:
                     "name for the target Data class."
                 raise TractDefinitionError(msg)
         self._name = name
+        self._tbname = tbname or name
         # Insert self in the schema's global namespace with name
         sys.modules[schema.__module__].__dict__[name] = self
 
@@ -88,6 +91,11 @@ class Tract:
     @property
     def name(self):
         return self._name
+
+    @property
+    def tbname(self):
+        """A name for tables created from a Tract."""
+        return self._tbname
 
     @property
     def base(self):
@@ -123,21 +131,44 @@ class Tract:
     def Record(self):
         return rec.NxRecord[self.Schema]
 
-#    @property
-#    def Frame(self):
-#        return frm.NxFrame[self.Schema]
+    @property
+    def Collection(self):
+        return frm.NxDataCollection[self.Schema]
+
+    @property
+    def Sequence(self):
+        return frm.NxDataSequence[self.Schema]
+
+    @property
+    def Mapping(self):
+        return frm.NxDataMapping[self.Schema]
+
+    @property
+    def Frame(self):
+        """Returns the default NxDataFrame subtype for arbitrary data sets.
+
+        If self's schema contains non-sequential keys, it is a Mapping.
+        Else if there is a sequential key it is a Sequence.
+        Otherwise it is a Collection.
+        """
+        if self.Schema.nskeys:
+            return frm.NxDataMapping[self.Schema]
+        elif self.Schema.seqkey:
+            return frm.NxDataSequence[self.Schema]
+        else:
+            return frm.NxDataCollection[self.Schema]
 
 
-def tract(cls=None, *, name=None):
-    """The tract decorator, which picks up a Tract from a Schema class.
+def tract(cls=None, *, name=None, tbname=None):
+    """The tract decorator, which picks up a DataTract from a Schema class.
 
-    This decorator offers the most straightforward way to define a Tract.
+    This decorator offers the most straightforward way to define a DataTract.
     Params:
         cls: A Schema declaration.
-        name: An optional name for the Tract. If not supplied,
+        name: An optional name for the DataTract. If not supplied,
             the function expects that the schema class has a name
             in the form [CamelCase]Schema and will extract CamelCase as the
-            name of the Tract.
+            name of the DataTract.
 
     Raises:
         TractDefinitionError: if the supplied cls is not a subclass of Schema,
@@ -148,6 +179,6 @@ def tract(cls=None, *, name=None):
     """
     # Enables the decorator to function with or without arguments.
     if cls is None:
-        return partial(tract, name=name)
-    Tract(cls, name=name)
+        return partial(tract, name=name, tbname=tbname)
+    DataTract(cls, name=name, tbname=tbname)
     return cls

@@ -11,14 +11,12 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
-from collections import Iterable
 import os
-import re
 
 import pandas as pd
 
 import anaximander as nx
-from anaximander.data import frame, schema, fields
+from anaximander.data import schema, fields
 from anaximander.data.tract import tract
 
 
@@ -26,26 +24,11 @@ NXPATH = os.path.dirname(nx.__path__[0])
 TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
 LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
 
-MAC_RE = re.compile('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')
+MAC = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 
 # =============================================================================
 # Test Cases
 # =============================================================================
-
-
-class MAC(fields.Str):
-
-    @staticmethod
-    def validator(s):
-        return bool(MAC_RE.match(s))
-
-    def __new__(cls, *args, **kwargs):
-        validate = kwargs.pop('validate', [])
-        if isinstance(validate, Iterable):
-            validate = [cls.validator] + list(validate)
-        else:
-            validate = [cls.validator] + [validate]
-        return fields.Str(validate=validate, *args, **kwargs)
 
 
 def featurelog():
@@ -56,8 +39,7 @@ def featurelog():
 
 @tract
 class FeatureSchema(schema.Schema):
-#    device = fields.Str(validate=lambda s: bool(MAC.match(s)), key=True)
-    device = MAC(key=True)
+    device = fields.ReStr(MAC, key=True)
     timestamp = fields.DateTime(key=True, sequential=True)
     Feature_Value_0 = fields.Float()
     Feature_Value_1 = fields.Float()
