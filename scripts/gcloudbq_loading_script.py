@@ -34,7 +34,7 @@ MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 
 
 @tract
-class DeviceDataSchema(sch.Schema):
+class DeviceData(sch.Schema):
     MAC_ADDRESS = fields.ReStr(key=True, pattern=MAC_PATTERN)
     Timestamp = fields.DateTime(key=True, sequential=True)
     Feature_Value_0 = fields.Scalar(data.NxFloat)
@@ -49,5 +49,7 @@ if __name__ == '__main__':
     channel = gbq.BigQueryChannel.from_dataset(DATASET, DeviceData, TBNAME)
     sql = "SELECT * FROM [{p}:{d}.{t}] LIMIT 10"
     sql = sql.format(p=PROJECT_ID, d=DATASET_ID, t=TBNAME)
-    query = channel.rawquery(sql)
-    data = query()
+    rawquery = channel.rawquery(sql)
+    frame_from_rawquery = rawquery()
+    query = channel.query()
+    frame_from_query = query()

@@ -17,8 +17,9 @@ from pandas.io import gbq as pdgbq
 from ..utilities import functions as fun
 from ..meta.nxtype import prototype
 from ..meta.metadescriptors import MetaCharacter
-from . import channel as chn
-from .tract import DataTract
+from .schema import Schema
+from .frame import DataLoader, DataDumper
+from .tract import DataTract, DataChannel
 
 # =============================================================================
 # Custom exceptions
@@ -157,7 +158,111 @@ def bqschema(schema):
 # =============================================================================
 
 
-class BigQueryChannel(chn.DataChannel):
+class _QBQDataQuery(DataLoader):
+    """A primitive for concrete Query classes."""
+
+    @property
+    def table(self):
+        return self.store
+
+    def __load__(self):
+        project = self.table.project
+        return pdgbq.read_gbq(self.sql, project, **self.kwargs)
+
+
+class GBQRawDataQuery(_QBQDataQuery):
+    """A query that is instantiated with a raw SQl string.
+
+    Args:
+        schema: A Schema subtype.
+        table: A gcloud.bigquery.table.Table instance.
+        sql: A complete sql query statement.
+        kwargs: keyword arguments that are passed to pandas.io.gbq.read_gbq.
+    """
+
+    def __init__(self, schema, table, sql, **kwargs):
+        super().__init__(schema, table, **kwargs)
+        self.sql = sql
+
+
+@prototype
+class GBQDataQuery(_QBQDataQuery):
+    """A query with a simplified interface for simple statements.
+
+    Args:
+        table: A gcloud.bigquery.table.Table instance.
+        kwargs: see generate_sql for admissible arguments.
+    """
+    schema = MetaCharacter(validate=fun.subcheck(Schema))
+    # Admissible query arguments, which populate instance kwargs
+    __quargs__ = ('columns', 'exclude', 'where', 'order_by', 'limit')
+    # Default limit on the number of rows queried.
+    __limit__ = 1000
+
+    def __init__(self, table, **kwargs):
+        self.store = table
+        self.args = tuple()
+        self.quargs = dict.fromkeys(self.__quargs__)
+        self.quargs['limit'] = self.__limit__
+        for k in kwargs:
+            try:
+                self.quargs[k] = kwargs.pop(k)
+            except KeyError:
+                continue
+        self.kwargs = kwargs
+
+    @property
+    def sql(self):
+        return self.generate_sql(self.store, **self.quargs)
+
+    @classmethod
+    def generate_sql(cls, table, columns=None, exclude=None, where=None,
+                     order_by=None, limit=None):
+        """A basic SQL generator to handle simple queries.
+
+        More complex queries can resort to GBQRawDataQuery, which
+        accepts raw SQL.
+
+        Args:
+            columns: an iterable of column names as strings. Defaults to
+                None, which is equivalent to SQL (*).
+            exclude: an iterable of column names as strings. These will be
+                excluded from the results.
+            where: a string containing a valid SQL where statement.
+            order_by: a column name or iterable thereof used to order the data.
+            limit (int): a limit to the number of rows to be returned.
+
+        Returns:
+            an SQL statement as a string.
+
+        Raises:
+            QueryException if both columns and exclude are specified, or if
+            the arguments don't allow forming a valid SQL statement.
+        """
+        if exclude is not None:
+            if columns is not None:
+                msg = "Specify columns or exclude but not both."
+                raise QueryException(msg)
+            columns = set(cls.schema.fields) - set(exclude)
+        if columns is not None:
+            select_ = "SELECT " + ", ".join(columns)
+        else:
+            select_ = "SELECT *"
+        from_ = "FROM [{}]".format(table.table_id)
+        where_ = where
+        if order_by is None:
+            order_ = None
+        elif isinstance(order_by, str):
+            order_ = "ORDER BY " + order_by
+        else:
+            order_ = "ORDER BY " + ", ".join(order_by)
+        limit_ = "LIMIT {}".format(limit) if limit is not None else None
+        parts = [select_, from_, where_, order_, limit_]
+        return " ".join(p for p in parts if p is not None)
+
+
+class BigQueryChannel(DataChannel):
+    __loader__ = GBQDataQuery
 
     @property
     def table(self):
@@ -172,8 +277,8 @@ class BigQueryChannel(chn.DataChannel):
             dataset: a BigQuery Dataset instance per official API.
             tract: a DataTract instance.
             tbname: an optional table name. By default, the method
-                assumes that the tables in the dataset follow tract
-                naming conventions, but this can be overriden by
+                assumes that the dataset follows the DataTract's table
+                naming convention, but this can be overriden by
                 specifying the table name.
 
         Returns:
@@ -188,48 +293,7 @@ class BigQueryChannel(chn.DataChannel):
         return cls(tract, table)
 
     def rawquery(self, sql, **kwargs):
-        return GBQRawDataQuery(self, sql, **kwargs)
+        return GBQRawDataQuery(self.schema, self.table, sql, **kwargs)
 
     def query(self, *args, **kwargs):
-        return GBQDataQuery(self, *args, **kwargs)
-
-
-class _QBQDataQuery(chn.DataLoader):
-    """A primitive for concrete Query classes."""
-
-    def __run__(self):
-        project = self.channel.table.project
-        return pdgbq.read_gbq(self.sql, project, **self.kwargs)
-
-
-class GBQRawDataQuery(_QBQDataQuery):
-    """A query that is instantiated with a raw SQl string.
-
-    Args:
-        channel: A BigQueryChannel instance.
-        sql: A complete sql query statement.
-        kwargs: keyword arguments that are passed to pandas.io.gbq.read_gbq.
-    """
-
-    def __init__(self, channel, sql, **kwargs):
-        super().__init__(channel)
-        self.sql = sql
-        self.kwargs = kwargs
-
-
-# TODO: define interface --work iteratively starting with simple statements.
-@prototype
-class GBQDataQuery(_QBQDataQuery):
-    """A query with a simplified interface for simple statements.
-
-    Args:
-        channel: A BigQueryChannel instance.
-        # TODO:
-        rest is TBD.
-    """
-    tract = MetaCharacter(validate=fun.typecheck(DataTract))
-
-    def __init__(self, channel, *args, **kwargs):
-        super().__init__(channel)
-        self.sql = self.generate_sql(*args, **kwargs)
-        self.kwargs = kwargs
+        return GBQDataQuery[self.schema](self.table, **kwargs)

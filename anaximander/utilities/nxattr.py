@@ -62,3 +62,38 @@ attributes.__doc__ = _attributes.__doc__ + attributes.__doc__
 
 # Reassign shortcuts
 s = attrs = attributes
+
+# =============================================================================
+# Adding a subclass validator
+# =============================================================================
+
+
+@attributes(repr=False, slots=True)
+class _SubclassOfValidator(object):
+    type = attr()
+
+    def __call__(self, inst, attr, value):
+        if not issubclass(value, self.type):
+            msg = "'{name}' must be subclass of {type!r}"
+            msg = msg.format(name=attr.name, type=self.type)
+            raise TypeError(msg)
+
+    def __repr__(self):
+        return ("<subclass_of validator for type {t!r}>".format(t=self.type))
+
+
+def _subclass_of(type):
+    """
+    A validator that raises a :exc:`TypeError` if the initializer is called
+    with a wrong type for this particular attribute (checks are perfomed using
+    :func:`issubclass` therefore it's also valid to pass a tuple of types).
+
+    :param type: The type to check for.
+    :type type: type or tuple of types
+
+    The :exc:`TypeError` is raised with a human readable error message, the
+    attribute (of type :class:`attr.Attribute`) and the expected type.
+    """
+    return _SubclassOfValidator(type)
+
+validators.subclass_of = _subclass_of

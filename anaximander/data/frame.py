@@ -11,14 +11,16 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
+import abc
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Iterator
 
 import numpy as np
 import pandas as pd
 
 from ..utilities import functions as fun
-from ..utilities import nxattr
+from ..utilities import nxattr, xprops
+from ..meta.nxobject import NxObject
 from ..meta.metadescriptors import TypeAttribute, MetaCharacter, \
     typeinitmethod, typeproperty
 from ..meta.nxtype import prototype, clade
@@ -113,6 +115,21 @@ class NxDataFrame(IndexedDataObject):
     @typeproperty
     def rowtype(cls):
         return NxRecord[cls.schema]
+
+    @typeproperty
+    def frametype(cls):
+        """Returns the default NxDataFrame subtype for arbitrary data sets.
+
+        If cls's schema contains non-sequential keys, it is a Mapping.
+        Else if there is a sequential key it is a Sequence.
+        Otherwise it is a Collection.
+        """
+        if cls.schema.nskeys:
+            return NxDataMapping[cls.schema]
+        elif cls.schema.seqkey:
+            return NxDataSequence[cls.schema]
+        else:
+            return NxDataCollection[cls.schema]
 
     def __init__(self, data=None, context=None, validate=False):
         """Data can be any admissible data argument to a dataframe.
@@ -213,6 +230,21 @@ class NxDataFrame(IndexedDataObject):
 
     def __str__(self):
         return self._data.__str__()
+
+    # I/O methods
+
+    def to_csv(self, filepath_or_buffer, *args, **kwargs):
+        """See pandas.to_csv for method signature.
+
+        Note that index is set to False automatically.
+        """
+        CsvDumper(self, filepath_or_buffer, *args, **kwargs)()
+
+    @classmethod
+    def from_csv(cls, filepath_or_buffer, *args, **kwargs):
+        """See pandas.from_csv for method signature."""
+        loader = CsvLoader(cls.schema, filepath_or_buffer, *args, **kwargs)
+        return loader(cls)
 
 
 @prototype
@@ -369,3 +401,142 @@ class ColumnProxy:
         doc = """Returns a ColumnProxy object for column {c}"""
         doc.format(c=field.name)
         return property(lambda self: cls(self, field), doc=doc)
+
+# =============================================================================
+# I/O helpers
+# =============================================================================
+
+
+class DataIOException(DataError):
+    """Specialized exception for handling I/O exceptions."""
+    pass
+
+
+class DataLoader(NxObject):
+    """A representation of a pending data loading operation.
+
+    DataLoader serves as a base class for concrete loading operations such
+    as database table queries and fetching data from files.
+    DataLoader object only stock references to loading protocol and data
+    selection criteria, until their __call__ method is called, which
+    tries to execute the loading operation and generate results in the form
+    of one or more DataObjects.
+    A DataLoader requires a Schema type and store to be instantiated. Beyond
+    then, various methods exist to return more precise DataLoaders by
+    composition of attributes. This works similarly to, say, SQLAlchemy Query
+    object.
+
+    Args:
+        schema: A Schema subtype.
+        store: any object pointing to a storage resource.
+    """
+
+    def __init__(self, schema, store, *args, **kwargs):
+        self.schema = schema
+        self.store = store
+        self.args = args
+        self.kwargs = kwargs
+
+    @xprops.cachedproperty
+    def data(self):
+        return None
+
+    @property
+    def loaded(self):
+        return self.data is not None
+
+    @property
+    def frametype(self):
+        """The default NxDataFrame subtype for loading data."""
+        return NxDataCollection[self.schema].frametype
+
+    @abc.abstractmethod
+    def __load__(self):
+        """Runs and returns raw results of the underlying loading operation."""
+        pass
+
+    def load(self):
+        """Executes the query and caches the raw data."""
+        self._data = self.__load__()
+
+    def __call__(self, frametype=None):
+        """Returns the data in the appropriate NxDataFrame subtype.
+
+        By default, the return value's type is self.channel.frametype.
+        However the default can be overriden by passing an explicit frametype.
+        The call can also return a generator of NxDataFrames if the __run__
+        method returns an Iterator.
+        """
+        frametype = frametype or self.frametype
+        if not self.loaded:
+            self.load()
+        if isinstance(self.data, Iterator):
+            return (frametype(d) for d in self.data)
+        else:
+            return frametype(self.data)
+
+
+class DataDumper(NxObject):
+    """A representation of a pending data dumping operation.
+
+    This is the counterpart of DataLoader for dumping data to persistent
+    storage through a channel.
+
+    Args:
+        frame: an NxDataFrame instance
+        store: any object pointing to a storage resource.
+    """
+
+    def __init__(self, frame, store, *args, **kwargs):
+        self.frame = frame
+        self.store = store
+        self.args = args
+        self.kwargs = kwargs
+
+    @property
+    def schema(self):
+        return self.frame.schema
+
+    @xprops.cachedproperty
+    def dumped(self):
+        return False
+
+    @abc.abstractmethod
+    def __dump__(self):
+        """Dumps self's data to the designated store."""
+        pass
+
+    def dump(self):
+        if self.dumped:
+            raise DataIOException("Data already dumped.")
+        self.__dump__()
+        self._dumped = True
+
+    def __call__(self):
+        self.dump()
+
+
+class CsvLoader(DataLoader):
+    """Loader for .csv files.
+
+    Reading is based on pd.read_csv and the __call__ method takes all
+    the arguments from pd.read_csv. The file may be a path or an
+    actual file object.
+    """
+
+    def __load__(self):
+        return pd.read_csv(self.store, *self.args, **self.kwargs)
+
+
+class CsvDumper(DataDumper):
+    """Dumper for .csv files.
+
+    This is based on pd.DataFrame.to_csv.
+    """
+
+    def __init__(self, frame, store, *args, **kwargs):
+        super().__init__(frame, store, *args, **kwargs)
+        self.kwargs.setdefault('index', False)
+
+    def __dump__(self):
+        self.frame.data.to_csv(self.store, *self.args, **self.kwargs)

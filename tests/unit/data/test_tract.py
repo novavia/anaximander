@@ -46,7 +46,7 @@ class TestTract(TestCase):
 
     def test_init(self):
         global User
-        tract.DataTract(self.UserSchema)
+        User = tract.DataTract(self.UserSchema)
         assert 'User' in globals()
         assert User.name == 'User'
         assert User.Schema is self.UserSchema
@@ -55,28 +55,9 @@ class TestTract(TestCase):
         assert User.Record.__name__ == 'UserRecord'
         assert User.Record.schema is self.UserSchema
 
-    def test_init_with_name(self):
-        global NxUser
-        tract.DataTract(self.UserSchema, name='NxUser')
-        assert 'NxUser' in globals()
-        assert NxUser.name == 'NxUser'
-        assert NxUser.Schema is self.UserSchema
-        assert self.UserSchema.tract is NxUser
-
-    def test_init_with_wrong_naming(self):
-
-        class NxUserModel(self.UserSchema):
-            pass
-
-        global NxUser
-        with pytest.raises(tract.TractDefinitionError):
-            tract.DataTract(NxUserModel)
-        tract.DataTract(NxUserModel, 'NxUser')
-        assert NxUserModel.tract is NxUser
-
     def test_make_record_class(self):
         global User
-        tract.DataTract(self.UserSchema)
+        User = tract.DataTract(self.UserSchema)
         assert hasattr(User.Record, 'email')
         assert hasattr(User.Record, 'name')
 
@@ -149,9 +130,8 @@ def test_schema_subclassing(schemas):
     tract.tract(PurchaseSchema)
 
     @tract.tract
-    class PowerUserSchema(UserSchema):
+    class PowerUser(User.Schema):
         power = fields.Bool(default=True)
-    global PowerUser
     user_data = {'name': 'Joe', 'email': 'joe@bar.com', 'power': 'True'}
     user = PowerUser.Record(user_data)
     assert isinstance(user, User.Record)

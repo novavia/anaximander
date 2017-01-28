@@ -45,6 +45,13 @@ def typecheck(*types):
         return isinstance(obj, types)
     return checker
 
+
+def subcheck(*types):
+    """Returns a callable equivalent to issubclass."""
+    def checker(cls):
+        return issubclass(cls, types)
+    return checker
+
 # =============================================================================
 # String formatting
 # =============================================================================

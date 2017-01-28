@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 
 import anaximander as nx
-from anaximander.data import fields, frame, schema
+from anaximander.data import fields, frame as frm, schema
 from anaximander.data.record import NxRecord
 from anaximander.data.series import NxSeries
 from anaximander.data.data import NxFloat
@@ -37,6 +37,8 @@ FEATURELOG_SHUFFLED_PATH = os.path.join(TEST_DATA_DIR,
 FEATURELOG_SUPERFLUOUS_PATH = os.path.join(TEST_DATA_DIR,
                                            'featurelog_superfluous.csv')
 FEATURELOG_INVALID_PATH = os.path.join(TEST_DATA_DIR, 'featurelog_invalid.csv')
+
+DUMP_PATH = os.path.join(TEST_DATA_DIR, 'dump.csv')
 
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 
@@ -140,43 +142,47 @@ class FeatureSchemaSequentialKey(schema.Schema):
     Feature_Value_2 = fields.Scalar(NxFloat)
 
 
-class FeatureMapping(frame.NxDataMapping):
+class FeatureMapping(frm.NxDataMapping):
     schema = FeatureSchema
 
 
-class FeatureMappingMK(frame.NxDataMapping):
+class FeatureMappingMK(frm.NxDataMapping):
     schema = FeatureSchemaMultKeys
 
 
-class FeatureMappingNK(frame.NxDataMapping):
+class FeatureMappingNK(frm.NxDataMapping):
     schema = FeatureSchemaNoKey
 
 
-class FeatureMappingNS(frame.NxDataMapping):
+class FeatureCollectionNK(frm.NxDataCollection):
+    schema = FeatureSchemaNoKey
+
+
+class FeatureMappingNS(frm.NxDataMapping):
     schema = FeatureSchemaNoSequentialKey
 
 
-class FeatureMappingSK(frame.NxDataMapping):
+class FeatureMappingSK(frm.NxDataMapping):
     schema = FeatureSchemaSequentialKey
 
 
-class FeatureSequence(frame.NxDataSequence):
+class FeatureSequence(frm.NxDataSequence):
     schema = FeatureSchema
 
 
-class FeatureSequenceMK(frame.NxDataSequence):
+class FeatureSequenceMK(frm.NxDataSequence):
     schema = FeatureSchemaMultKeys
 
 
-class FeatureSequenceNK(frame.NxDataSequence):
+class FeatureSequenceNK(frm.NxDataSequence):
     schema = FeatureSchemaNoKey
 
 
-class FeatureSequenceNS(frame.NxDataSequence):
+class FeatureSequenceNS(frm.NxDataSequence):
     schema = FeatureSchemaNoSequentialKey
 
 
-class FeatureSequenceSK(frame.NxDataSequence):
+class FeatureSequenceSK(frm.NxDataSequence):
     schema = FeatureSchemaSequentialKey
 
 
@@ -190,7 +196,7 @@ def test_dtypes():
                         ('Feature_Value_3', np.dtype('float')),
                         ('Feature_Value_4', np.dtype('float')),
                         ('Feature_Value_5', np.dtype('float'))])
-    assert frame.dtypes(FeatureSchema) == spec
+    assert frm.dtypes(FeatureSchema) == spec
 
 
 class TestFrame(TestCase):
@@ -214,21 +220,21 @@ class TestFrame(TestCase):
     def test_cast_no_device(self):
         """Tests with a dataframe missing key column 'device'."""
         log = featurelog_no_device()
-        with pytest.raises(frame.ConformityError):
+        with pytest.raises(frm.ConformityError):
             FeatureMapping.cast(log)
 
     def test_cast_shuffled(self):
         """Tests with a dataframe whose columns are out of sequence."""
         log = featurelog_shuffled()
         cast = FeatureMappingNK.cast(log)
-        assert frame.dtypes(FeatureSchema) == OrderedDict(cast.dtypes)
+        assert frm.dtypes(FeatureSchema) == OrderedDict(cast.dtypes)
 
     def test_cast_superfluous(self):
         """Tests with a dataframe with a superfluous column."""
         log = featurelog_superfluous()
         cast = FeatureMappingNK.cast(log)
         assert len(log.columns) == len(cast.columns) + 1
-        assert frame.dtypes(FeatureSchema) == OrderedDict(cast.dtypes)
+        assert frm.dtypes(FeatureSchema) == OrderedDict(cast.dtypes)
 
     def test_init(self):
         frame = FeatureMappingNK(LOG)
@@ -290,7 +296,7 @@ class TestMapping(TestCase):
     def test_getitem_ns(self):
         log = FeatureMappingNS(LOG)
         devices = list(np.unique(log.data.device))
-        assert isinstance(log[devices[0]], frame.NxDataCollection)
+        assert isinstance(log[devices[0]], frm.NxDataCollection)
         assert len(log[devices[0]]) == 3
 
     def test_getitem_sk(self):
@@ -344,7 +350,7 @@ class TestSequence(TestCase):
         assert isinstance(seq.loc[t0], NxRecord)
 
     def test_verification(self):
-        with pytest.raises(frame.ConformityError):
+        with pytest.raises(frm.ConformityError):
             FeatureSequence(LOG)
 
     def test_getitem_nk(self):
@@ -362,11 +368,46 @@ class TestColumnProxy(TestCase):
 
     def test_proxy(self):
         log = FeatureMappingNK(LOG)
-        assert isinstance(log.device, frame.ColumnProxy)
+        assert isinstance(log.device, frm.ColumnProxy)
         assert isinstance(log.device(), pd.Series)
         assert log.device().equals(LOG.device)
         assert isinstance(log.Feature_Value_0(), NxSeries)
         assert log.Feature_Value_0().data.equals(LOG.Feature_Value_0)
+
+
+class TestLoader(TestCase):
+
+    def test_load_csv(self):
+        loader = frm.CsvLoader(FeatureSchemaNoKey, FEATURELOG_PATH)
+        frame = loader()
+        assert isinstance(frame, FeatureCollectionNK)
+        assert frame.data.equals(LOG)
+        frame = loader(FeatureMappingNK)
+        assert isinstance(frame, FeatureMappingNK)
+
+    def test_from_csv(self):
+        frame = FeatureMappingNK.from_csv(FEATURELOG_PATH)
+        assert isinstance(frame, FeatureMappingNK)
+        assert frame.data.equals(LOG)
+
+
+class TestDumper(TestCase):
+
+    def test_dump_csv(self):
+        frame = FeatureMappingNK(LOG)
+        dumper = frm.CsvDumper(frame, DUMP_PATH)
+        dumper()
+        dataframe = pd.read_csv(DUMP_PATH)
+        dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+        assert dataframe.equals(frame.data)
+
+    def test_to_csv(self):
+        frame = FeatureMappingNK(LOG)
+        frame.to_csv(DUMP_PATH)
+        dataframe = pd.read_csv(DUMP_PATH)
+        dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+        assert dataframe.equals(frame.data)
+
 
 if __name__ == '__main__':
     pytest.main([__file__])

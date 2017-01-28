@@ -38,7 +38,7 @@ def featurelog():
 
 
 @tract
-class FeatureSchema(schema.Schema):
+class Feature(schema.Schema):
     device = fields.ReStr(MAC, key=True)
     timestamp = fields.DateTime(key=True, sequential=True)
     Feature_Value_0 = fields.Float()
