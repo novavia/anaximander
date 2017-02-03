@@ -37,8 +37,6 @@ class Quantity(NxObject, registry=directory('name')):
     measure = nxattr.ib(validator=nxattr.validators.instance_of(str))
 
     def __attrs_post_init__(self):
-        """Adds instances to the module's dictionary so they are persisted."""
-        globals()[self.name] = self
         # Create a dictionay to hold unit names and conversion rates.
         # _units can also take callables as values, in which case the
         # argument should be a number in the registered unit, and the result

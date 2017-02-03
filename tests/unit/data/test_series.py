@@ -24,11 +24,12 @@ from anaximander.data.series import NxSeries
 # =============================================================================
 
 
+speed = qnt.Quantity('speed', 'mph')
+speed.register_unit('kph', 0.621371)
+
+
 @pytest.fixture
 def datatypes():
-
-    speed = qnt.Quantity('speed', 'mph')
-    speed.register_unit('kph', 0.621371)
 
     class SpeedMPH(NxScalar):
         quantity = speed
@@ -73,6 +74,13 @@ def test_indexing(datatypes):
     assert len(smph.loc[0:2]) == 3
     assert type(smph[smph.data.values > 50]) is NxSeries[SpeedMPH]
     assert smph[smph.data.values > 50].data.data == np.array([55, 65])
+
+
+def test_extend(datatypes):
+    SpeedMPH, _ = datatypes
+    smph = NxSeries[SpeedMPH]([25, 35, 55, 65])
+    smph.extend(smph.data)
+    assert len(smph) == 8
 
 
 if __name__ == '__main__':

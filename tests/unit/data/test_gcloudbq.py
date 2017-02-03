@@ -15,12 +15,15 @@ import pytest
 
 from gcloud import bigquery as bq
 
-from anaximander.data import fields, schema as sch, gcloudbq as gbq
+from anaximander.data import data, fields as fld, schema as sch, \
+    tract as trc, gcloudbq as gbq
 
 
 PROJECT_ID = 'infinite-uptime-1232'
 BQ = bq.Client(PROJECT_ID)
 DATASET_ID = 'InterfaceTesting'
+
+MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 
 # =============================================================================
 # Test Cases
@@ -31,54 +34,54 @@ def cleanup(dataset):
     """Cleans up the supplied BigQuery dataset."""
     for table in dataset.list_tables()[0]:
         table.delete()
-    dataset.delete()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def dataset():
     dataset_ = BQ.dataset(DATASET_ID)
     if dataset_.exists():
         cleanup(dataset_)
-    dataset_.create()
+    else:
+        dataset_.create()
     yield dataset_  # provide the fixture value
     cleanup(dataset_)
 
 
-class UserSchema(sch.Schema):
-    email = fields.Email(key=True)
-    name = fields.String()
+test_domain = trc.DataDomain('test')
 
 
-class PurchaseSchema(sch.Schema):
-    user = fields.Nested(UserSchema, key=True)
-    timestamp = fields.DateTime(key=True)
-    item = fields.String(key=True)
+@trc.domain('test')
+@trc.tract
+class DeviceData(sch.Schema):
+    mac = fld.ReStr(key=True, pattern=MAC_PATTERN)
+    timestamp = fld.DateTime(key=True, sequential=True)
+    accel_x = fld.Scalar(data.NxFloat)
 
 
-class BasketSchema(sch.Schema):
-    user = fields.Nested(UserSchema, key=True)
-#    items = fields.List(fields.String())
-
-
-@pytest.mark.skip(reason="BasketSchema uses an illegal List field.")
 def test_bqfield():
-    user = gbq.bqfield(PurchaseSchema.user)
-    timestamp = gbq.bqfield(PurchaseSchema.timestamp)
-    item = gbq.bqfield(PurchaseSchema.item)
-    assert isinstance(user, gbq.bq.SchemaField)
-    assert isinstance(timestamp, gbq.bq.SchemaField)
-    assert isinstance(item, gbq.bq.SchemaField)
-    assert user.field_type is 'RECORD'
+    mac = gbq.bqfield(DeviceData.Schema.mac)
+    timestamp = gbq.bqfield(DeviceData.Schema.timestamp)
+    accel_x = gbq.bqfield(DeviceData.Schema.accel_x)
+    assert isinstance(mac, bq.SchemaField)
+    assert isinstance(timestamp, bq.SchemaField)
+    assert isinstance(accel_x, bq.SchemaField)
+    assert mac.field_type is 'STRING'
     assert timestamp.field_type is 'TIMESTAMP'
-    assert item.field_type is 'STRING'
-    assert [f.name for f in user.fields] == ['name', 'email']
+    assert accel_x.field_type is 'FLOAT'
 
 
 def test_create_table(dataset):
-    name, schema = 'Users', gbq.bqschema(UserSchema)
-    table = dataset.table(name, schema)
-    table.create()
+    table = gbq.create_table(dataset, DeviceData)
     assert table.exists()
+    assert table.friendly_name == 'DeviceData'
+
+
+def test_create_all(dataset):
+    tables = gbq.create_all(dataset, test_domain)
+    table = list(tables)[0]
+    assert table.exists()
+    assert table.friendly_name == 'DeviceData'
+
 
 if __name__ == '__main__':
     pytest.main([__file__])

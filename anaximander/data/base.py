@@ -52,7 +52,7 @@ class DataSlicingError(DataError):
     pass
 
 
-class RowSlicer(object):
+class RowSlicer(Sequence):
     """Wraps pandas indexer object to return DataObjects.
 
     The class serves to emulate the behavior of Pandas' iloc and loc
@@ -92,6 +92,9 @@ class RowSlicer(object):
             return self._nxdata.rowtype(**pdreturn, context=context)
         else:
             return self._nxdata.rowtype(pdreturn, context=context)
+
+    def __len__(self):
+        return len(self._nxdata._data)
 
 
 class IndexedDataObject(DataObject):

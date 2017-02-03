@@ -11,8 +11,6 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-from contextlib import contextmanager
-
 from gcloud import bigquery as bq
 
 from anaximander.data import fields, schema as sch, gcloudbq as gbq, data

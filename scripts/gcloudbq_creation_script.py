@@ -12,77 +12,91 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from contextlib import contextmanager
+import os.path
 
 from gcloud import bigquery as bq
+import numpy as np
+import pandas as pd
 
-from anaximander.data import fields, schema as sch, gcloudbq as gbq
+import anaximander as nx
+from anaximander.data import data as dat, fields as fld, schema as sch, \
+    tract as trc, gcloudbq as gbq
 
 
 PROJECT_ID = 'infinite-uptime-1232'
 BQ = bq.Client(PROJECT_ID)
 DATASET_ID = 'InterfaceTesting'
 
+MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+
+NXPATH = os.path.dirname(nx.__path__[0])
+TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
+LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
+
+
 # =============================================================================
-# Test Cases
+# Domain declaration
 # =============================================================================
+
+
+test_domain = trc.DataDomain('test')
+
+
+@trc.domain('test')
+@trc.tract
+class DeviceData(sch.Schema):
+    mac = fld.ReStr(key=True, pattern=MAC_PATTERN)
+    timestamp = fld.DateTime(key=True, sequential=True)
+    accel_x = fld.Scalar(dat.NxFloat)
+
+# =============================================================================
+# Functions
+# =============================================================================
+
+
+def featurelog():
+    dataframe = pd.read_csv(LOGFILE_PATH)
+    dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+    dataframe['mac'] = dataframe.device
+    dataframe['accel_x'] = dataframe.Feature_Value_1
+    return dataframe
 
 
 def cleanup(dataset):
     """Cleans up the supplied BigQuery dataset."""
     for table in dataset.list_tables()[0]:
         table.delete()
-    dataset.delete()
 
 
 @contextmanager
-def session():
+def session(clean=True):
     dataset = BQ.dataset(DATASET_ID)
     if dataset.exists():
         cleanup(dataset)
-    dataset.create()
+    else:
+        dataset.crate()
+    gbq.create_all(dataset, test_domain)
     yield dataset  # provide the fixture value
-#    cleanup(dataset)
+    if clean:
+        cleanup(dataset)
 
+# =============================================================================
+# Main
+# =============================================================================
 
-class UserSchema(sch.Schema):
-    name = fields.String()
-    email = fields.Email()
-
-
-class PurchaseSchema(sch.Schema):
-    user = fields.Nested(UserSchema, key=True)
-    timestamp = fields.DateTime(key=True)
-    item = fields.String(key=True)
-
-
-class BasketSchema(sch.Schema):
-    user = fields.Nested(UserSchema, key=True)
-
-
-def test_bqfield():
-    user = gbq.bqfield(PurchaseSchema.user)
-    timestamp = gbq.bqfield(PurchaseSchema.timestamp)
-    item = gbq.bqfield(PurchaseSchema.item)
-    assert isinstance(user, gbq.bq.SchemaField)
-    assert isinstance(timestamp, gbq.bq.SchemaField)
-    assert isinstance(item, gbq.bq.SchemaField)
-    assert user.field_type is 'RECORD'
-    assert timestamp.field_type is 'TIMESTAMP'
-    assert item.field_type is 'STRING'
-    assert [f.name for f in user.fields] == ['name', 'email']
-
-
-def test_create_table(dataset):
-    name, schema = 'Users', gbq.bqschema(UserSchema)
-    table = dataset.table(name, schema)
-    table.create()
-    assert table.exists()
 
 if __name__ == '__main__':
-    with session() as dataset:
-        user_table = dataset.table('Users',
-                                   gbq.bqschema(UserSchema))
-        purchase_table = dataset.table('Purchases',
-                                       gbq.bqschema(PurchaseSchema))
-        user_table.create()
-        purchase_table.create()
+    data = DeviceData.Frame(featurelog())
+    records = data.to_records()
+    with session(False) as dataset:
+        channel = gbq.BigQueryChannel.from_dataset(dataset, DeviceData)
+        response = channel.append(data)
+    query = channel.query()
+    data_load = query()
+    ax = data.data.accel_x.values
+    ax_load = data_load.data.accel_x.values
+    assert np.array_equal(ax, ax_load)
+    response = channel.insert(*records)
+    query = channel.query()
+    data_load = query()
+    assert len(data_load) == 40

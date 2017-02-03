@@ -148,11 +148,11 @@ class ReString(String):
         except TypeError:
             raise FieldError("The pattern of a ReString must be a string.")
         if validate is None:
-            validate = self.match
+            validate = [lambda s: self.match(s)]
         elif isinstance(validate, Iterable):
-            validate = [self.match] + list(validate)
+            validate = [lambda s: self.match(s)] + list(validate)
         else:
-            validate = [self.match] + [validate]
+            validate = [lambda s: self.match(s)] + [validate]
         super().__init__(default=default, attribute=attribute,
                          load_from=load_from, dump_to=dump_to, error=error,
                          validate=validate, required=required,

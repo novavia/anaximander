@@ -17,13 +17,55 @@ Copyright (C) Novavia Solutions, LLC.
 from collections.abc import Sequence
 from functools import partial
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import pandas as pd
+import seaborn as sns
 
-from anaximander.utilities.functions import spformat
-from anaximander.meta.nxtype import prototype
-from anaximander.meta.metadescriptors import MetaCharacter, typeproperty
+from ..utilities import xprops
+from ..utilities.functions import spformat
+from ..meta.nxtype import prototype
+from ..meta.metadescriptors import MetaCharacter, typeproperty
 from .base import IndexedDataObject, RowSlicer
 from .data import NxData
+
+# =============================================================================
+# Plotting constants
+# =============================================================================
+
+
+rcparams = {'lines.solid_capstyle': 'butt',
+            'lines.linewidth': 1,
+            'legend.fancybox': True,
+            'axes.facecolor': '#E8E8E8',
+            'axes.edgecolor': '#E8E8E8',
+            'axes.linewidth': 3.0,
+            'axes.titlesize': 'x-large',
+            'grid.color': '#D1D2D4',
+            'savefig.edgecolor': '#E8E8E8',
+            'savefig.facecolor': '#E8E8E8',
+            'figure.facecolor': '#E8E8E8',
+            }
+
+sns.set(font_scale=1.2, color_codes=True, rc=rcparams)
+
+sns.set_style({'axes.labelcolor': '.25',
+               'text.color': '0.25',
+               'xtick.color': '0.25',
+               'ytick.color': '0.25',
+               })
+
+CCV = mpl.colors.ColorConverter()
+
+PALETTE = sns.color_palette()
+DC1 = PALETTE[0]  # Data color #1
+DC2 = PALETTE[1]  # Data color #2
+TPC = PALETTE[2]  # Template color
+FLC = CCV.to_rgba('#898989', 0.5)  # Fill color
+BGC = (0.85, 0.85, 0.85, 0.75)  # Background highlight color
+
+# Ticker formatters
+THOSEP = mpl.ticker.FuncFormatter(lambda x, p: format(int(x), ','))
 
 # =============================================================================
 # NxSeries prototype
@@ -87,6 +129,44 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
 
     def __str__(self):
         return self._data.__str__()
+
+    def recast(self, data):
+        """Returns updated version of self with a new pandas Series."""
+        return type(self)(data, context=self.context)
+
+    # Extension / contraction methods
+
+    def extend(self, series):
+        """Extends self with another NxSeries or pandas.Series."""
+        if isinstance(series, NxSeries):
+            series = series.data
+        self._data = self._data.append(series)
+
+    # Plotting functionalities
+
+    @xprops.cachedproperty
+    def pencolor(self):
+        """Caches the pen color for plotting self's data."""
+        return DC1
+
+    @xprops.cachedproperty
+    def curax(self):
+        """Caches a matplotlib axis on which the series is plot."""
+        return self.plot()
+
+    def plot(self, ax='new', **kwargs):
+        """Customized plot function.
+
+        :param ax: 'new' for new plot, otherwise see super
+        """
+        if ax == 'new':
+            fig, ax = plt.subplots()
+        self._pencolor = kwargs.setdefault('color', DC1)
+        ax = self.data.plot(**kwargs)
+        ax.set_xlabel('')
+        ax.set_title(str(self.context))
+        self._curax = ax
+        return ax
 
     def convert(self, datatype=None):
         """Converts self to a NxSeries of specified datatype.

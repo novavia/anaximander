@@ -17,13 +17,14 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
+from collections.abc import Set
 from functools import partial
 import re
 import sys
 
-from ..utilities import nxattr, functions as fun
+from ..utilities import functions as fun
 from ..meta.nxobject import NxObject
-from ..meta.nxtype import nxtype, archetype
+from ..meta.nxtype import nxtype, archetype, directory
 from ..meta.metadescriptors import TypeAttribute
 from .exceptions import DataError
 from . import schema as sch, record as rec, frame as frm
@@ -85,6 +86,16 @@ class DataTract:
     @property
     def name(self):
         return self._name
+
+    @property
+    def schema(self):
+        """Returns an instance of self's Schema."""
+        return self.Schema()
+
+    @property
+    def multischema(self):
+        """Equivalent to self.Schema(many=True)."""
+        return self.Schema(many=True)
 
     @property
     def tbname(self):
@@ -180,7 +191,9 @@ def tract(cls=None, *, tbname=None):
             or if its name doesn't follow conventions and no name is supplied.
 
     Returns:
-        A DataTract instance.
+        A DataTract instance, unless the decorated Schema class name ends with
+            'Schema', in which case the class is returned unchanged, and
+            the DataTract is made available in the globals dictionary.
 
     NOTE that care must be taken when defining DataTracts based
     on inherited schemas that have themselves been decorated. For instance,
@@ -210,7 +223,70 @@ def tract(cls=None, *, tbname=None):
         return tract_
 
 # =============================================================================
-# DataTract class
+# DataDomain
+# =============================================================================
+
+
+class DataDomain(NxObject, traits=(Set,), registry=directory('name')):
+    """A set of related DataTracts.
+
+    DataDomain is provided to build collections of DataTracts and
+    facilitate systems administration -chiefly, the creation of data stores
+    containing multiple tables.
+
+    DataDomain is implemented as an immutable set in order to force
+    registration of tracts to a domain through the domain decorator.
+    However it is possible to build ad-hoc domains from the __init__
+    method.
+
+    DataDomain are globally registered in a class directory. Therefore
+    they should be named uniquely at the application level.
+    """
+
+    def __init__(self, name, *tracts):
+        """Initializes a new DataDomain.
+
+        Args:
+            *tracts: optional set of DataTract.
+        """
+        self._name = name
+        if not all(isinstance(t, DataTract) for t in tracts):
+            msg = "All elements of a DataDomain must be DataTracts."
+            raise TypeError(msg)
+        self._set = set(tracts)
+        super().__init__()
+
+    @property
+    def name(self):
+        return self._name
+
+    def __contains__(self, tract):
+        return self._set.__contains__(tract)
+
+    def __iter__(self):
+        return self._set.__iter__()
+
+    def __len__(self):
+        return self._set.__len__()
+
+
+def domain(dom):
+    """Returns a decorator that registers a tract with supplied domain dom.
+
+    Args:
+        dom: either a DataDomain instance or a DataDomain name as a string.
+    """
+    if isinstance(dom, str):
+        dom = DataDomain[dom]
+
+    def decorator(tract):
+        """A tract decorator to perform domain registration."""
+        dom._set.add(tract)
+        return tract
+    return decorator
+
+# =============================================================================
+# DataChannel class
 # =============================================================================
 
 
@@ -234,6 +310,7 @@ class DataChannel(NxObject):
     def __init__(self, tract, store):
         self.tract = tract
         self.store = store
+        super().__init__()
 
     @property
     def loader(self):

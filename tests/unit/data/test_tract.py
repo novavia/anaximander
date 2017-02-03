@@ -62,7 +62,26 @@ class TestTract(TestCase):
         assert hasattr(User.Record, 'name')
 
 
-def test_decorator(schemas):
+class TestDomain(TestCase):
+
+    def setUp(self):
+        UserSchema, PurchaseSchema = schemas()
+        self.UserSchema = tract.DataTract(UserSchema)
+        self.PurchaseSchema = tract.DataTract(PurchaseSchema)
+
+    def test_init(self):
+        domain = tract.DataDomain('test', self.UserSchema, self.PurchaseSchema)
+        assert tract.DataDomain['test'] == domain
+        assert self.UserSchema in domain
+
+    def test_decorator(self):
+        domain = tract.DataDomain('test')
+        decorator = tract.domain(domain)
+        UserSchema = decorator(self.UserSchema)
+        assert UserSchema in domain
+   
+
+def test_tract_decorator(schemas):
     UserSchema, PurchaseSchema = schemas
     global User
     tract.tract(UserSchema)

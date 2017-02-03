@@ -317,6 +317,41 @@ class TestMapping(TestCase):
         assert len(log.loc[t0:t1]) == 6
         assert isinstance(log.loc[t0], NxRecord)
 
+    def test_from_records(self):
+        log = FeatureMapping(LOG)
+        rtype = NxRecord[FeatureSchema]
+        records = [rtype(*LOG.ix[i]) for i in range(len(LOG))]
+        log_fr = FeatureMapping.from_records(records)
+        assert log.data.equals(log_fr.data)
+
+    def test_to_records(self):
+        log = FeatureMapping(LOG)
+        rtype = NxRecord[FeatureSchema]
+        records = log.to_records()
+        assert len(log) == 20
+        assert all(isinstance(r, rtype) for r in records)
+
+    def test_extend(self):
+        # Extend with pandas.DF
+        log = FeatureMapping(LOG)
+        log.extend(LOG)
+        assert len(log) == 40
+        # Extend with NxDF
+        log = FeatureMapping(LOG)
+        log.extend(log)
+        assert len(log) == 40
+        # Extend with NxDF that has different but compatible schema
+        log_a = FeatureMappingNS(LOG)
+        log_b = FeatureMapping(LOG)
+        log_a.extend(log_b)
+        assert len(log) == 40
+
+    def test_append(self):
+        log = FeatureMapping(LOG)
+        record = log.iloc[0]
+        log.append(record)
+        assert len(log) == 21
+
 
 class TestSequence(TestCase):
 

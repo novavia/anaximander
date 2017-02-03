@@ -22,11 +22,12 @@ from anaximander.data.data import NxScalar
 # =============================================================================
 
 
+speed = qnt.Quantity('speed', 'mph')
+speed.register_unit('kph', 0.621371)
+
+
 @pytest.fixture
 def datatypes():
-
-    speed = qnt.Quantity('speed', 'mph')
-    speed.register_unit('kph', 0.621371)
 
     class SpeedMPH(NxScalar):
         quantity = speed
@@ -41,7 +42,7 @@ def datatypes():
 
 def test_type_creation(datatypes):
     SpeedMPH, SpeedKPH = datatypes
-    assert SpeedMPH.quantity == SpeedKPH.quantity == qnt.speed
+    assert SpeedMPH.quantity == SpeedKPH.quantity
     assert SpeedMPH.unit == 'mph'
     assert SpeedKPH.unit == 'kph'
 

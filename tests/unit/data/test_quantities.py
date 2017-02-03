@@ -21,12 +21,12 @@ from anaximander.data import quantities as qnt
 
 
 def test_instantiation():
-    qnt.Quantity('speed', 'mph')
+    speed_mph = qnt.Quantity('speed', 'mph')
     assert qnt.Quantity['speed'].measure == 'mph'
-    assert qnt.speed == qnt.Quantity['speed']
-    qnt.Quantity('speed', 'kph')
+    assert speed_mph == qnt.Quantity['speed']
+    speed_kph = qnt.Quantity('speed', 'kph')
     assert qnt.Quantity['speed'].measure == 'kph'
-    assert qnt.speed == qnt.Quantity['speed']
+    assert speed_kph == qnt.Quantity['speed']
     with pytest.raises(TypeError):
         qnt.Quantity(0, 0)
 

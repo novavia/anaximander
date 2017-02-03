@@ -20,7 +20,8 @@ import numpy as np
 
 from anaximander.utilities import functions as fun
 from anaximander.meta.nxtype import archetype
-from anaximander.meta.metadescriptors import TypeAttribute, metamethod
+from anaximander.meta.metadescriptors import TypeAttribute, metamethod, \
+    typeinitmethod
 from .exceptions import ValidationError
 from .base import DataObject
 from .quantities import Quantity
@@ -168,6 +169,14 @@ class NxScalar(NxData):
             raise TypeError("Can only convert NxScalar within same quantity.")
         data = self.quantity.convert(self._data, self.unit, datatype.unit)
         return datatype(data, self.context)
+
+    @typeinitmethod
+    def __coerce__(cls):
+        """Adds coercion method based on dtype."""
+        if cls.dtype.kind == 'f':
+            cls.__float__ = lambda s: float(s._data)
+        elif cls.dtype.kind in ('b', 'i', 'u'):
+            cls.__int__ = lambda s: int(s._data)
 
     def __repr__(self):
         type_name = type(self).__name__

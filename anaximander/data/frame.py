@@ -199,8 +199,9 @@ class NxDataFrame(IndexedDataObject):
                 raise ConformityError(msg)
         if cls.sqcol is not None:
             dataframe.index = dataframe[cls.sqcol]
-        dataframe.sort_index(inplace=True)
-        return dataframe
+        else:
+            dataframe.reset_index(drop=True, inplace=True)
+        return dataframe.sort_index()
 
     def validate(self):
         """Validates all records in a frame against the schema."""
@@ -214,7 +215,7 @@ class NxDataFrame(IndexedDataObject):
         if not self.kcols:
             return list()
         recs = self._data[self.kcols].drop_duplicates().to_records(index=False)
-        return list(recs)
+        return list(tuple(r) for r in recs)
 
     @typeinitmethod
     def _assign_column_proxies(cls):
@@ -245,6 +246,37 @@ class NxDataFrame(IndexedDataObject):
         """See pandas.from_csv for method signature."""
         loader = CsvLoader(cls.schema, filepath_or_buffer, *args, **kwargs)
         return loader(cls)
+
+    def to_records(self):
+        return list(self.iloc)
+
+    # Extension / Contraction methods
+
+    @classmethod
+    def from_records(cls, records, context=None):
+        """Instantiates an NxDataFrame from an iterable of records.
+
+        Records must be instances of NxRecord[self.schema].
+        """
+        rows = [r.as_dict() for r in records]
+        data = pd.DataFrame.from_records(rows)
+        return cls(data, context=context)
+
+    def extend(self, data):
+        """Extends self with another NxDataFrame or pandas.DataFrame."""
+        if isinstance(data, NxDataFrame):
+            data = data.data
+        xdata = self._data.append(data)
+        self._data = self.cast(xdata)
+
+    def append(self, *records):
+        """Appends one or more records to self.
+
+        Records must be instances of NxRecord[self.schema].
+        """
+        rows = [r.as_dict() for r in records]
+        data = pd.DataFrame.from_records(rows)
+        self.extend(data)
 
 
 @prototype
@@ -436,6 +468,7 @@ class DataLoader(NxObject):
         self.store = store
         self.args = args
         self.kwargs = kwargs
+        super().__init__()
 
     @xprops.cachedproperty
     def data(self):
@@ -492,6 +525,7 @@ class DataDumper(NxObject):
         self.store = store
         self.args = args
         self.kwargs = kwargs
+        super().__init__()
 
     @property
     def schema(self):
@@ -509,8 +543,9 @@ class DataDumper(NxObject):
     def dump(self):
         if self.dumped:
             raise DataIOException("Data already dumped.")
-        self.__dump__()
+        rval = self.__dump__()
         self._dumped = True
+        return rval
 
     def __call__(self):
         self.dump()
