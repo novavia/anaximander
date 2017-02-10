@@ -299,7 +299,7 @@ class GBQDataQuery(_QBQDataQuery):
         self.args = tuple()
         self.quargs = dict.fromkeys(self.__quargs__)
         self.quargs['limit'] = self.__limit__
-        for k in kwargs:
+        for k in self.__quargs__:
             try:
                 self.quargs[k] = kwargs.pop(k)
             except KeyError:
@@ -459,7 +459,7 @@ class BigQueryChannel(DataChannel):
         Args:
             frame: an NxDataFrame instance, whose schema must match
                 self's schema.
-            **kwargs: kwargs passed to panda' to_gbq.
+            **kwargs: kwargs passed to bq.table.Table.insert_data.
 
         Raises:
             TypeError if frame is not of the proper type.
@@ -478,8 +478,8 @@ class BigQueryChannel(DataChannel):
         """Insert one or more records to self's table.
 
         Args:
-            *records: one or more records of class self.tract.Record
-            **kwargs: kwargs passed to bq.table.Table.insert_data
+            *records: one or more records of class self.tract.Record.
+            **kwargs: kwargs passed to bq.table.Table.insert_data.
 
         Returns:
             Return value from bq.table.Table.insert_data.

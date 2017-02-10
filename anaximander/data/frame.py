@@ -548,7 +548,7 @@ class DataDumper(NxObject):
         return rval
 
     def __call__(self):
-        self.dump()
+        return self.dump()
 
 
 class CsvLoader(DataLoader):
