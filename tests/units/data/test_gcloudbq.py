@@ -23,7 +23,7 @@ from anaximander.data import data, fields as fld, schema as sch, \
     tract as trc, gcloudbq as gbq
 
 
-PROJECT_ID = 'infinite-uptime-1232'
+PROJECT_ID = 'anaximander-tests'
 BQ = bq.Client(PROJECT_ID)
 DATASET_ID = 'InterfaceTesting'
 
