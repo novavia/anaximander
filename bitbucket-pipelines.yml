@@ -20,6 +20,7 @@ pipelines:
           # Create credentials
           - echo ${GOOGLE_CLIENT_SECRET} > client-secret.json
           - gcloud auth activate-service-account --key-file client-secret.json
+          - export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/client-secret.json
           # Configure Python
           - pip install -U tox
           - pip --version
