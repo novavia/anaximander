@@ -1,1 +1,3 @@
-{}
+{
+  "tests/units/data/test_gcloudbq.py::test_test": true
+}
