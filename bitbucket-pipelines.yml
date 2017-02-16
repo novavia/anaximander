@@ -27,4 +27,4 @@ pipelines:
           - tox --version
           - pip install -r requirements.txt
           # Run tests
-          - pytest --offline
+          - pytest
