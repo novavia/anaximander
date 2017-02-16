@@ -23,6 +23,7 @@ from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
     Str, Bool, Int, Constant
+import pandas as pd
 
 from ..utilities.functions import monkeypatch
 from .exceptions import DataError, ValidationError as DataValidationError
@@ -206,4 +207,71 @@ class Scalar(NxDataField):
         try:
             return self.datatype(value)
         except DataValidationError:
+            self.fail('validator_failed')
+
+
+class Timestamp(Field):
+    """A field that deserializes to a pandas Timestamp."""
+
+    def _serialize(self, value, attr, obj):
+        if not isinstance(value, pd.Timestamp):
+            self.fail('type')
+        return str(value)
+
+    def _deserialize(self, value, attr, data_):
+        try:
+            return pd.Timestamp(value)
+        except ValueError:
+            self.fail('validator_failed')
+
+
+class Duration(Field):
+    """A field that deserializes to a pandas Timedelta."""
+
+    def _serialize(self, value, attr, obj):
+        if not isinstance(value, pd.Timedelta):
+            self.fail('type')
+        return str(value)
+
+    def _deserialize(self, value, attr, data_):
+        try:
+            return pd.Timedelta(value)
+        except ValueError:
+            self.fail('validator_failed')
+
+
+class Period(Field):
+    """A field that deserializes to a pandas Period of a set frequency."""
+
+    def __init__(self, freq=None, default=msh.missing, attribute=None,
+                 load_from=None, dump_to=None, error=None, validate=None,
+                 required=False, allow_none=None, load_only=False,
+                 dump_only=False, missing=msh.missing, error_messages=None,
+                 **metadata):
+        try:
+            pd.Period(freq=freq)
+        except ValueError:
+            raise FieldError("Invalid freq specification passed \
+                             to Period field.")
+        self._freq = freq
+        super().__init__(default=default, attribute=attribute,
+                         load_from=load_from, dump_to=dump_to, error=error,
+                         validate=validate, required=required,
+                         allow_none=allow_none, load_only=load_only,
+                         dump_only=dump_only, missing=missing,
+                         error_messages=error_messages, **metadata)
+
+    @property
+    def freq(self):
+        return self._freq
+
+    def _serialize(self, value, attr, obj):
+        if not isinstance(value, pd.Period):
+            self.fail('type')
+        return str(value)
+
+    def _deserialize(self, value, attr, data_):
+        try:
+            return pd.Period(value, freq=self._freq)
+        except ValueError:
             self.fail('validator_failed')

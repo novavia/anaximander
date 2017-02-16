@@ -12,6 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import marshmallow as msh
+import pandas as pd
 import pytest
 
 from anaximander.data import fields, schema as sch, quantities as qnt
@@ -62,6 +63,44 @@ def test_scalar():
     with pytest.raises(sch.ValidationError):
         MySchema().load(bad_data)
 
+
+def test_timestamp():
+
+    class MySchema(sch.Schema):
+        timestamp = fields.Timestamp()
+
+    timestring = '2017-02-17 01:55:27.985550+05:30'
+    data = {'timestamp': timestring}
+    obj = MySchema().load(data).data
+    assert obj['timestamp'] == pd.Timestamp(timestring)
+    dump = MySchema().dump(obj).data
+    assert dump == data
+
+
+def test_duration():
+
+    class MySchema(sch.Schema):
+        duration = fields.Duration()
+
+    dstring = '5 minutes'
+    data = {'duration': dstring}
+    obj = MySchema().load(data).data
+    assert obj['duration'] == pd.Timedelta(dstring)
+    dump = MySchema().dump(obj).data
+    assert dump['duration'] == '0 days 00:05:00'
+
+
+def test_period():
+
+    class MySchema(sch.Schema):
+        period = fields.Period('5min')
+
+    pstring = '2017-02-17 02:00'
+    data = {'period': pstring}
+    obj = MySchema().load(data).data
+    assert obj['period'] == pd.Period(pstring, freq='5min')
+    dump = MySchema().dump(obj).data
+    assert dump['period'] == '2017-02-17 02:00'
 
 if __name__ == '__main__':
     pytest.main([__file__])

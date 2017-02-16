@@ -386,6 +386,7 @@ class GBQDataAppend(DataDumper):
 
         def make_tuple(record):
             return tuple(cv(x) for x, cv in zip(record, cv_seq))
+
         return [make_tuple(r) for r in records]
 
     def __dump__(self):
