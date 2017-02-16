@@ -99,12 +99,12 @@ def test_bqfield():
     assert accel_x.field_type is 'FLOAT'
 
 
-#def test_create_all(storage):
-#    _, table = storage
-#    assert table.exists()
-#    assert table.friendly_name == 'DeviceData'
-#
-#
+def test_create_all(storage):
+    _, table = storage
+    assert table.exists()
+    assert table.friendly_name == 'DeviceData'
+
+
 #def test_append(storage):
 #    _, table = storage
 #    data = DeviceData.Frame(featurelog())
