@@ -120,17 +120,17 @@ def test_create_all(storage):
 #    records = data.to_records()
 #    response = channel.insert(*records)
 #    assert response == []
-#
-#
-#def test_query(storage):
-#    _, table = storage
-#    channel = gbq.BigQueryChannel(DeviceData, table)
-#    query = channel.query(limit=10)
-#    frame = query()
-#    assert type(frame) is DeviceData.Frame
-#    assert len(frame) == 10
-#
-#
+
+
+def test_query(storage):
+    _, table = storage
+    channel = gbq.BigQueryChannel(DeviceData, table)
+    query = channel.query(limit=10)
+    frame = query()
+    assert type(frame) is DeviceData.Frame
+    assert len(frame) == 10
+
+
 #def test_raw_query(storage):
 #    _, table = storage
 #    channel = gbq.BigQueryChannel(DeviceData, table)
