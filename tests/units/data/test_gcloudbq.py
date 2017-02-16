@@ -24,7 +24,6 @@ from anaximander.data import data, fields as fld, schema as sch, \
 
 
 PROJECT_ID = 'anaximander-tests'
-BQ = bq.Client(PROJECT_ID)
 DATASET_ID = 'InterfaceTesting'
 
 NXPATH = os.path.dirname(nx.__path__[0])
@@ -65,6 +64,7 @@ def cleanup(dataset):
 
 @pytest.fixture(scope="module")
 def storage():
+    BQ = bq.Client(PROJECT_ID)
     dataset = BQ.dataset(DATASET_ID)
     if dataset.exists():
         cleanup(dataset)
@@ -84,7 +84,7 @@ def storage():
 # =============================================================================
 
 # Specifies that tests are skipped if tester is not online.
-pytestmark = pytest.mark.online
+pytestmark = [pytest.mark.online, pytest.mark.gcloud]
 
 
 def test_bqfield():
@@ -105,21 +105,21 @@ def test_create_all(storage):
     assert table.friendly_name == 'DeviceData'
 
 
-#def test_append(storage):
-#    _, table = storage
-#    data = DeviceData.Frame(featurelog())
-#    channel = gbq.BigQueryChannel(DeviceData, table)
-#    response = channel.append(data)
-#    assert response == []
-#
-#
-#def test_insert(storage):
-#    _, table = storage
-#    data = DeviceData.Frame(featurelog())
-#    channel = gbq.BigQueryChannel(DeviceData, table)
-#    records = data.to_records()
-#    response = channel.insert(*records)
-#    assert response == []
+def test_append(storage):
+    _, table = storage
+    data = DeviceData.Frame(featurelog())
+    channel = gbq.BigQueryChannel(DeviceData, table)
+    response = channel.append(data)
+    assert response == []
+
+
+def test_insert(storage):
+    _, table = storage
+    data = DeviceData.Frame(featurelog())
+    channel = gbq.BigQueryChannel(DeviceData, table)
+    records = data.to_records()
+    response = channel.insert(*records)
+    assert response == []
 
 
 def test_query(storage):
@@ -131,15 +131,15 @@ def test_query(storage):
     assert len(frame) == 10
 
 
-#def test_raw_query(storage):
-#    _, table = storage
-#    channel = gbq.BigQueryChannel(DeviceData, table)
-#    sql = "SELECT * FROM [{p}:{d}.{t}] LIMIT 10"
-#    sql = sql.format(p=PROJECT_ID, d=DATASET_ID, t=DeviceData.tbname)
-#    query = channel.rawquery(sql)
-#    frame = query()
-#    assert type(frame) is DeviceData.Frame
-#    assert len(frame) == 10
+def test_raw_query(storage):
+    _, table = storage
+    channel = gbq.BigQueryChannel(DeviceData, table)
+    sql = "SELECT * FROM [{p}:{d}.{t}] LIMIT 10"
+    sql = sql.format(p=PROJECT_ID, d=DATASET_ID, t=DeviceData.tbname)
+    query = channel.rawquery(sql)
+    frame = query()
+    assert type(frame) is DeviceData.Frame
+    assert len(frame) == 10
 
 if __name__ == '__main__':
     pytest.main([__file__])
