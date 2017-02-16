@@ -32,13 +32,10 @@ class NxRecord(DataObject):
 
     schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
 
-    # XXX: note that this implementation is weak:
-    # * field order is not guaranteed
-    # * dates and times are converted to strings
     @property
     def data(self):
         """Returns a pandas-based view of self, i.e. a Series."""
-        return pd.Series(self.dump())
+        return pd.Series(self.as_tuple(), index=self.schema.fieldnames)
 
     @classmethod
     def load(cls, data):

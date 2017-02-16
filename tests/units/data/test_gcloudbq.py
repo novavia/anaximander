@@ -99,47 +99,47 @@ def test_bqfield():
     assert accel_x.field_type is 'FLOAT'
 
 
-def test_create_all(storage):
-    _, table = storage
-    assert table.exists()
-    assert table.friendly_name == 'DeviceData'
-
-
-def test_append(storage):
-    _, table = storage
-    data = DeviceData.Frame(featurelog())
-    channel = gbq.BigQueryChannel(DeviceData, table)
-    response = channel.append(data)
-    assert response == []
-
-
-def test_insert(storage):
-    _, table = storage
-    data = DeviceData.Frame(featurelog())
-    channel = gbq.BigQueryChannel(DeviceData, table)
-    records = data.to_records()
-    response = channel.insert(*records)
-    assert response == []
-
-
-def test_query(storage):
-    _, table = storage
-    channel = gbq.BigQueryChannel(DeviceData, table)
-    query = channel.query(limit=10)
-    frame = query()
-    assert type(frame) is DeviceData.Frame
-    assert len(frame) == 10
-
-
-def test_raw_query(storage):
-    _, table = storage
-    channel = gbq.BigQueryChannel(DeviceData, table)
-    sql = "SELECT * FROM [{p}:{d}.{t}] LIMIT 10"
-    sql = sql.format(p=PROJECT_ID, d=DATASET_ID, t=DeviceData.tbname)
-    query = channel.rawquery(sql)
-    frame = query()
-    assert type(frame) is DeviceData.Frame
-    assert len(frame) == 10
+#def test_create_all(storage):
+#    _, table = storage
+#    assert table.exists()
+#    assert table.friendly_name == 'DeviceData'
+#
+#
+#def test_append(storage):
+#    _, table = storage
+#    data = DeviceData.Frame(featurelog())
+#    channel = gbq.BigQueryChannel(DeviceData, table)
+#    response = channel.append(data)
+#    assert response == []
+#
+#
+#def test_insert(storage):
+#    _, table = storage
+#    data = DeviceData.Frame(featurelog())
+#    channel = gbq.BigQueryChannel(DeviceData, table)
+#    records = data.to_records()
+#    response = channel.insert(*records)
+#    assert response == []
+#
+#
+#def test_query(storage):
+#    _, table = storage
+#    channel = gbq.BigQueryChannel(DeviceData, table)
+#    query = channel.query(limit=10)
+#    frame = query()
+#    assert type(frame) is DeviceData.Frame
+#    assert len(frame) == 10
+#
+#
+#def test_raw_query(storage):
+#    _, table = storage
+#    channel = gbq.BigQueryChannel(DeviceData, table)
+#    sql = "SELECT * FROM [{p}:{d}.{t}] LIMIT 10"
+#    sql = sql.format(p=PROJECT_ID, d=DATASET_ID, t=DeviceData.tbname)
+#    query = channel.rawquery(sql)
+#    frame = query()
+#    assert type(frame) is DeviceData.Frame
+#    assert len(frame) == 10
 
 if __name__ == '__main__':
     pytest.main([__file__])

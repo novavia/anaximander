@@ -170,13 +170,25 @@ class NxScalar(NxData):
         data = self.quantity.convert(self._data, self.unit, datatype.unit)
         return datatype(data, self.context)
 
+    # Numeric types coercion functions
+
+    def __complex__(self):
+        return complex(self._data)
+
+    def __int__(self):
+        return int(self._data)
+
+    def __float__(self):
+        return float(self._data)
+
+    def __round__(self):
+        return round(self._data)
+
     @typeinitmethod
-    def __coerce__(cls):
-        """Adds coercion method based on dtype."""
-        if cls.dtype.kind == 'f':
-            cls.__float__ = lambda s: float(s._data)
-        elif cls.dtype.kind in ('b', 'i', 'u'):
-            cls.__int__ = lambda s: int(s._data)
+    def __coerce_index__(cls):
+        """Adds __index__ coercion method based on dtype."""
+        if cls.dtype.kind in ('b', 'i', 'u'):
+            cls.__index__ = lambda s: int(s._data)
 
     def __repr__(self):
         type_name = type(self).__name__

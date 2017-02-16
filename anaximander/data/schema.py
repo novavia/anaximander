@@ -145,6 +145,11 @@ class _SchemaMetaPatch:
         return OrderedDict(items)
 
     @property
+    def fieldnames(cls):
+        """Returns a tuple of field names, in sequence."""
+        return tuple(cls.fields.keys())
+
+    @property
     def own_fields(cls):
         """Returns non-inherited fields."""
         inherited = msh.schema._get_fields_by_mro(cls, fields.Field, True)
