@@ -372,31 +372,15 @@ class GBQDataAppend(DataDumper):
     def table(self):
         return self.store
 
-    @staticmethod
-    def _to_rows(dataframe):
-        """Returns BQ-compatible rows from a pandas dataframe."""
-        records = dataframe.values
-        # Conversion sequence
-        cv_seq = []
-        for dt in dataframe.dtypes:
-            if dt.kind == 'M':
-                cv_seq.append(lambda x: x.to_pydatetime())
-            else:
-                cv_seq.append(lambda x: x)
-
-        def make_tuple(record):
-            return tuple(cv(x) for x, cv in zip(record, cv_seq))
-
-        return [make_tuple(r) for r in records]
-
     def __dump__(self):
         try:
             self.table.reload()
         except:
             msg = "Invalid or non-existing table passed to append statement."
             raise BigQueryException(msg)
-        rows = self._to_rows(self.frame.data)
-        return self.table.insert_data(rows)
+        pdrows = self.frame.data.values
+        rows = [self.schema.pythonize(tuple(r), mapping=False) for r in pdrows]
+        return self.table.insert_data(rows, **self.kwargs)
 
 
 class BigQueryChannel(DataChannel):
@@ -473,8 +457,6 @@ class BigQueryChannel(DataChannel):
             raise TypeError(msg)
         return GBQDataAppend(frame, self.table, **kwargs)()
 
-    # TODO: improve to more direct insert once the type of timestamps in
-    # records is sorted out.
     def insert(self, *records, **kwargs):
         """Insert one or more records to self's table.
 
@@ -485,5 +467,5 @@ class BigQueryChannel(DataChannel):
         Returns:
             Return value from bq.table.Table.insert_data.
         """
-        frame = self.tract.Frame.from_records(records)
-        return self.append(frame, **kwargs)
+        rows = [self.schema.pythonize(r, mapping=False) for r in records]
+        return self.table.insert_data(rows, **kwargs)
