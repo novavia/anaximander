@@ -19,6 +19,7 @@ import re
 
 import attr
 import marshmallow as msh
+from marshmallow.utils import get_value
 from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
@@ -119,6 +120,74 @@ class _FieldPatch:
         else:
             return default
 
+    def pygetattr(self, obj, key=None, mapping=True):
+        """Extracts (key, val) corresponding to self from obj, 'pythonized'.
+
+        attrs:
+            obj: an object presumed to feature an attribute or key
+                corresonding to self
+            key: optional key, such as an integer if obj is a tuple
+            mapping: whether to return results as a mapping or a tuple
+                of values.
+        """
+        attr = self.attribute or self.name
+        key = key if key is not None else attr
+        try:
+            val = get_value(key, obj)
+        except TypeError:  # integer key beyond bonds
+            val = msh.missing
+        if val is msh.missing:
+            if self.required:
+                msg = "Required field missing from object {0}"
+                raise msh.exceptions.ValidationError(msg.format(obj))
+            else:
+                # Intended to be intercepted at the schema level
+                raise AttributeError
+        if isinstance(self, Nested):
+            pyval = self.schema.pythonize(val, mapping=mapping)
+        else:
+            pyval = self._pythonize(val)
+        if mapping:
+            return (attr, pyval)
+        else:
+            return pyval
+
+    def ypgetattr(self, obj, key=None, mapping=True):
+        """Reverse operation of pythonize, see corresponding doc."""
+        attr = self.attribute or self.name
+        key = key if key is not None else attr
+        try:
+            val = get_value(key, obj)
+        except TypeError:  # integer key beyond bonds
+            val = msh.missing
+        if val is msh.missing:
+            if self.required:
+                msg = "Required field missing from object {0}"
+                raise msh.exceptions.ValidationError(msg.format(obj))
+            else:
+                # Intended to be intercepted at the schema level
+                raise AttributeError
+        if isinstance(self, Nested):
+            pyval = self.schema.depythonize(val, mapping=mapping)
+        else:
+            pyval = self._depythonize(val)
+        if mapping:
+            return (attr, pyval)
+        else:
+            return pyval
+
+    def _pythonize(self, val):
+        """Turns a deserialized field value to a pure Python value.
+
+        This is an identitiy function by default, and can be overriden
+        by subclasses that deserialize to non-native Python.
+        """
+        return val
+
+    def _depythonize(self, val):
+        """Reverse operation of pythonize (see corresponding doc.)"""
+        return val
+
 monkeypatch(msh.fields.Field, _FieldPatch)
 
 
@@ -209,6 +278,12 @@ class Scalar(NxDataField):
         except DataValidationError:
             self.fail('validator_failed')
 
+    def _pythonize(self, val):
+        return val._data.item()
+
+    def _depythonize(self, val):
+        return self.datatype(val)
+
 
 class Timestamp(Field):
     """A field that deserializes to a pandas Timestamp."""
@@ -224,6 +299,12 @@ class Timestamp(Field):
         except ValueError:
             self.fail('validator_failed')
 
+    def _pythonize(self, val):
+        return val.to_pydatetime(warn=False)
+
+    def _depythonize(self, val):
+        return pd.Timestamp(val)
+
 
 class Duration(Field):
     """A field that deserializes to a pandas Timedelta."""
@@ -238,6 +319,12 @@ class Duration(Field):
             return pd.Timedelta(value)
         except ValueError:
             self.fail('validator_failed')
+
+    def _pythonize(self, val):
+        return val.to_pytimedelta()
+
+    def _depythonize(self, val):
+        return pd.Timedelta(val)
 
 
 class Period(Field):
@@ -275,3 +362,9 @@ class Period(Field):
             return pd.Period(value, freq=self._freq)
         except ValueError:
             self.fail('validator_failed')
+
+    def _pythonize(self, val):
+        return val.to_timestamp().to_pydatetime(warn=False)
+
+    def _depythonize(self, val):
+        return pd.Period(val, freq=self._freq)

@@ -14,6 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import datetime as dt
 import unittest as ut
 
+import pandas as pd
 import pytest
 
 from anaximander.data import fields, schema as sch, record as rec
@@ -30,7 +31,7 @@ class TestRecord(ut.TestCase):
 
         class Schema(sch.Schema):
             title = fields.String(key=True)
-            date = fields.Date(key=True)
+            date = fields.Timestamp(key=True)
             value = fields.Scalar(NxFloat)
 
         self.schema = Schema()
@@ -52,13 +53,39 @@ class TestRecord(ut.TestCase):
     def test_as_dict(self):
         record = self.schema.load(self.data).data
         assert record.as_dict() == {'title': 'ping',
-                                    'date': dt.date(2016, 12, 8),
+                                    'date': pd.Timestamp('2016-12-08'),
                                     'value': NxFloat(3.5)}
+
+    def test_as_pydict(self):
+        record = self.schema.load(self.data).data
+        assert record.as_pydict() == {'title': 'ping',
+                                      'date': dt.datetime(2016, 12, 8),
+                                      'value': 3.5}
 
     def test_as_tuple(self):
         record = self.schema.load(self.data).data
-        assert record.as_tuple() == ('ping', dt.date(2016, 12, 8),
+        assert record.as_tuple() == ('ping', pd.Timestamp('2016-12-08'),
                                      NxFloat(3.5))
+
+    def test_as_pytuple(self):
+        record = self.schema.load(self.data).data
+        assert record.as_pytuple() == ('ping', dt.datetime(2016, 12, 8), 3.5)
+
+    def test_from_pydict(self):
+        record = self.schema.load(self.data).data
+        d = {'title': 'ping', 'date': dt.datetime(2016, 12, 8), 'value': 3.5}
+        assert self.Record.from_pydict(d) == record
+
+    def test_from_pytuple(self):
+        record = self.schema.load(self.data).data
+        t = ('ping', dt.datetime(2016, 12, 8), 3.5)
+        assert self.Record.from_pytuple(t) == record
+
+    def test_data(self):
+        record = self.schema.load(self.data).data
+        series = pd.Series(['ping', dt.datetime(2016, 12, 8), 3.5],
+                           index=['title', 'date', 'value'])
+        assert series.equals(record.data)
 
     def test_validate(self):
         record = self.schema.load(self.data).data

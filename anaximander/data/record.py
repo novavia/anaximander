@@ -35,7 +35,7 @@ class NxRecord(DataObject):
     @property
     def data(self):
         """Returns a pandas-based view of self, i.e. a Series."""
-        return pd.Series(self.as_tuple(), index=self.schema.fieldnames)
+        return pd.Series(self.as_pytuple(), index=self.schema.fieldnames)
 
     @classmethod
     def load(cls, data):
@@ -59,6 +59,32 @@ class NxRecord(DataObject):
         See attr.astuple for documentation on keyword arguments.
         """
         return nxattr.astuple(self, **kwargs)
+
+    def as_pydict(self, **kwargs):
+        """Returns fields in dict form, converted to native Python."""
+        return self.schema.pythonize(self.as_dict(**kwargs))
+
+    def as_pytuple(self, **kwargs):
+        """Returns fields in tuple form, converted to native Python."""
+        return self.schema.pythonize(self.as_dict(**kwargs), mapping=False)
+
+    @classmethod
+    def from_pydict(cls, dict_):
+        """Instantiates an object from a dict containing pure Python types.
+
+        Note that this method does not recursively create NxRecords for
+        nested fields, but type conversion is applied recursively.
+        """
+        return cls(**cls.schema.depythonize(dict_))
+
+    @classmethod
+    def from_pytuple(cls, tuple_):
+        """Instantiates an object from a tuple containing pure Python types.
+
+        Note that this method does not recursively create NxRecords for
+        nested fields, but type conversion is applied recursively.
+        """
+        return cls(**cls.schema.depythonize(tuple_))
 
     def validate(self):
         """Validates an instance against the schema.

@@ -11,6 +11,8 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+import datetime as dt
+
 import marshmallow as msh
 import pandas as pd
 import pytest
@@ -55,6 +57,8 @@ def test_scalar():
     data = {'mph': 65.}
     obj = MySchema().load(data).data
     assert str(obj['mph']) == '65.0 mph'
+    assert MySchema.mph.pygetattr(obj) == ('mph', 65.)
+    assert MySchema.mph.ypgetattr({'mph': 65.}) == ('mph', SpeedMPH(65.))
     dump = MySchema().dump(obj).data
     assert dump == data
     assert type(dump['mph']) is float
@@ -69,10 +73,12 @@ def test_timestamp():
     class MySchema(sch.Schema):
         timestamp = fields.Timestamp()
 
-    timestring = '2017-02-17 01:55:27.985550+05:30'
+    timestring = '2017-02-17 01:55:27.985550'
+    datetime = dt.datetime(2017, 2, 17, 1, 55, 27, 985550)
     data = {'timestamp': timestring}
     obj = MySchema().load(data).data
     assert obj['timestamp'] == pd.Timestamp(timestring)
+    assert MySchema.timestamp.pygetattr(obj) == ('timestamp', datetime)
     dump = MySchema().dump(obj).data
     assert dump == data
 
@@ -83,9 +89,11 @@ def test_duration():
         duration = fields.Duration()
 
     dstring = '5 minutes'
+    timedelta = dt.timedelta(minutes=5)
     data = {'duration': dstring}
     obj = MySchema().load(data).data
     assert obj['duration'] == pd.Timedelta(dstring)
+    assert MySchema.duration.pygetattr(obj) == ('duration', timedelta)
     dump = MySchema().dump(obj).data
     assert dump['duration'] == '0 days 00:05:00'
 
@@ -96,9 +104,11 @@ def test_period():
         period = fields.Period('5min')
 
     pstring = '2017-02-17 02:00'
+    datetime = dt.datetime(2017, 2, 17, 2, 0)
     data = {'period': pstring}
     obj = MySchema().load(data).data
     assert obj['period'] == pd.Period(pstring, freq='5min')
+    assert MySchema.period.pygetattr(obj) == ('period', datetime)
     dump = MySchema().dump(obj).data
     assert dump['period'] == '2017-02-17 02:00'
 

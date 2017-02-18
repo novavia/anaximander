@@ -191,10 +191,78 @@ class _SchemaMetaPatch:
         # Re-run processors initialization on the class
         cls._resolve_processors()
 
-
 # If condition added to enable graceful module reload.
 if not hasattr(SchemaMeta, '__patches__'):
     SchemaMeta._schema_meta_init = staticmethod(SchemaMeta.__init__)
 
 monkeypatch(SchemaMeta, _SchemaMetaPatch)
+
+
+class _SchemaPatch:
+    """Adds pythonize / depythonize class methods."""
+
+    @classmethod
+    def _keyed_field_extractor(cls, obj, extract, mapping=True):
+        collector = []
+        for f in cls.fields.values():
+            extractor = getattr(f, extract)
+            try:
+                val = extractor(obj, mapping=mapping)
+            except AttributeError:
+                continue
+            else:
+                collector.append(val)
+        return collector
+
+    @classmethod
+    def _listed_field_extractor(cls, obj, extract, mapping=True):
+        collector = []
+        for i, f in enumerate(cls.fields.values()):
+            extractor = getattr(f, extract)
+            try:
+                val = extractor(obj, key=i, mapping=mapping)
+            except AttributeError:
+                continue
+            else:
+                collector.append(val)
+        return collector
+
+    @classmethod
+    def pythonize(cls, obj, mapping=True):
+        """Returns a mapping or tuple of fields to 'pythonized' values.
+
+        This is applicable where fields deserialize to non-native Python
+        types.
+        obj is either an object or mapping that implements the cls schema,
+        or alternatively a tuple, list where the values are expected to map to
+        the schema's fields.
+        """
+        if isinstance(obj, (tuple, list)):
+            collector = cls._listed_field_extractor(obj, 'pygetattr', mapping)
+        else:
+            collector = cls._keyed_field_extractor(obj, 'pygetattr', mapping)
+        if mapping:
+            return dict(collector)
+        else:
+            return tuple(collector)
+
+    @classmethod
+    def depythonize(cls, obj, mapping=True):
+        """Returns a mapping or tuple of fields to 'depythonized' values.
+
+        This is applicable where fields deserialize to non-native Python
+        types.
+        """
+        if isinstance(obj, (tuple, list)):
+            collector = cls._listed_field_extractor(obj, 'ypgetattr', mapping)
+        else:
+            collector = cls._keyed_field_extractor(obj, 'ypgetattr', mapping)
+        if mapping:
+            return dict(collector)
+        else:
+            return tuple(collector)
+
+monkeypatch(Schema, _SchemaPatch)
+
+
 SchemaMeta._reserved_names = set(dir(SchemaMeta) + dir(Schema()))

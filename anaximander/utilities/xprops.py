@@ -74,11 +74,11 @@ class cachedproperty(property):
     def deleter(self, fdel):
         return type(self)(self.fget, self.fset, fdel)
 
-    @classmethod
-    def reset(cls, obj):
-        """Resets all cached properties on obj (if declared in its class)."""
-        attrs = type(obj).__dict__
-        props = [k for k, v in attrs.items() if isinstance(v, cls)]
+    @staticmethod
+    def reset(obj):
+        """Resets all cached properties on obj."""
+        attrs = {k: getattr(obj, k, None) for k in dir(type(obj))}
+        props = [k for k, v in attrs.items() if isinstance(v, cachedproperty)]
         for k in props:
             delattr(obj, k)
 

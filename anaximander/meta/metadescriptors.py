@@ -341,7 +341,7 @@ class TypeProperty(MetaDescriptor):
     Type properties function very much like Type attributes, except that
     their evaluation is always computed rather than cached. Like with
     Type attributes, a regular instance property is created as well, such
-    that the type property evaluatio is accessible from objects.
+    that the type property evaluation is accessible from objects.
     Note that this implementation is limited to read-only properties.
     """
 
