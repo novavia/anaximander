@@ -5,6 +5,9 @@
 # Compiled Python files
 *.pyc
 
+# Python pth files
+*.pth
+
 # Vim swap files
 .*.swp
 

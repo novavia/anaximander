@@ -80,6 +80,7 @@ class curlydict(dict):
         return '{' + key + '}'
 
 
+# XXX: this is made somewhat obsolete by python 3.6's format strings.
 def lformat(string):
     """Applies format to string from the caller's local dictionary.
 

@@ -14,11 +14,15 @@ Copyright (C) Novavia Solutions, LLC.
 import os
 import pytest
 import socket
+import sys
 
 from oauth2client.client import GoogleCredentials, \
     ApplicationDefaultCredentialsError
 
 REMOTE_SERVER = "www.google.com"
+
+ANAXIMANDER = os.path.dirname(__file__)
+sys.path.append(ANAXIMANDER)
 
 # =============================================================================
 # Utility functions

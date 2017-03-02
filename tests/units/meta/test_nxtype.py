@@ -108,10 +108,10 @@ def proto_clade():
         physical = False
 
     # This tests that a subtype is properly overriden in Object's cladogram
-    class Hammer(BaseHammer):
+    class Hammer(BaseHammer, overtype=True):
         pass
 
-    class Noise(Object['noise']):
+    class Noise(Object['noise'], overtype=True):
         pass
 
     Random = nxtype(Object, name='Random', key='random')
@@ -140,9 +140,11 @@ def test_archetype_inheritance(proto_clade):
 
 
 def test_prototype_instantiation(proto_clade):
-    Object, *_ = proto_clade
+    Object, BaseHammer, _, Hammer, *_ = proto_clade
     with pytest.raises(TypeError):
         Object()
+    assert isinstance(Object(key='hammer'), Hammer)
+    assert isinstance(Object(key='hammer'), BaseHammer)
 
 
 def test_typeattribute(proto_clade):

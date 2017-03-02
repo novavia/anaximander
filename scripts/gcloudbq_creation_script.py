@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 from contextlib import contextmanager
 import os.path
 
-from gcloud import bigquery as bq
+from google.cloud import bigquery as bq
 import numpy as np
 import pandas as pd
 

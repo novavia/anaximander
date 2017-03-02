@@ -161,7 +161,6 @@ class ArcheType(metaclass=ArchMeta):
     """
     __basetype__ = None
     __metatype__ = None
-    __overtype__ = True  # Default setting, can be overriden in declarations.
 
     def __new__(mcl, name, bases, namespace, **kwargs):
         """Emulates NxType.__new__ as the arguments are redirected."""
@@ -206,12 +205,16 @@ class ArcheType(metaclass=ArchMeta):
         return type(archetype).registry.values()
 
 
-# TODO: could make prototypes smarter by allowing metacharacters
-# to be passed as keyword arguments in instantiation calls and directing
-# the call to the proper subtype.
 def protonew(cls, *args, **kwargs):
     """Implementation of __new__ for ProtoTypes."""
-    raise TypeError("Cannot instantiate a prototype.")
+    try:
+        metacharacters = {}
+        for k in cls.__metacharacters__:
+            metacharacters[k] = kwargs.pop(k)
+    except KeyError:
+        raise TypeError("Cannot instantiate a prototype without a full \
+                        set of metacharacters.")
+    return type(cls).registry.get(**metacharacters)(*args[1:], **kwargs)
 
 
 class ProtoType(ArcheType):
@@ -220,30 +223,20 @@ class ProtoType(ArcheType):
     Prototypes declare one or more metacharacters whose values differentiate
     the derived types of the archetype. Derived types are registered in a
     type registry, with a key that is a tuple of its metacharacter values.
-    By default, overtyping is allowed. Hence if an existing derived type
-    of an archetype is further subclassed with the same metacharacters, it
-    will take precedence over the previous version and replace it in the
-    type registry. This setting can be modified in one of two ways:
-    * The archetype itself can declare __overtype__ = False, in which case
-    overtyping is generally forbidden for the corresponding clade. In this
-    situation, an attempt to subclass a subtype will fail with a
-    RegistrationError.
-    * Otherwise, new types can be declared with the keyword argument overtype,
-    in which case whatever value is passed (True or False) will override the
-    clade's default behavior. If the default behavior is False and a new
-    type is declared with kwarg overtype=True, then the new type will
-    replace an existing clade member that has the same metacharacters. If
-    the default behavior is True and a new type is declared with kwarg
-    overtype=False, then the new type is created but it does not get
-    registered in the ProtoRegistry.
+    While multiple subtypes with the same metacharacters can be created,
+    only one can exist in the registry and serve as the default
+    implementation (which can also be called in the form Class[metacharacter]).
+    Once a subtype with a given metacharacter set has been created and
+    registered, it can be bumped by declaring a subtype with the same
+    metacharacter and the class keyword overtype=True. Note that this
+    new subtype must subclass the orginal subtype for the same metacharacter
+    set, otherwise an error is raised at type registration.
     """
 
     def __init__(prototype, name, bases, namespace):
         prototype.__archetype__ = prototype
         metacharacters = prototype.__metacharacters__
-        overtype = prototype.__overtype__
-        type(prototype).registry = ProtoRegistry(*metacharacters,
-                                                 overtype=overtype)
+        type(prototype).registry = ProtoRegistry(*metacharacters)
         prototype.__new__ = classmethod(protonew)
 
     def nxregister(prototype, cls, **kwargs):
@@ -252,7 +245,7 @@ class ProtoType(ArcheType):
                 "values for all metacharacters."
             raise MetaError(msg)
         cls.__archetype__ = prototype
-        overtype = kwargs.get('overtype', None)
+        overtype = kwargs.get('overtype', False)
         type(prototype).registry.register(cls, *cls.metacharacters,
                                           overtype=overtype)
         if cls.__bases__[0] is prototype.__basetype__:
@@ -308,36 +301,23 @@ class ArchRegistry(nrg.Pool):
 class ProtoRegistry(nrg.Hierarchy):
     """A specialized Hierarchy to register subtypes of a ProtoType."""
 
-    def __init__(self, *layer_names, overtype=True):
-        """Augments super with the overtype parameter.
-
-        if overtype is True, then types that are registered with a key
-        that is already in the type registry overwrite the existing type.
-        Otherwise a RegistrationError is raised.
-        However if self.overtype is True but register is called with
-        overtype=False, then no registration takes place and no error
-        is raised.
-        """
-        super().__init__(*layer_names)
-        self.overtype = overtype
-
-    def register(self, obj, *args, overtype=None, **kwargs):
+    def register(self, cls, *args, overtype=False, **kwargs):
         """Adds the overtype parameter to determine whether to overwrite.
 
-        Optional overtype parameter overrides self's default setting.
-        See ProtoRegistry.__init__ for explanation.
+        If overtype is False and a registration already exists, the
+        method does nothing. If overtype is True, the existing registration
+        is overwritten.
         """
-        overtype = fun.get(overtype, self.overtype)
         if overtype is False:
             try:
-                cls = self.get(*args, **kwargs)
+                xcls = self.get(*args, **kwargs)
             except KeyError:
                 pass
             else:
-                if self.overtype is True:
+                if issubclass(cls, xcls):
                     return
-                elif isinstance(cls, type):
+                else:
                     msg = "{0} is already registered with the same " + \
                         "metacharacters as {1}"
-                    raise nrg.RegistrationError(msg.format(cls, obj))
-        super().register(obj, *args, **kwargs)
+                    raise nrg.RegistrationError(msg.format(xcls, cls))
+        super().register(cls, *args, **kwargs)

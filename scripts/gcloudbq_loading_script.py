@@ -11,7 +11,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-from gcloud import bigquery as bq
+from google.cloud import bigquery as bq
 
 from anaximander.data import fields, schema as sch, gcloudbq as gbq, data
 from anaximander.data.tract import tract

@@ -266,3 +266,10 @@ monkeypatch(Schema, _SchemaPatch)
 
 
 SchemaMeta._reserved_names = set(dir(SchemaMeta) + dir(Schema()))
+
+## =============================================================================
+## Specialized schemas
+## =============================================================================
+#
+#
+#class SampleLog

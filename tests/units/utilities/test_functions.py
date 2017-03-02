@@ -63,10 +63,11 @@ class TestStringFormatting(TestCase):
         assert fun.spformat(len(c5), 'thing', 'thangs') == '5 thangs'
 
     def test_lformat(self):
-        w = 4
-        string = fun.lformat("A car has {w} wheels and {n} cylinders.")
+        w, n = 4, '?'
+        string = fun.lformat("My car has {w} wheels and {n} cylinders.")
         assert w == 4
-        assert string == "A car has 4 wheels and {n} cylinders."
+        assert n == '?'
+        assert string == "My car has 4 wheels and ? cylinders."
 
 
 class TestCollectionFunctions(TestCase):

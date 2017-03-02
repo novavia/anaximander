@@ -16,7 +16,7 @@ import os.path
 import pandas as pd
 import pytest
 
-from gcloud import bigquery as bq
+from google.cloud import bigquery as bq
 
 import anaximander as nx
 from anaximander.data import data, fields as fld, schema as sch, \
@@ -58,7 +58,7 @@ def featurelog():
 
 def cleanup(dataset):
     """Cleans up the supplied BigQuery dataset."""
-    for table in dataset.list_tables()[0]:
+    for table in dataset.list_tables():
         table.delete()
 
 

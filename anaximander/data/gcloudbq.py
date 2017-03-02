@@ -13,7 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 from collections.abc import Mapping
 
-from gcloud import bigquery as bq
+from google.cloud import bigquery as bq
 from pandas.io import gbq as pdgbq
 
 from ..utilities import functions as fun
@@ -270,7 +270,7 @@ class GBQRawDataQuery(_QBQDataQuery):
 
     Args:
         schema: A Schema subtype.
-        table: A gcloud.bigquery.table.Table instance.
+        table: A google.cloud.bigquery.table.Table instance.
         sql: A complete sql query statement.
         kwargs: keyword arguments that are passed to pandas.io.gbq.read_gbq.
     """
@@ -285,7 +285,7 @@ class GBQDataQuery(_QBQDataQuery):
     """A query with a simplified interface for simple statements.
 
     Args:
-        table: A gcloud.bigquery.table.Table instance.
+        table: A google.cloud.bigquery.table.Table instance.
         kwargs: see generate_sql for admissible arguments.
     """
     schema = MetaCharacter(validate=fun.subcheck(Schema))

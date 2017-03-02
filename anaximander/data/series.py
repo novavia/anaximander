@@ -157,14 +157,14 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
     def plot(self, ax='new', **kwargs):
         """Customized plot function.
 
-        :param ax: 'new' for new plot, otherwise see super
+        :param ax: 'new' for new plot, otherwise see super.
         """
         if ax == 'new':
             fig, ax = plt.subplots()
         self._pencolor = kwargs.setdefault('color', DC1)
-        ax = self.data.plot(**kwargs)
+        kwargs.setdefault('title', str(self.context) if self.context else None)
+        ax = self.data.plot(ax=ax, **kwargs)
         ax.set_xlabel('')
-        ax.set_title(str(self.context))
         self._curax = ax
         return ax
 
