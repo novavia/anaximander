@@ -385,6 +385,19 @@ def typemethod(func):
     return TypeMethod(func)
 
 
+class ClassTypeMethod(TypeMethod):
+    """A TypeMethod that becomes a classmethod in the metaclass."""
+
+    def __call__(self, mcl):
+        super().__call__(mcl)
+        setattr(mcl, self.name, classmethod(self.__func__))
+
+
+def classtypemethod(func):
+    """A method decorator that declares a ClassTypeMethod."""
+    return ClassTypeMethod(func)
+
+
 @metaregistry('__newtypemethods__')
 class NewTypeMethod(TypeMethod):
     """TypeMethod that is executed at type creation.
@@ -464,7 +477,13 @@ class MetaMethod(MetaDescriptor):
         super().__call__(mcl)
 
         def setter(cls):
-            """Sets a method on the supplied type."""
+            """Sets a method on the supplied type.
+
+            This is done unless cls declares an attribute of the same
+            name in its dictionary.
+            """
+            if self.name in cls.__dict__:
+                return
             method = self.__func__(cls)
             setattr(cls, self.name, method)
 

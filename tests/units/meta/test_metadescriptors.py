@@ -111,6 +111,14 @@ def test_metamethod(C):
     assert hasattr(type(C), '_set__repr__')
     assert repr(inst) == '<C[0]>'
 
+    class D(C):
+        x = 1
+
+        def __repr__(self):
+            return "gotcha"
+    
+    assert repr(D()) == "gotcha"
+
 
 def test_typeproperty(C):
     inst = C[0]()

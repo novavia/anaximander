@@ -14,7 +14,6 @@ Copyright (C) Novavia Solutions, LLC.
 from collections import OrderedDict
 import itertools
 
-from ..utilities import functions as fun
 from ..registries import registries as nrg
 from .metadescriptors import metaregistries
 
@@ -67,6 +66,7 @@ class NxMeta(type):
             for md in metadescriptors:
                 md(mcl)  # Binds the metadescriptor to the metaclass
         mcl.__counter__ = itertools.count()  # A type counter
+        mcl.__type_id__ = next(mcl.__counter__)
 
 
 def nxmeta(basetype):

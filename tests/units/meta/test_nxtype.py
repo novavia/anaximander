@@ -15,7 +15,6 @@ from unittest import TestCase
 
 import pytest
 
-from anaximander.utilities import nxattr
 from anaximander.registries.folios import Registrable
 import anaximander.meta.metadescriptors as mtd
 from anaximander.meta.nxmeta import ArcheType, MetaError
@@ -62,7 +61,7 @@ class TestProgrammaticTypeCreation(TestCase):
     def test_typing(self):
         new_type = nxtype(self.BaseThing)
         self.assertTrue(issubclass(new_type, self.BaseThing))
-        self.assertEqual(new_type.__name__, 'Thing_0')
+        self.assertEqual(new_type.__name__, 'Thing_1')
 
 # =============================================================================
 # Tests archetype / prototype machinery
@@ -98,6 +97,12 @@ def proto_clade():
         key = mtd.MetaCharacter()
         physical = mtd.TypeAttribute(validate=lambda v: isinstance(v, bool))
 
+        @mtd.classtypemethod
+        def __baptize__(mcl, basetype, traits=None, **kwargs):
+            suffix = str(kwargs.get('key', mcl.__type_id__))
+            return mcl.__basename__ + '_' + suffix
+
+
     class BaseHammer(Object, key='hammer', physical=True):
         pass
 
@@ -114,9 +119,14 @@ def proto_clade():
     class Noise(Object['noise'], overtype=True):
         pass
 
-    Random = nxtype(Object, name='Random', key='random')
+    Random = nxtype(Object, key='random')
 
     return (Object, BaseHammer, BaseNoise, Hammer, Noise, Random)
+
+
+def test_baptism(proto_clade):
+    *_, Random = proto_clade
+    assert Random.__name__ == 'Object_random'
 
 
 def test_archetype_inheritance(proto_clade):

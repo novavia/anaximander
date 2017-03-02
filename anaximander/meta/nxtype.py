@@ -65,8 +65,7 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
     @classmethod
     def __baptize__(mcl, basetype, traits=None, **kwargs):
         """Generates a name for a programatically generated type instance."""
-        idx = next(mcl.__counter__)
-        return mcl.__basename__ + '_' + str(idx)
+        return mcl.__basename__ + '_' + str(mcl.__type_id__)
 
     # Note: this is superfluous in py3.6+
     @classmethod
@@ -130,6 +129,8 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
             md.cls = cls
             md.name = name
 
+        # Increment type counter
+        mcl.__type_id__ = next(mcl.__counter__)
         return cls
 
     def __init__(cls, name, bases, namespace, traits=None, **kwargs):
