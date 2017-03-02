@@ -32,6 +32,12 @@ Thumbs.db
 .pydevproject
 .settings/
 
+# FIles that were inserted to create local containers
+client-secret.json
+google-cloud-sdk-127.0.0-linux-x86_64.tar.gz
+pipelines_local_test.sh
+container.sh
+
 #others
 *~
 \#*
