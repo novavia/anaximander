@@ -64,7 +64,8 @@ from blist import sortedset, weaksortedset
 from ..utilities import functions as fun
 from ..utilities import xprops
 
-__all__ = ['NxFolder', 'NxVolume',
+__all__ = ['Registrable', 'RegistrableObject', 'RegistrableType',
+           'NxFolder', 'NxVolume',
            'NxCard', 'NxPage', 'NxScroll', 'NxSchedule']
 
 # =============================================================================

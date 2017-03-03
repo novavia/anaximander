@@ -8,9 +8,7 @@ Copyright (C) Novavia Solutions, LLC.
 """
 
 
-from . import metadescriptors as metadescriptors
-from . import nxmeta as nxmeta
-from . import nxtype as nxtype
-from . import nxobject as nxobject
-
-__all__ = ['metadescriptors', 'nxmeta', 'nxtype', 'nxobject']
+from .metadescriptors import *
+from .nxmeta import *
+from .nxtype import *
+from .nxobject import *

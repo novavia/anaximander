@@ -15,8 +15,7 @@ import pytest
 
 import anaximander.utilities.functions as fun
 import anaximander.meta.metadescriptors as mtd
-from anaximander.meta.nxtype import nxtype, archetype, prototype
-from anaximander.meta.nxobject import NxObject
+from anaximander.meta import nxtype, archetype, prototype, NxObject
 
 # =============================================================================
 # Test Cases
@@ -27,7 +26,7 @@ from anaximander.meta.nxobject import NxObject
 def C():
     @prototype
     class C(NxObject):
-        x = mtd.MetaCharacter()
+        x = mtd.metacharacter()
         message = 'Hello, World!'
         _greetings = 0
 

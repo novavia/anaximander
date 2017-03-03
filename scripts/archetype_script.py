@@ -11,10 +11,9 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-from anaximander.meta.metadescriptors import MetaCharacter
+from anaximander.meta import metacharacter, prototype, NxObject
 from anaximander.meta.nxmeta import ArcheType
-from anaximander.meta.nxtype import NxType, prototype
-from anaximander.meta.nxobject import NxObject
+from anaximander.meta.nxtype import NxType
 
 # =============================================================================
 # Script
@@ -23,7 +22,7 @@ from anaximander.meta.nxobject import NxObject
 
 @prototype
 class Object(NxObject):
-    physical = MetaCharacter()
+    physical = metacharacter()
 
 
 class Hammer(Object):

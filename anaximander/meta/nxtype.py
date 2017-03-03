@@ -37,8 +37,8 @@ from ..registries import registries as reg
 from ..registries.folios import RegistrableType
 
 
-__all__ = ['nxtype', 'archetype', 'prototype', 'clade', 'noregistry',
-           'directory', 'pool']
+__all__ = ['NxType', 'nxtype', 'archetype', 'prototype', 'clade',
+           'noregistry', 'directory', 'pool']
 
 # =============================================================================
 # NxType declaration
@@ -117,10 +117,11 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
 
         # Note: this is ABCMeta.__new__
         cls = super().__new__(mcl, name, bases, namespace)
+        TypeAttribute.reset(cls)
+
         archetype = type(cls).__archetype__
         if archetype is not None:
-            # Resets the type attributes whose default is a callable
-            TypeAttribute.reset(cls)
+            # Runs newtype methods on subclasses of archetypes
             for method in archetype.__newtypemethods__:
                 cls = getattr(cls, method)()
 

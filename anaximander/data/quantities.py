@@ -16,6 +16,8 @@ from anaximander.meta.nxtype import directory
 from anaximander.meta.nxobject import NxObject
 from .exceptions import DataError
 
+__all__ = ['Quantity']
+
 # =============================================================================
 # Quantity class
 # =============================================================================

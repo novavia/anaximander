@@ -17,6 +17,8 @@ import itertools
 from ..registries import registries as nrg
 from .metadescriptors import metaregistries
 
+__all__ = ['nxmeta', 'MetaError']
+
 # =============================================================================
 # NxMeta metaclass type
 # =============================================================================

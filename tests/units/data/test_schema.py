@@ -17,7 +17,8 @@ import datetime as dt
 import pandas as pd
 import pytest
 
-from anaximander.data import fields, data, schema as sch, quantities as qnt
+from anaximander.data import fields, schema as sch, quantities as qnt, \
+    NxScalar
 
 # =============================================================================
 # Test Cases
@@ -74,7 +75,7 @@ def test_pythonize():
 
     length = qnt.Quantity('length', 'm')
 
-    class Length(data.NxScalar):
+    class Length(NxScalar):
         quantity = length
 
     class Person(sch.Schema):

@@ -60,6 +60,8 @@ from ..utilities.xprops import weakproperty, cachedproperty
 from .exceptions import DataError
 from . import fields
 
+__all__ = ['Schema', 'SchemaError']
+
 # =============================================================================
 # Schema patching
 # =============================================================================
@@ -132,35 +134,35 @@ class _SchemaMetaPatch:
         elif len(seqkeys) == 1:
             cls._seqkey = seqkeys.pop()
 
-    @property
+    @cachedproperty
     def base_schemas(cls):
         """Filters bases for Schema subclasses."""
         return tuple(c for c in cls.__bases__ if issubclass(c, Schema))
 
-    @property
+    @cachedproperty
     def fields(cls):
         """Returns an OrderedDict of fields, sequenced by creation index."""
         items = sorted(cls._declared_fields.items(),
                        key=lambda i: i[1]._creation_index)
         return OrderedDict(items)
 
-    @property
+    @cachedproperty
     def fieldnames(cls):
         """Returns a tuple of field names, in sequence."""
         return tuple(cls.fields.keys())
 
-    @property
+    @cachedproperty
     def own_fields(cls):
         """Returns non-inherited fields."""
         inherited = msh.schema._get_fields_by_mro(cls, fields.Field, True)
         return OrderedDict(f for f in cls.fields.items() if f not in inherited)
 
-    @property
+    @cachedproperty
     def keys(cls):
         """Returns an OrderedDict of key fields in a Schema."""
         return OrderedDict((k, v) for k, v in cls.fields.items() if v.key)
 
-    @property
+    @cachedproperty
     def nskeys(cls):
         """Returns an OrderedDict of non-sequential key fields in a Schema."""
         pairs = ((k, v) for k, v in cls.keys.items() if not v.sequential)
@@ -175,7 +177,7 @@ class _SchemaMetaPatch:
         """
         return None
 
-    @property
+    @cachedproperty
     def required(cls):
         """Returns a dict of required fields in a Schema."""
         return OrderedDict((k, v) for k, v in cls.fields.items() if v.required)

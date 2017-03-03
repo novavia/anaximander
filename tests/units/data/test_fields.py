@@ -17,8 +17,7 @@ import marshmallow as msh
 import pandas as pd
 import pytest
 
-from anaximander.data import fields, schema as sch, quantities as qnt
-from anaximander.data.data import NxScalar
+from anaximander.data import fields, schema as sch, quantities as qnt, NxScalar
 
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 

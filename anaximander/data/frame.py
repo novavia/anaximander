@@ -20,10 +20,8 @@ import pandas as pd
 
 from ..utilities import functions as fun
 from ..utilities import nxattr, xprops
-from ..meta.nxobject import NxObject
-from ..meta.metadescriptors import TypeAttribute, MetaCharacter, \
-    typeinitmethod, typeproperty
-from ..meta.nxtype import prototype, clade
+from ..meta import NxObject, metacharacter, typeinitmethod, \
+    cachedtypeproperty, prototype, clade
 from .exceptions import DataError
 from .base import IndexedDataObject
 from .schema import Schema
@@ -33,6 +31,9 @@ from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Str, Bool, Int, Constant, NxDataField, Scalar
 from .record import NxRecord
 from .series import NxSeries
+
+__all__ = ['NxDataFrame', 'NxDataCollection', 'NxDataMapping',
+           'NxDataSequence', 'CsvLoader', 'CsvDumper', 'ConformityError']
 
 # =============================================================================
 # Field mapping from Schemas to pandas / numpy
@@ -109,14 +110,22 @@ class ConformityError(FrameError):
 class NxDataFrame(IndexedDataObject):
     """A read-only data table with strong column semantic enforcement."""
     schema = None  # placeholder for schema in concrete classes
-    kcols = []  # placeholder for non-sequential schema key field names.
-    sqcol = None  # placeholder for possible sequential key field name.
 
-    @typeproperty
+    @cachedtypeproperty
+    def kcols(cls):
+        """Returns non-sequential schema key field names."""
+        return list(cls.schema.nskeys)
+
+    @cachedtypeproperty
+    def sqcol(cls):
+        """Returns sequential key field name, if any."""
+        return cls.schema.seqkey
+
+    @cachedtypeproperty
     def rowtype(cls):
         return NxRecord[cls.schema]
 
-    @typeproperty
+    @cachedtypeproperty
     def frametype(cls):
         """Returns the default NxDataFrame subtype for arbitrary data sets.
 
@@ -282,17 +291,14 @@ class NxDataFrame(IndexedDataObject):
 @prototype
 class NxDataCollection(NxDataFrame):
     """An NxDataFrame with no indexing capabilities besides row sequence."""
-    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
-    kcols = TypeAttribute(default=lambda c: list(c.schema.nskeys))
-    sqcol = TypeAttribute(default=lambda c: c.schema.seqkey)
+    schema = metacharacter(validate=lambda s: issubclass(s, Schema))
+
 
 
 @prototype
 class NxDataMapping(NxDataFrame, traits=(Mapping,)):
     """An NxDataFrame indexed by non-sequential key fields in the schema."""
-    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
-    kcols = TypeAttribute(default=lambda c: list(c.schema.nskeys))
-    sqcol = TypeAttribute(default=lambda c: c.schema.seqkey)
+    schema = metacharacter(validate=lambda s: issubclass(s, Schema))
 
     def __iter__(self):
         if self.kcols:
@@ -363,9 +369,7 @@ class NxDataMapping(NxDataFrame, traits=(Mapping,)):
 @prototype
 class NxDataSequence(NxDataFrame, traits=(Sequence,)):
     """An NxDataFrame indexed by a unique sequential key field."""
-    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
-    kcols = TypeAttribute(default=lambda c: list(c.schema.nskeys))
-    sqcol = TypeAttribute(default=lambda c: c.schema.seqkey)
+    schema = metacharacter(validate=lambda s: issubclass(s, Schema))
 
     def __init__(self, data, context=None, validate=False):
         super().__init__(data, context, validate)

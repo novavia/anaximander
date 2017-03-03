@@ -19,9 +19,8 @@ import pytest
 from google.cloud import bigquery as bq
 
 import anaximander as nx
-from anaximander.data import data, fields as fld, schema as sch, \
-    tract as trc, gcloudbq as gbq
-
+from anaximander import data as dat
+from anaximander.data import fields as fld, schema as sch, gcloudbq as gbq
 
 PROJECT_ID = 'anaximander-tests'
 DATASET_ID = 'InterfaceTesting'
@@ -37,15 +36,15 @@ MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 # =============================================================================
 
 
-test_domain = trc.DataDomain('test')
+test_domain = dat.Domain('test')
 
 
-@trc.domain('test')
-@trc.tract
+@dat.domain('test')
+@dat.tract
 class DeviceData(sch.Schema):
     mac = fld.ReStr(key=True, pattern=MAC_PATTERN)
     timestamp = fld.DateTime(key=True, sequential=True)
-    accel_x = fld.Scalar(data.NxFloat)
+    accel_x = fld.Scalar(dat.NxFloat)
 
 
 def featurelog():

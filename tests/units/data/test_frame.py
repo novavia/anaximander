@@ -21,9 +21,7 @@ import pytest
 
 import anaximander as nx
 from anaximander.data import fields, frame as frm, schema
-from anaximander.data.record import NxRecord
-from anaximander.data.series import NxSeries
-from anaximander.data.data import NxFloat
+from anaximander.data import NxFloat, NxRecord, NxSeries
 
 
 NXPATH = os.path.dirname(nx.__path__[0])

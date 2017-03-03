@@ -17,8 +17,7 @@ from google.cloud import bigquery as bq
 from pandas.io import gbq as pdgbq
 
 from ..utilities import functions as fun
-from ..meta.nxtype import prototype
-from ..meta.metadescriptors import MetaCharacter
+from ..meta import prototype, metacharacter
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
@@ -26,6 +25,9 @@ from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
 from .schema import Schema
 from .frame import DataLoader, DataDumper, NxDataFrame
 from .tract import DataChannel, DataDomain
+
+__all__ = ['create_table', 'create_all', 'create_dataset',
+           'BigQueryChannel', 'BigQueryException', 'QueryException']
 
 # =============================================================================
 # Custom exceptions
@@ -288,7 +290,7 @@ class GBQDataQuery(_QBQDataQuery):
         table: A google.cloud.bigquery.table.Table instance.
         kwargs: see generate_sql for admissible arguments.
     """
-    schema = MetaCharacter(validate=fun.subcheck(Schema))
+    schema = metacharacter(validate=fun.subcheck(Schema))
     # Admissible query arguments, which populate instance kwargs
     __quargs__ = ('columns', 'exclude', 'where', 'order_by', 'limit')
     # Default limit on the number of rows queried.
@@ -385,6 +387,7 @@ class GBQDataAppend(DataDumper):
 
 class BigQueryChannel(DataChannel):
     __loader__ = GBQDataQuery
+    __dumper__ = GBQDataAppend
 
     @property
     def table(self):

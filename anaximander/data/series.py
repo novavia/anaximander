@@ -24,10 +24,11 @@ import seaborn as sns
 
 from ..utilities import xprops
 from ..utilities.functions import spformat
-from ..meta.nxtype import prototype
-from ..meta.metadescriptors import MetaCharacter, typeproperty
+from ..meta import prototype, metacharacter, typeproperty
 from .base import IndexedDataObject, RowSlicer
 from .data import NxData
+
+__all__ = ['NxSeries']
 
 # =============================================================================
 # Plotting constants
@@ -80,7 +81,7 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
     self.datatype.dtype, i.e. the dtype of the NxDataType that is the
     metacharacter value of concrete NxSeries subtypes.
     """
-    datatype = MetaCharacter(validate=lambda s: issubclass(s, NxData))
+    datatype = metacharacter(validate=lambda s: issubclass(s, NxData))
 
     @typeproperty
     def rowtype(cls):

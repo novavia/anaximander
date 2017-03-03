@@ -16,7 +16,8 @@ from unittest import TestCase
 
 import pytest
 
-from anaximander.data import fields, tract, record as rec, schema as sch
+from anaximander.data import fields, schema as sch, NxRecord
+from anaximander.data.tract import DataTract, tract, Domain, domain
 
 # =============================================================================
 # Test Cases
@@ -46,18 +47,18 @@ class TestTract(TestCase):
 
     def test_init(self):
         global User
-        User = tract.DataTract(self.UserSchema)
+        User = DataTract(self.UserSchema)
         assert 'User' in globals()
         assert User.name == 'User'
         assert User.Schema is self.UserSchema
         assert self.UserSchema.tract is User
-        assert issubclass(User.Record, rec.NxRecord)
+        assert issubclass(User.Record, NxRecord)
         assert User.Record.__name__ == 'UserRecord'
         assert User.Record.schema is self.UserSchema
 
     def test_make_record_class(self):
         global User
-        User = tract.DataTract(self.UserSchema)
+        User = DataTract(self.UserSchema)
         assert hasattr(User.Record, 'email')
         assert hasattr(User.Record, 'name')
 
@@ -66,25 +67,25 @@ class TestDomain(TestCase):
 
     def setUp(self):
         UserSchema, PurchaseSchema = schemas()
-        self.UserSchema = tract.DataTract(UserSchema)
-        self.PurchaseSchema = tract.DataTract(PurchaseSchema)
+        self.UserSchema = DataTract(UserSchema)
+        self.PurchaseSchema = DataTract(PurchaseSchema)
 
     def test_init(self):
-        domain = tract.DataDomain('test', self.UserSchema, self.PurchaseSchema)
-        assert tract.DataDomain['test'] == domain
-        assert self.UserSchema in domain
+        dom = Domain('test', self.UserSchema, self.PurchaseSchema)
+        assert Domain['test'] == dom
+        assert self.UserSchema in dom
 
     def test_decorator(self):
-        domain = tract.DataDomain('test')
-        decorator = tract.domain(domain)
+        dom = Domain('test')
+        decorator = domain(dom)
         UserSchema = decorator(self.UserSchema)
-        assert UserSchema in domain
+        assert UserSchema in dom
    
 
 def test_tract_decorator(schemas):
     UserSchema, PurchaseSchema = schemas
     global User
-    tract.tract(UserSchema)
+    tract(UserSchema)
     assert 'User' in globals()
     assert User.name == 'User'
     assert User.Schema is UserSchema
@@ -94,8 +95,8 @@ def test_tract_decorator(schemas):
 def test_record_integration(schemas):
     UserSchema, PurchaseSchema = schemas
     global User, Purchase
-    tract.tract(UserSchema)
-    tract.tract(PurchaseSchema)
+    tract(UserSchema)
+    tract(PurchaseSchema)
 
     # Load from schema
     user_data = {'name': 'Joe', 'email': 'joe@bar.com'}
@@ -128,8 +129,8 @@ def test_record_integration(schemas):
 def test_nesting(schemas):
     UserSchema, PurchaseSchema = schemas
     global User, Purchase
-    tract.tract(UserSchema)
-    tract.tract(PurchaseSchema)
+    tract(UserSchema)
+    tract(PurchaseSchema)
 
     user_data = {'name': 'Joe', 'email': 'joe@bar.com'}
     purchase_data = {'user': user_data,
@@ -145,10 +146,10 @@ def test_schema_subclassing(schemas):
     """Tests subclassing of Schemas into Tracts."""
     UserSchema, PurchaseSchema = schemas
     global User, Purchase
-    tract.tract(UserSchema)
-    tract.tract(PurchaseSchema)
+    tract(UserSchema)
+    tract(PurchaseSchema)
 
-    @tract.tract
+    @tract
     class PowerUser(User.Schema):
         power = fields.Bool(default=True)
     user_data = {'name': 'Joe', 'email': 'joe@bar.com', 'power': 'True'}
@@ -160,8 +161,8 @@ def test_record_subclassing(schemas):
     """Tests subclassing a Record class."""
     UserSchema, PurchaseSchema = schemas
     global User, Purchase
-    tract.tract(UserSchema)
-    tract.tract(PurchaseSchema)
+    tract(UserSchema)
+    tract(PurchaseSchema)
 
     class UserRecord(User.Record):
         @property

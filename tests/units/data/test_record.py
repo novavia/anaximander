@@ -17,8 +17,7 @@ import unittest as ut
 import pandas as pd
 import pytest
 
-from anaximander.data import fields, schema as sch, record as rec
-from anaximander.data.data import NxFloat
+from anaximander.data import fields, schema as sch, NxFloat, NxRecord
 
 # =============================================================================
 # Test Cases
@@ -35,7 +34,7 @@ class TestRecord(ut.TestCase):
             value = fields.Scalar(NxFloat)
 
         self.schema = Schema()
-        self.Record = rec.NxRecord[Schema]
+        self.Record = NxRecord[Schema]
         self.data = {'title': 'ping',
                      'date': '2016-12-08',
                      'value': 3.5}

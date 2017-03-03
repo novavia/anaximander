@@ -14,8 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import numpy as np
 import pytest
 
-from anaximander.data import quantities as qnt
-from anaximander.data.data import NxScalar
+from anaximander.data import quantities as qnt, NxScalar
 
 # =============================================================================
 # Test Cases

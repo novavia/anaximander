@@ -32,9 +32,10 @@ class cachedproperty(property):
     i.e. their cache is emptied.
     """
 
-    def __init__(self, fget=None, fset=None, fdel=None, doc=None):
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None,
+                 cache=None):
         super().__init__(fget, fset, fdel)
-        self.cache = '_' + fget.__name__
+        self.cache = cache or '_' + fget.__name__
         if doc is None and fget is not None:
             doc = fget.__doc__
         self.__doc__ = doc
@@ -43,8 +44,10 @@ class cachedproperty(property):
         if obj is None:
             return self
         try:
-            return getattr(obj, self.cache)
-        except AttributeError:
+            return obj.__dict__[self.cache]
+#            return getattr(obj, self.cache)
+#        except AttributeError:
+        except KeyError:
             if self.fget is None:
                 raise AttributeError("Unreadable attribute.")
             setattr(obj, self.cache, self.fget(obj))
@@ -94,7 +97,7 @@ class settablecachedproperty(cachedproperty):
 
 
 class singlesetproperty(settablecachedproperty):
-    """Cached property that can only be set once with a non-None value.
+    """Cached property that can only be set once.
 
     Note that deletion remains possible and that a new value can be passed
     to the cache following a del event. This is maintained for compatibility
@@ -102,7 +105,8 @@ class singlesetproperty(settablecachedproperty):
     """
 
     def __set__(self, obj, value):
-        if getattr(obj, self.cache, None) is None:
+        if not self.cache in obj.__dict__:
+#        if getattr(obj, self.cache, None) is None:
             super().__set__(obj, value)
         else:
             raise AttributeError("Can't set attribute.")

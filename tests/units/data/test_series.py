@@ -15,9 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from anaximander.data import quantities as qnt
-from anaximander.data.data import NxScalar
-from anaximander.data.series import NxSeries
+from anaximander.data import quantities as qnt, NxScalar, NxSeries
 
 # =============================================================================
 # Test Cases

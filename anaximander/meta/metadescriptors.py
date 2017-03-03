@@ -16,9 +16,10 @@ from collections import ChainMap, OrderedDict
 
 from anaximander.utilities import xprops, nxattr
 
-
-__all__ = ['TypeAttribute', 'MetaCharacter', 'typeinitmethod',
-           'newtypemethod', 'metamethod']
+__all__ = ['typeattribute', 'metacharacter', 'typeproperty',
+           'cachedtypeproperty', 'typemethod', 'classtypemethod',
+           'newtypemethod', 'typeinitmethod', 'metamethod',
+           'ValidationError']
 
 # =============================================================================
 # Utilities
@@ -187,6 +188,9 @@ class TypeAttribute(MetaDescriptor):
             also be a callable that takes a type as its only argument. In
             that case, the value of the attribute for a type is computed
             dynamically upon first call.
+
+    TypeAttributes are intended to be immutable: they are set at type
+    creation and cannot be further modified.
     """
     # The reset token is used to reset the cached value of type attributes
     # whose default is a callable.
@@ -194,11 +198,7 @@ class TypeAttribute(MetaDescriptor):
 
     def __call__(self, mcl):
         super().__call__(mcl)
-        if callable(self.default):
-            type_property = xprops.cachedproperty(lambda c: self.default(c))
-        else:
-            type_property = xprops.cachedproperty(lambda c: self.default)
-        type_property.cache = '_' + self.name
+        type_property = property(lambda t: getattr(t, '_' + self.name))
         setattr(mcl, self.name, type_property)
         inst_property = property(lambda i: getattr(type(i), self.name))
         setattr(self.cls, self.name, inst_property)
@@ -263,11 +263,10 @@ class TypeAttribute(MetaDescriptor):
     def _reset(self, type_):
         """Used to reset type cache to override inheritance.
 
-        This applies when self has a callable default but a new type
-        inherits a cached value from its base. If that cached value
-        was the default from its base, then we want to rerun the callable
-        default. Otherwise the assignment made in the base of one of its
-        superclass persists.
+        If self has a callable default and a new type inherits a cached value
+        from its base, the assignment made in the base or one of its
+        superclass persists --unless the cached value is the default
+        value of the base in which case the default is run on the new type.
         Note that this leaves open a corner case in which there was a
         manual assignment of a TypeAttribute that happens to be the
         default value of one of the base types. In that case, the value
@@ -276,20 +275,27 @@ class TypeAttribute(MetaDescriptor):
         complexity for a seemingly extremely marginal occurrence. But this
         note is here as a warning.
         """
-        if not callable(self.default):
-            return
         attr = '_' + self.name
         try:
             assignment = getattr(type_, attr)
             if assignment is not self._reset_token:
+                setattr(type_, attr, assignment)
                 return
         except AttributeError:
+            # No preceding value and default is not callable
+            setattr(type_, attr, self.default)
             return
+        # attr has been assigned _reset_token and default is a callable.
         base = type_.__base__
         try:
             cache = getattr(base, attr)
         except AttributeError:
-            setattr(type_, attr, self.default(type_))
+            try:
+                default = self.default(type_)
+            except: # If the call to default fails, the assignment is skipped
+                pass
+            else:
+                setattr(type_, attr, default)
             return
         if cache == self.default(base):
             setattr(type_, attr, self.default(type_))
@@ -306,6 +312,17 @@ class TypeAttribute(MetaDescriptor):
             ta._reset(type_)
 
 
+def typeattribute(default=None, validate=None):
+    """Sets a TypeAttribute in a host archetype / prototoype.
+
+    Params:
+        default: a default value, which may be a callable that takes a
+            clade type as its single parameter.
+        validate: an optional validation function for attribute assignments.
+    """
+    return TypeAttribute(default, validate)
+
+
 # Attributes for MetaCharacter
 metacharacter_attrs = {'cls': nxattr.ib(init=False),
                        'name': nxattr.ib(init=False),
@@ -320,8 +337,18 @@ class MetaCharacter(TypeAttribute):
 
     Prototypes declare metacharacters, which are used to register and
     uniquely identify types within their clade.
+    Metacharacters cannot declare default values.
     """
     pass
+
+
+def metacharacter(validate=None):
+    """Sets a MetaCharacter in a host prototoype.
+
+    Params:
+        validate: an optional validation function for attribute assignments.
+    """
+    return MetaCharacter(validate)
 
 # =============================================================================
 # Typeproperties
@@ -338,16 +365,20 @@ typeproperty_attrs = {'cls': nxattr.ib(init=False),
 class TypeProperty(MetaDescriptor):
     """A property of a type that is accessible to type instances.
 
-    Type properties function very much like Type attributes, except that
-    their evaluation is always computed rather than cached. Like with
-    Type attributes, a regular instance property is created as well, such
-    that the type property evaluation is accessible from objects.
+    Like with Type attributes, a regular instance property is created as well, 
+    such that the type property evaluation is accessible from objects.
+    The obvious differnce is that properties are computed rather than set.
     Note that this implementation is limited to read-only properties.
     """
 
+    @property
+    def _property(self):
+        """Returns a property object."""
+        return property(self.__func__)
+
     def __call__(self, mcl):
         super().__call__(mcl)
-        setattr(mcl, self.name, property(self.__func__))
+        setattr(mcl, self.name, self._property)
         inst_property = property(lambda i: getattr(type(i), self.name))
         setattr(self.cls, self.name, inst_property)
 
@@ -355,6 +386,33 @@ class TypeProperty(MetaDescriptor):
 def typeproperty(func):
     """A method decorator that declares a TypeProperty."""
     return TypeProperty(func)
+
+
+class CachedTypeProperty(TypeProperty):
+    """A TypeProperty that is cached upon first call.
+
+    Note that this bears strong similarities with a TypeAttribute whose
+    default is a callable. However:
+        * A TypeAttribute whose default is a callable can be set at
+        type instantiation. That is not the case with a CachedTypeProperty.
+        * Caching is effected lazily -i.e. upon first call. That is different
+        from a TypeAttribute that is always set at type creation.
+        * The property set upon types is a cachedproperty, which ignores
+        inheritance relationships between types. That is, the cachedproperty
+        is recomputed on every type irrespective of what exists in parent
+        types. By contrast, TypeAttributes are passed transitively to
+        subclasses.
+    """
+
+    @property
+    def _property(self):
+        """Returns a property object."""
+        return xprops.cachedproperty(self.__func__, cache='_' + self.name)
+
+
+def cachedtypeproperty(func):
+    """A method decorator that declares a CachedTypeProperty."""
+    return CachedTypeProperty(func)
 
 # =============================================================================
 # Typemethods

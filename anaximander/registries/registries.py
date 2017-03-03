@@ -14,6 +14,9 @@ Copyright (C) Novavia Solutions, LLC.
 from . import folios as fol
 from ..utilities import functions as fun, xprops
 
+__all__ = ['RegistrationError', 'NxRegistry', 'Pool', 'Hierarchy',
+           'Tree', 'Book', 'Roll', 'Directory']
+
 # =============================================================================
 # Registry base classes
 # =============================================================================

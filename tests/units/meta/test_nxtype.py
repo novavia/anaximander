@@ -17,7 +17,7 @@ import pytest
 
 from anaximander.registries.folios import Registrable
 import anaximander.meta.metadescriptors as mtd
-from anaximander.meta.nxmeta import ArcheType, MetaError
+from anaximander.meta.nxmeta import MetaError, ArcheType
 from anaximander.meta.nxtype import NxType, nxtype, archetype, prototype, \
                                     clade, NoRegistry, Directory, directory
 from anaximander.meta.nxobject import NxObject
@@ -73,7 +73,7 @@ def test_archetype_limitations():
     with pytest.raises(MetaError):
         @archetype
         class Object(NxObject):
-            key = mtd.MetaCharacter()
+            key = mtd.metacharacter()
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def proto_clade():
 
     @prototype
     class Object(NxObject):
-        key = mtd.MetaCharacter()
+        key = mtd.metacharacter()
         physical = mtd.TypeAttribute(validate=lambda v: isinstance(v, bool))
 
         @mtd.classtypemethod

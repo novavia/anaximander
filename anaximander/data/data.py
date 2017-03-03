@@ -20,11 +20,13 @@ import numpy as np
 
 from anaximander.utilities import functions as fun
 from anaximander.meta.nxtype import archetype
-from anaximander.meta.metadescriptors import TypeAttribute, metamethod, \
-    typeinitmethod
+from anaximander.meta import typeattribute, metamethod, typeinitmethod
 from .exceptions import ValidationError
 from .base import DataObject
 from .quantities import Quantity
+
+__all__ = ['NxData', 'NxScalar', 'NxVector', 'NxFloat', 'NxBool',
+           'NxInt', 'NxStr']
 
 # =============================================================================
 # NxData class and derived archetypes NxSclar and NxVector
@@ -78,10 +80,10 @@ class NxScalar(NxData):
     * precision: an optional integer value used for comparing and printing
         instances. Default to 5, i.e. 1e-5 precision.
     """
-    quantity = TypeAttribute(validate=fun.typecheck(Quantity))
-    unit = TypeAttribute(default=default_unit, validate=fun.typecheck(str))
-    dtype = TypeAttribute(default=np.dtype('float64'))
-    precision = TypeAttribute(validate=fun.typecheck(int), default=5)
+    quantity = typeattribute(validate=fun.typecheck(Quantity))
+    unit = typeattribute(default=default_unit, validate=fun.typecheck(str))
+    dtype = typeattribute(default=np.dtype('float64'))
+    precision = typeattribute(validate=fun.typecheck(int), default=5)
 
     @classmethod
     def cast(cls, value):

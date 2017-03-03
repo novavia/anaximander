@@ -7,6 +7,8 @@ This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
 
+__all__ = ['DataError', 'ValidationError']
+
 
 class DataError(Exception):
     """Base exception class for the data package."""

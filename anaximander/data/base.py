@@ -21,6 +21,8 @@ from anaximander.meta.nxtype import archetype
 from anaximander.meta.nxobject import NxObject
 from .exceptions import DataError
 
+__all__ = ['DataObject']
+
 # =============================================================================
 # DataObject class
 # =============================================================================

@@ -16,11 +16,12 @@ from functools import wraps
 import pandas as pd
 
 from ..utilities import nxattr
-from ..meta.metadescriptors import MetaCharacter, newtypemethod, typeinitmethod
-from ..meta.nxtype import prototype
+from ..meta import prototype, metacharacter, newtypemethod, typeinitmethod
 from .base import DataObject
 from .fields import Scalar
 from .schema import Schema
+
+__all__ = ['NxRecord']
 
 # =============================================================================
 # Record base class
@@ -30,7 +31,7 @@ from .schema import Schema
 @prototype
 class NxRecord(DataObject):
 
-    schema = MetaCharacter(validate=lambda s: issubclass(s, Schema))
+    schema = metacharacter(validate=lambda s: issubclass(s, Schema))
 
     @property
     def data(self):

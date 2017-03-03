@@ -23,11 +23,11 @@ import re
 import sys
 
 from ..utilities import functions as fun
-from ..meta.nxobject import NxObject
-from ..meta.nxtype import nxtype, archetype, directory
-from ..meta.metadescriptors import TypeAttribute
+from ..meta import NxObject, nxtype, archetype, directory, typeattribute
 from .exceptions import DataError
 from . import schema as sch, record as rec, frame as frm
+
+__all__ = ['tract', 'domain', 'Domain']
 
 # =============================================================================
 # DataTract class
@@ -130,7 +130,7 @@ class DataTract:
         """Creates a basic record class based on self's Schema."""
         name = self.name + 'Record'
         base = self._basetype(rec.NxRecord)
-        nxtype(base, name=name, schema=self.Schema)
+        nxtype(base, name=name, schema=self.Schema, overtype=True)
 
     @property
     def Record(self):
@@ -269,6 +269,8 @@ class DataDomain(NxObject, traits=(Set,), registry=directory('name')):
     def __len__(self):
         return self._set.__len__()
 
+Domain = DataDomain
+
 
 def domain(dom):
     """Returns a decorator that registers a tract with supplied domain dom.
@@ -304,8 +306,8 @@ class DataChannel(NxObject):
     The virtue of the DataChannel is to provide a unified interface between
     Anaximander DataObjects and persistent storage.
     """
-    __loader__ = TypeAttribute(validate=fun.subcheck(frm.DataLoader))
-    __dumper__ = TypeAttribute(validate=fun.subcheck(frm.DataDumper))
+    __loader__ = typeattribute(validate=fun.subcheck(frm.DataLoader))
+    __dumper__ = typeattribute(validate=fun.subcheck(frm.DataDumper))
 
     def __init__(self, tract, store):
         self.tract = tract
