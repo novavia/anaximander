@@ -136,8 +136,8 @@ class _SchemaMetaPatch:
 
     @cachedproperty
     def base_schemas(cls):
-        """Filters bases for Schema subclasses."""
-        return tuple(c for c in cls.__bases__ if issubclass(c, Schema))
+        """Filters mro for Schema subclasses."""
+        return tuple(c for c in cls.__mro__ if issubclass(c, Schema))[1:]
 
     @cachedproperty
     def fields(cls):

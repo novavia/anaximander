@@ -67,6 +67,10 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
         """Generates a name for a programatically generated type instance."""
         return mcl.__basename__ + '_' + str(mcl.__type_id__)
 
+    def __rename__(cls, name):
+        cls.__name__ = name
+        cls.__qualname__ = name
+
     # Note: this is superfluous in py3.6+
     @classmethod
     def __prepare__(mcl, name, bases, **kwargs):
@@ -131,6 +135,7 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
             md.name = name
 
         # Increment type counter
+        cls.__type_id__ = mcl.__type_id__
         mcl.__type_id__ = next(mcl.__counter__)
         return cls
 

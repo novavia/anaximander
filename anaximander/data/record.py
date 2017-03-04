@@ -16,10 +16,11 @@ from functools import wraps
 import pandas as pd
 
 from ..utilities import nxattr
-from ..meta import prototype, metacharacter, newtypemethod, typeinitmethod
+from ..meta import prototype, metacharacter, newtypemethod, typeinitmethod, \
+    nxtype
 from .base import DataObject
 from .fields import Scalar
-from .schema import Schema
+from .schema import Schema, SchemaError
 
 __all__ = ['NxRecord']
 
@@ -132,6 +133,24 @@ class NxRecord(DataObject):
             if validate:
                 self.validate()
         return wrapped
+
+    @newtypemethod
+    def rebase(cls):
+        """Rebases the type if its Schema inherits from a base Schema."""
+        # cls.schema is Schema or directly inherits from it
+        if len(cls.schema.base_schemas) <= 1:
+            return cls
+        base_schema = cls.schema.base_schemas[0]
+        base = NxRecord[base_schema]
+        if issubclass(cls, base):
+            return cls
+        # If cls doesn't inherit from base, we create a new class that does
+        new = base.subtype(name=cls.__name__, schema=cls.schema, overtype=True)
+        # If additional descriptors exist in cls, they are ported to new
+        xattrs = set(cls.__dict__) - set(new.__dict__)
+        for k in xattrs:
+            setattr(new, k, getattr(cls, k))
+        return new
 
     @newtypemethod
     def set_attributes(cls):

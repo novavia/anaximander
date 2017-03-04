@@ -20,8 +20,8 @@ import pandas as pd
 
 from ..utilities import functions as fun
 from ..utilities import nxattr, xprops
-from ..meta import NxObject, metacharacter, typeinitmethod, \
-    cachedtypeproperty, prototype, clade
+from ..meta import NxObject, metacharacter, typeinitmethod, newtypemethod, \
+    cachedtypeproperty, prototype, clade, nxtype
 from .exceptions import DataError
 from .base import IndexedDataObject
 from .schema import Schema
@@ -231,6 +231,25 @@ class NxDataFrame(IndexedDataObject):
         """Sets column proxy properties at type creation."""
         for name, field in cls.schema.fields.items():
             setattr(cls, name, ColumnProxy.propertyfactory(field))
+
+    @newtypemethod
+    def rebase(cls):
+        """Rebases the type if its Schema inherits from a base Schema."""
+        # cls.schema is Schema or directly inherits from it
+        if len(cls.schema.base_schemas) <= 1:
+            return cls
+        base_schema = cls.schema.base_schemas[0]
+        prototype = type(cls).__archetype__
+        base = prototype[base_schema]
+        if issubclass(cls, base):
+            return cls
+        # If cls doesn't inherit from base, we create a new class that does
+        new = base.subtype(name=cls.__name__, schema=cls.schema, overtype=True)
+        # If additional descriptors exist in cls, they are ported to new
+        xattrs = set(cls.__dict__) - set(new.__dict__)
+        for k in xattrs:
+            setattr(new, k, getattr(cls, k))
+        return new
 
     def __repr__(self):
         base = '<{arc}[{dt}]({content})>'

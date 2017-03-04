@@ -23,7 +23,7 @@ import re
 import sys
 
 from ..utilities import functions as fun
-from ..meta import NxObject, nxtype, archetype, directory, typeattribute
+from ..meta import NxObject, archetype, directory, typeattribute
 from .exceptions import DataError
 from . import schema as sch, record as rec, frame as frm
 
@@ -53,9 +53,9 @@ class DataTract:
     The name is automatically derived from the Schema type's name, being
     either that same name, or the Schema's type name with 'Schema' truncated.
     """
-    # Mapping of types to attribute names under a DataTract object
-    __attributes__ = {sch.Schema: 'Schema',
-                      rec.NxRecord: 'Record',
+    # Mapping of types to attribute names under a DataTract object.
+    # This is in addition to Schema.
+    __attributes__ = {rec.NxRecord: 'Record',
                       frm.NxDataCollection: 'Collection',
                       frm.NxDataSequence: 'Sequence',
                       frm.NxDataMapping: 'Mapping'}
@@ -80,8 +80,9 @@ class DataTract:
         except AttributeError:
             self._name = schema.__name__
         self._tbname = tbname or self.name
-        # Makes the record class
-        self._make_record_class()
+        # Rename the Data types.
+        for attr in self.__attributes__.values():
+            getattr(self, attr).__rename__(self.name + attr)
 
     @property
     def name(self):
@@ -125,12 +126,6 @@ class DataTract:
             return getattr(self.base, name, type_)
         except AttributeError:
             return type_
-
-    def _make_record_class(self):
-        """Creates a basic record class based on self's Schema."""
-        name = self.name + 'Record'
-        base = self._basetype(rec.NxRecord)
-        nxtype(base, name=name, schema=self.Schema, overtype=True)
 
     @property
     def Record(self):
