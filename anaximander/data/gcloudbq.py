@@ -21,7 +21,8 @@ from ..meta import prototype, metacharacter
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
-    Str, Bool, Int, Constant, Scalar
+    Str, Bool, Int, Constant, Scalar, Timestamp, MilliTimestamp, Duration, \
+    Period
 from .schema import Schema
 from .frame import DataLoader, DataDumper, NxDataFrame
 from .tract import DataChannel, DataDomain
@@ -106,6 +107,10 @@ _field_map = {Field: 'STRING',
               Bool: 'BOOLEAN',
               Int: 'INTEGER',
               Constant: NotImplemented,
+              Timestamp:  'TIMESTAMP',
+              MilliTimestamp: 'INTEGER',
+              Duration: 'INTEGER',
+              Period: 'TIMESTAMP'
               }
 
 

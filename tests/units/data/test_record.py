@@ -17,7 +17,7 @@ import unittest as ut
 import pandas as pd
 import pytest
 
-from anaximander.data import fields, schema as sch, NxFloat, NxRecord
+from anaximander.data import fields, schema as sch, NxFloat, NxRecord, Sample
 
 # =============================================================================
 # Test Cases
@@ -92,6 +92,19 @@ class TestRecord(ut.TestCase):
         record = self.Record(title='ping', date='pong')
         with pytest.raises(sch.ValidationError):
             record.validate()
+
+
+def test_sample_record():
+
+    class MySchema(sch.SampleLogSchema):
+        value = fields.Float()
+
+    MySample = NxRecord[MySchema]
+    data = {'timestamp':'2017-3-7 16:12', 'value':'1.0'}
+    sample = MySchema().load(data).data
+    assert sample.timestamp == pd.Timestamp('2017-3-7 16:12')
+    assert isinstance(sample, MySample)
+    assert issubclass(MySample, Sample)
 
 
 if __name__ == '__main__':

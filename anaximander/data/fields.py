@@ -126,6 +126,9 @@ class _FieldPatch:
         else:
             return default
 
+    # Placeholder for pandas preprocessing function
+    pdpreprocessor = None
+
     def pygetattr(self, obj, key=None, mapping=True):
         """Extracts (key, val) corresponding to self from obj, 'pythonized'.
 
@@ -301,7 +304,7 @@ class Timestamp(Field):
 
     def _deserialize(self, value, attr, data_):
         try:
-            return pd.Timestamp(value)
+            return pd.to_datetime(value)
         except ValueError:
             self.fail('validator_failed')
 
@@ -309,7 +312,32 @@ class Timestamp(Field):
         return val.to_pydatetime(warn=False)
 
     def _depythonize(self, val):
-        return pd.Timestamp(val)
+        return pd.to_datetime(val)
+
+
+class MilliTimestamp(Field):
+    """A field that deserializes millisecond-timestamps to pandas Timestamp."""
+
+    def _serialize(self, value, attr, obj):
+        if not isinstance(value, pd.Timestamp):
+            self.fail('type')
+        return int(value.timestamp() * 1e3)
+
+    def _deserialize(self, value, attr, data_):
+        try:
+            return pd.to_datetime(value * 1e6)
+        except ValueError:
+            self.fail('validator_failed')
+
+    def _pythonize(self, val):
+        return int(val.timestamp() * 1e3)
+
+    def _depythonize(self, val):
+        return pd.to_datetime(val * 1e6)
+
+    def pdpreprocessor(self, val):
+        """Preprocessing function for pandas deserialization."""
+        return val * 1e6
 
 
 class Duration(Field):
@@ -342,11 +370,12 @@ class Period(Field):
                  dump_only=False, missing=msh.missing, error_messages=None,
                  **metadata):
         try:
-            pd.Period(freq=freq)
+            period = pd.Period('1970-1-1', freq=freq)
         except ValueError:
             raise FieldError("Invalid freq specification passed \
                              to Period field.")
-        self._freq = freq
+        self._freq = period.freq
+        self._freqstr = period.freqstr
         super().__init__(default=default, attribute=attribute,
                          load_from=load_from, dump_to=dump_to, error=error,
                          validate=validate, required=required,
@@ -357,6 +386,10 @@ class Period(Field):
     @property
     def freq(self):
         return self._freq
+
+    @property
+    def freqstr(self):
+        return self._freqstr
 
     def _serialize(self, value, attr, obj):
         if not isinstance(value, pd.Period):

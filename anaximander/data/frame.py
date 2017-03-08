@@ -21,14 +21,15 @@ import pandas as pd
 from ..utilities import functions as fun
 from ..utilities import nxattr, xprops
 from ..meta import NxObject, metacharacter, typeinitmethod, newtypemethod, \
-    cachedtypeproperty, prototype, clade, nxtype
+    cachedtypeproperty, prototype, clade
 from .exceptions import DataError
 from .base import IndexedDataObject
 from .schema import Schema
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
-    Str, Bool, Int, Constant, NxDataField, Scalar
+    Str, Bool, Int, Constant, NxDataField, Scalar, Timestamp, MilliTimestamp, \
+    Duration, Period
 from .record import NxRecord
 from .series import NxSeries
 
@@ -67,6 +68,10 @@ _field_map = {Field: np.dtype('object'),
               Bool: NotImplemented,
               Int: NotImplemented,
               Constant: NotImplemented,
+              Timestamp: np.dtype('datetime64[ns]'),
+              MilliTimestamp: np.dtype('datetime64[ns]'),
+              Duration: np.dtype('timedelta64[ns]'),
+              Period: np.dtype('datetime64[ns]')
               }
 
 
@@ -199,6 +204,9 @@ class NxDataFrame(IndexedDataObject):
                     columns.append(col)
                     if col_type != dtype:
                         conversions[col] = dtype
+                        proc = field.pdpreprocessor
+                        if proc is not None:
+                            df[col] = df[col].apply(proc)
             dataframe = df[columns]
         if conversions:
             try:

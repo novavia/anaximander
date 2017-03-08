@@ -16,13 +16,13 @@ from functools import wraps
 import pandas as pd
 
 from ..utilities import nxattr
-from ..meta import prototype, metacharacter, newtypemethod, typeinitmethod, \
-    nxtype
+from ..meta import prototype, metacharacter, newtypemethod, typeinitmethod
 from .base import DataObject
 from .fields import Scalar
-from .schema import Schema, SchemaError
+from .schema import Schema, SampleLogSchema, EventLogSchema, \
+    TransitionLogSchema, CycleLogSchema, PhaseLogSchema
 
-__all__ = ['NxRecord']
+__all__ = ['NxRecord', 'Sample', 'Event', 'Transition', 'Cycle', 'Phase']
 
 # =============================================================================
 # Record base class
@@ -166,3 +166,27 @@ class NxRecord(DataObject):
     def coerce_schema(cls):
         """Coerces the schema to deserialize to cls."""
         cls.schema.set_record_class(cls)
+
+# =============================================================================
+# Specialized records
+# =============================================================================
+
+
+class Sample(NxRecord[SampleLogSchema], overtype=True):
+    pass
+
+
+class Event(NxRecord[EventLogSchema], overtype=True):
+    pass
+
+
+class Transition(NxRecord[TransitionLogSchema], overtype=True):
+    pass
+
+
+class Cycle(NxRecord[CycleLogSchema], overtype=True):
+    pass
+
+
+class Phase(NxRecord[PhaseLogSchema], overtype=True):
+    pass

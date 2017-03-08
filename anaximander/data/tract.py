@@ -22,7 +22,7 @@ from functools import partial
 import re
 import sys
 
-from ..utilities import functions as fun
+from ..utilities import functions as fun, xprops
 from ..meta import NxObject, archetype, directory, typeattribute
 from .exceptions import DataError
 from . import schema as sch, record as rec, frame as frm
@@ -88,12 +88,12 @@ class DataTract:
     def name(self):
         return self._name
 
-    @property
+    @xprops.cachedproperty
     def schema(self):
         """Returns an instance of self's Schema."""
         return self.Schema()
 
-    @property
+    @xprops.cachedproperty
     def multischema(self):
         """Equivalent to self.Schema(many=True)."""
         return self.Schema(many=True)

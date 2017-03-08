@@ -269,9 +269,71 @@ monkeypatch(Schema, _SchemaPatch)
 
 SchemaMeta._reserved_names = set(dir(SchemaMeta) + dir(Schema()))
 
-## =============================================================================
-## Specialized schemas
-## =============================================================================
-#
-#
-#class SampleLog
+# =============================================================================
+# Specialized schemas
+# =============================================================================
+
+
+class TimeSchema(Schema):
+    """Base class for schemas indexed with timestamps."""
+    timestamp = fields.Timestamp(key=True, sequential=True)
+
+
+class SampleLogSchema(TimeSchema):
+    """Base schema class for sample logs.
+
+    Sample logs have a primary function to list sampled values along
+    a time axis.
+    """
+    pass
+
+
+class EventLogSchema(TimeSchema):
+    """Base schema class for event logs.
+
+    Event logs list timestamped events. The events are typed with
+    an integer code, which may be uniform if there is a single type of
+    events. A lookup table from event type to either a string or an object
+    can be provided in a Tract object.
+    """
+    event_type_id = fields.Int(required=True)
+
+
+class TransitionLogSchema(TimeSchema):
+    """Base schema class for state transition logs.
+
+    State transition logs record changes in state, using integer identifier.
+    Hence a time range-based query on the log allows to reconstruct phases
+    spent in different states across the entire range.
+    """
+    prev_state_id = fields.Int(required=True)
+    next_state_id = fields.Int(required=True)
+
+
+class CycleLogSchema(TimeSchema):
+    """Base schema class for cycle logs.
+
+    cycle logs require an offset (pandas.DateOffset), which is specified
+    in the timestamp field (of type Period). It defaults to hourly.
+    """
+    timestamp = fields.Period(freq='H', key=True, sequential=True)
+
+    @property
+    def freq(self):
+        return self.timestamp.freq
+
+    @property
+    def freqstr(self):
+        return self.timestamp.freqstr
+
+
+class PhaseLogSchema(Schema):
+    """A convenience schema type to represent phases.
+
+    Phase logs are bijective to Transition logs but may be more convenient
+    for some manipulations. However because they require two timestamps,
+    Transition logs are preferred as primary storage classes.
+    """
+    start_time = fields.Timestamp(required=True)
+    end_time = fields.Timestamp(required=True)
+    state_id = fields.Int(required=True)

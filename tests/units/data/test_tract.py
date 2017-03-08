@@ -16,7 +16,7 @@ from unittest import TestCase
 
 import pytest
 
-from anaximander.data import fields, schema as sch, NxRecord
+from anaximander.data import fields, schema as sch, NxRecord, Cycle
 from anaximander.data.tract import DataTract, tract, Domain, domain
 
 # =============================================================================
@@ -173,6 +173,18 @@ def test_record_subclassing(schemas):
     user = User.Record.load(user_data)
     assert isinstance(user, UserRecord)
     assert user.greetings == "Hello, Joe."
+
+
+def test_cycle_tract():
+    @tract
+    class CycleLog(sch.CycleLogSchema):
+        timestamp = fields.Period('D')
+        mean = fields.Float()
+
+    data = {'timestamp': '2017-3-7', 'mean': 3.4}
+    cycle = CycleLog.Record.load(data)
+    assert isinstance(cycle, Cycle)
+
 
 if __name__ == '__main__':
     pytest.main([__file__])
