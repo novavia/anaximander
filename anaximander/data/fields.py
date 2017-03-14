@@ -315,31 +315,6 @@ class Timestamp(Field):
         return pd.to_datetime(val)
 
 
-class MilliTimestamp(Field):
-    """A field that deserializes millisecond-timestamps to pandas Timestamp."""
-
-    def _serialize(self, value, attr, obj):
-        if not isinstance(value, pd.Timestamp):
-            self.fail('type')
-        return int(value.timestamp() * 1e3)
-
-    def _deserialize(self, value, attr, data_):
-        try:
-            return pd.to_datetime(value * 1e6)
-        except ValueError:
-            self.fail('validator_failed')
-
-    def _pythonize(self, val):
-        return int(val.timestamp() * 1e3)
-
-    def _depythonize(self, val):
-        return pd.to_datetime(val * 1e6)
-
-    def pdpreprocessor(self, val):
-        """Preprocessing function for pandas deserialization."""
-        return val * 1e6
-
-
 class Duration(Field):
     """A field that deserializes to a pandas Timedelta."""
 

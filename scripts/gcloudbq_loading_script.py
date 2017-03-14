@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 from google.cloud import bigquery as bq
 import pandas as pd
 
-from anaximander.data import fields, schema as sch, gcloudbq as gbq, data
+from anaximander.data import fields, schema as sch, data
 from anaximander.data.tract import tract
 
 from analytics.dbclients.bqclient import RawQuery
@@ -37,7 +37,7 @@ MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 @tract
 class DeviceData(sch.Schema):
     MAC_ADDRESS = fields.ReStr(key=True, pattern=MAC_PATTERN)
-    Timestamp = fields.MilliTimestamp(key=True, sequential=True)
+    Timestamp = fields.Timestamp(key=True, sequential=True)
     Timestamp_Pi = fields.Timestamp()
     Feature_Value_0 = fields.Scalar(data.NxFloat)
     Feature_Value_1 = fields.Scalar(data.NxFloat)
