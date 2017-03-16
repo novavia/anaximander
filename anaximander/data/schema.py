@@ -178,6 +178,16 @@ class _SchemaMetaPatch:
         return None
 
     @cachedproperty
+    def nonkeyfields(cls):
+        """Returns an OrdererdDict of non-key fields."""
+        return OrderedDict((k, v) for k, v in cls.fields.items() if not v.key)
+
+    @cachedproperty
+    def nonkeyfieldnames(cls):
+        """Returns a tuple of non-key field names, in sequence."""
+        return tuple(cls.nonkeyfields.keys())
+
+    @cachedproperty
     def required(cls):
         """Returns a dict of required fields in a Schema."""
         return OrderedDict((k, v) for k, v in cls.fields.items() if v.required)
