@@ -8,10 +8,12 @@ Copyright (C) Novavia Solutions, LLC.
 """
 
 
-from . import functions as functions
+from . import nxtime
+from . import functions
 from . import xprops
 from . import nxattr
 from . import cmpmixin
+from . import nxrange
 
 
-__all__ = ['functions', 'xprops', 'nxattr', 'cmpmixin']
+__all__ = ['nxtime', 'functions', 'xprops', 'nxattr', 'cmpmixin', 'nxrange']

@@ -151,9 +151,9 @@ class Query:
 
 if __name__ == '__main__':
     frame = DeviceData.Frame.from_csv(DATA_FILE)
-    create_table()
-    upload(frame)
-    query = Query()
-    print(query.to_frame().data)
+#    create_table()
+#    upload(frame)
+#    query = Query()
+#    print(query.to_frame().data)
 #    delete_table()
     

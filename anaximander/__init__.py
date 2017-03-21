@@ -23,4 +23,3 @@ NXDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TESTDIR = os.path.join(NXDIR, 'tests')
 sys.path.append(TESTDIR)
 
-__all__ = ['utilities', 'registries', 'meta', 'data', 'NXDIR']
