@@ -12,22 +12,22 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import Iterable
-from collections.abc import Set
+from collections.abc import Set, Iterable
 
 from .nxtime import datetime
 from . import nxattr
+from .functions import passthrough
 
 
-__all__ = []
+__all__ = ['float_interval', 'time_interval', 'levels']
 
 # =============================================================================
-# Utilities
+# Class declarations
 # =============================================================================
+
 
 class Range(abc.ABC):
     """Abstract base class for all Range objects."""
-    pass
 
 
 class ContinuousRange(Range):
@@ -36,20 +36,7 @@ class ContinuousRange(Range):
 
 
 class DiscreteRange(Range):
-    """Abstract base class for Ranges in discrete data dimensions.
-
-    This base class can be called upon and will automatically select the
-    proper subclass (Levels or Level) based on the type of input.
-    If the input is an iterable, then a Levels instance will be created.
-    This obviously limits levels to scalar values. This limitation may
-    be addressed in the future if needed.
-    """
-
-    def __new__(cls, arg):
-        if isinstance(arg, Iterable) and not isinstance(arg, str):
-            return Levels(arg)
-        else:
-            return Level(arg)
+    """Abstract base class for Ranges in discrete data dimensions."""
 
 
 @nxattr.s
@@ -61,11 +48,37 @@ class Interval(ContinuousRange):
     def length(self):
         return self.upper - self.lower
 
+    @property
+    def bounds(self):
+        return (self.lower, self.upper)
+
     def __contains__(self, item):
         if isinstance(item, Interval):
             return item.lower >= self.lower and item.upper <= self.upper
         else:
             return item >= self.lower and item <= self.upper
+
+
+
+def _lower_float_convert(value):
+    if value is None:
+        return float('-inf')
+    else:
+        return float(value)
+
+
+def _upper_float_convert(value):
+    if value is None:
+        return float('-inf')
+    else:
+        return float(value)
+
+
+@nxattr.s(inherit=False)
+class FloatInterval(Interval):
+    """An interval of floats."""
+    lower = nxattr.ib(convert=_lower_float_convert)
+    upper = nxattr.ib(convert=_upper_float_convert)    
 
 
 def _lower_time_convert(value):
@@ -97,11 +110,34 @@ class TimeInterval(Interval):
     upper = nxattr.ib(convert=_upper_time_convert)
 
 
+def _lower_string_convert(value):
+    if value is None:
+        return ''
+    else:
+        return str(value)
+
+
+def _upper_string_convert(value):
+    if value is None:
+        # Maximum allowable argument to chr
+        # Technically a string that starts with this character would be
+        # greater than the purported max value created below, but that is
+        # about as likely as snow in the tropics.
+        return chr(1114111)
+    else:
+        return str(value)
+
+
+@nxattr.s(inherit=False)
+class StringInterval(Interval):
+    """An interval of strings."""
+    lower = nxattr.ib(convert=_lower_string_convert)
+    upper = nxattr.ib(convert=_upper_string_convert)
+
+
 class Levels(DiscreteRange, Set):
-
-    def __new__(cls, arg):
-        return Range.__new__(cls)
-
+    """Holds a set of discrete levels."""
+    
     def __init__(self, levels):
         self._levels = set(levels)
 
@@ -119,12 +155,43 @@ class Levels(DiscreteRange, Set):
 
 
 class Level(DiscreteRange):
-
-    def __new__(cls, arg):
-        return Range.__new__(cls)
+    """Holds a single level."""
 
     def __init__(self, level):
         self._level = level
 
+    def __eq__(self, other):
+        return self._level.__eq__(other)
+
     def __repr__(self):
         return "Level({0})".format(repr(self._level))
+
+# =============================================================================
+# Helper functions
+# =============================================================================
+
+
+@passthrough(FloatInterval)
+def float_interval(lower=None, upper=None):
+    """Creates or passes through a float interval from lower, upper bound."""
+    return FloatInterval(lower, upper)
+
+
+@passthrough(TimeInterval)
+def time_interval(lower=None, upper=None):
+    """Creates or passes through a time interval from lower, upper bound."""
+    return TimeInterval(lower, upper)
+
+
+@passthrough(StringInterval)
+def string_interval(lower=None, upper=None):
+    """Creates or passes through a string interval from lower, upper bound."""
+    return StringInterval(lower, upper)
+
+
+@passthrough(Level, Levels)
+def levels(arg):
+    """Creates or passes through either a Level or Levels."""
+    if isinstance(arg, Iterable) and not isinstance(arg, str):
+        return Levels(arg)
+    return Level(arg)

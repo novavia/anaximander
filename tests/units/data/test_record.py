@@ -11,12 +11,12 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-import datetime as dt
 import unittest as ut
 
 import pandas as pd
 import pytest
 
+from anaximander.utilities.nxtime import datetime, pydatetime
 from anaximander.data import fields, schema as sch, NxFloat, NxRecord, Sample
 
 # =============================================================================
@@ -52,37 +52,37 @@ class TestRecord(ut.TestCase):
     def test_as_dict(self):
         record = self.schema.load(self.data).data
         assert record.as_dict() == {'title': 'ping',
-                                    'date': pd.Timestamp('2016-12-08'),
+                                    'date': datetime('2016-12-08'),
                                     'value': NxFloat(3.5)}
 
     def test_as_pydict(self):
         record = self.schema.load(self.data).data
         assert record.as_pydict() == {'title': 'ping',
-                                      'date': dt.datetime(2016, 12, 8),
+                                      'date': pydatetime('2016-12-08'),
                                       'value': 3.5}
 
     def test_as_tuple(self):
         record = self.schema.load(self.data).data
-        assert record.as_tuple() == ('ping', pd.Timestamp('2016-12-08'),
+        assert record.as_tuple() == ('ping', datetime('2016-12-08'),
                                      NxFloat(3.5))
 
     def test_as_pytuple(self):
         record = self.schema.load(self.data).data
-        assert record.as_pytuple() == ('ping', dt.datetime(2016, 12, 8), 3.5)
+        assert record.as_pytuple() == ('ping', pydatetime('2016-12-08'), 3.5)
 
     def test_from_pydict(self):
         record = self.schema.load(self.data).data
-        d = {'title': 'ping', 'date': dt.datetime(2016, 12, 8), 'value': 3.5}
+        d = {'title': 'ping', 'date': pydatetime('2016-12-08'), 'value': 3.5}
         assert self.Record.from_pydict(d) == record
 
     def test_from_pytuple(self):
         record = self.schema.load(self.data).data
-        t = ('ping', dt.datetime(2016, 12, 8), 3.5)
+        t = ('ping', pydatetime('2016-12-08'), 3.5)
         assert self.Record.from_pytuple(t) == record
 
     def test_data(self):
         record = self.schema.load(self.data).data
-        series = pd.Series(['ping', dt.datetime(2016, 12, 8), 3.5],
+        series = pd.Series(['ping', pydatetime('2016-12-08'), 3.5],
                            index=['title', 'date', 'value'])
         assert series.equals(record.data)
 
@@ -102,7 +102,7 @@ def test_sample_record():
     MySample = NxRecord[MySchema]
     data = {'timestamp':'2017-3-7 16:12', 'value':'1.0'}
     sample = MySchema().load(data).data
-    assert sample.timestamp == pd.Timestamp('2017-3-7 16:12')
+    assert sample.timestamp == datetime('2017-3-7 16:12')
     assert isinstance(sample, MySample)
     assert issubclass(MySample, Sample)
 

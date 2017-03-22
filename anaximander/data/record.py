@@ -121,7 +121,7 @@ class NxRecord(DataObject):
         The decorator adds two keyword arguments:
         * context, to populate DataObject's weak property context.
         * validate, to optionally validate the inputs. Note that this
-        is not done very efficiently in the current implementation.
+            is not done very efficiently in the current implementation.
         """
         @wraps(init)
         def wrapped(*args, **kwargs):

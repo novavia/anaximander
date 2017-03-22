@@ -81,5 +81,15 @@ def test_extend(datatypes):
     assert len(smph) == 8
 
 
+def test_subset(datatypes):
+    SpeedMPH, _ = datatypes
+    smph = NxSeries[SpeedMPH]([25, 35, 55, 65], ix_range=(1, 1))
+    assert len(smph) == 1
+    timeindex = pd.date_range('2017', periods=4, tz='utc')
+    smph = NxSeries[SpeedMPH]([25, 35, 55, 65], index=timeindex,
+                              ix_range=('2017-1-3', None))
+    assert len(smph) == 2
+
+
 if __name__ == '__main__':
     pytest.main([__file__])

@@ -45,7 +45,7 @@ MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 # =============================================================================
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def featurelog():
     """Returns a nominal dataframe."""
     dataframe = pd.read_csv(FEATURELOG_PATH)
@@ -55,7 +55,7 @@ def featurelog():
 LOG = featurelog()
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def featurelog_partial():
     """Returns a dataframe with missing columns."""
     dataframe = pd.read_csv(FEATURELOG_PARTIAL_PATH)
@@ -63,7 +63,7 @@ def featurelog_partial():
     return dataframe
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def featurelog_no_device():
     """Returns a dataframe missing a key column."""
     dataframe = pd.read_csv(FEATURELOG_NO_DEVICE_PATH)
@@ -71,7 +71,7 @@ def featurelog_no_device():
     return dataframe
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def featurelog_shuffled():
     """Returns a dataframe with columns shuffled."""
     dataframe = pd.read_csv(FEATURELOG_SHUFFLED_PATH)
@@ -79,7 +79,7 @@ def featurelog_shuffled():
     return dataframe
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def featurelog_superfluous():
     """Returns a dataframe with an extra column not in the schema."""
     dataframe = pd.read_csv(FEATURELOG_SUPERFLUOUS_PATH)
@@ -87,7 +87,7 @@ def featurelog_superfluous():
     return dataframe
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def featurelog_invalid():
     """Returns a dataframe with invalid values."""
     dataframe = pd.read_csv(FEATURELOG_INVALID_PATH)
@@ -97,7 +97,7 @@ def featurelog_invalid():
 
 class FeatureSchema(schema.Schema):
     device = fields.ReStr(key=True, pattern=MAC_PATTERN)
-    timestamp = fields.DateTime(key=True, sequential=True)
+    timestamp = fields.Timestamp(key=True, sequential=True)
     Feature_Value_0 = fields.Scalar(NxFloat)
     Feature_Value_1 = fields.Scalar(NxFloat)
     Feature_Value_2 = fields.Scalar(NxFloat)
@@ -108,7 +108,7 @@ class FeatureSchema(schema.Schema):
 
 class FeatureSchemaMultKeys(schema.Schema):
     device = fields.ReStr(key=True, pattern=MAC_PATTERN)
-    timestamp = fields.DateTime(key=True, sequential=True)
+    timestamp = fields.Timestamp(key=True, sequential=True)
     Feature_Value_0 = fields.Scalar(NxFloat, key=True)
     Feature_Value_1 = fields.Scalar(NxFloat)
     Feature_Value_2 = fields.Scalar(NxFloat)
@@ -116,7 +116,7 @@ class FeatureSchemaMultKeys(schema.Schema):
 
 class FeatureSchemaNoKey(schema.Schema):
     device = fields.ReStr(pattern=MAC_PATTERN)
-    timestamp = fields.DateTime(sequential=True)
+    timestamp = fields.Timestamp(sequential=True)
     Feature_Value_0 = fields.Scalar(NxFloat)
     Feature_Value_1 = fields.Scalar(NxFloat)
     Feature_Value_2 = fields.Scalar(NxFloat)
@@ -127,14 +127,14 @@ class FeatureSchemaNoKey(schema.Schema):
 
 class FeatureSchemaNoSequentialKey(schema.Schema):
     device = fields.ReStr(key=True, pattern=MAC_PATTERN)
-    timestamp = fields.DateTime(sequential=True)
+    timestamp = fields.Timestamp(sequential=True)
     Feature_Value_0 = fields.Scalar(NxFloat)
     Feature_Value_1 = fields.Scalar(NxFloat)
     Feature_Value_2 = fields.Scalar(NxFloat)
 
 
 class FeatureSchemaSequentialKey(schema.Schema):
-    timestamp = fields.DateTime(key=True, sequential=True)
+    timestamp = fields.Timestamp(key=True, sequential=True)
     Feature_Value_0 = fields.Scalar(NxFloat)
     Feature_Value_1 = fields.Scalar(NxFloat)
     Feature_Value_2 = fields.Scalar(NxFloat)
@@ -441,6 +441,18 @@ class TestDumper(TestCase):
         dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
         assert dataframe.equals(frame.data)
 
+
+def test_range_attributes(featurelog):
+    frame = FeatureMapping(featurelog, device='68:9E:19:07:DE:C3')
+    assert len(frame) == 3
+    frame = FeatureMapping(featurelog, device=['68:9E:19:07:DE:C3'])
+    assert len(frame) == 3    
+    frame = FeatureMapping(featurelog, timestamp=('2016-9-14 10:03', None))
+    assert len(frame) == 5
+    frame = FeatureMappingMK(featurelog, Feature_Value_0=0)
+    assert len(frame) == 0
+    with pytest.raises(frm.FrameError):
+        frame = FeatureMapping(featurelog, Feature_Value_0=0)
 
 if __name__ == '__main__':
     pytest.main([__file__])

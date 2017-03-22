@@ -11,6 +11,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+import abc
 from collections import deque
 
 import functools
@@ -133,6 +134,21 @@ def args_or_kwargs(f=None, *, tabs=1):
             raise ValueError(msg)
         return f(*arguments, **kwargs)
     return decorated
+
+
+def passthrough(*types):
+    """Passes through first arg to decorated function if it is in types."""
+    def decorator(f):
+        @functools.wraps(f)
+        def decorated(*args, **kwargs):
+            try:
+                if isinstance(args[0], types):
+                    return args[0]
+            except IndexError:
+                pass
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
 # =============================================================================
 # Metaprogramming

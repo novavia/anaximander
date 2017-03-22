@@ -27,6 +27,9 @@ from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
 import pandas as pd
 
 from ..utilities.functions import monkeypatch
+from ..utilities.nxtime import datetime
+from ..utilities.nxrange import float_interval, string_interval, \
+    time_interval
 from .exceptions import DataError, ValidationError as DataValidationError
 from .data import NxScalar
 
@@ -71,6 +74,54 @@ _field_check = {Field: True,
                 }
 
 
+# Interval function map
+# The interval property returns an appropriate interval function from the
+# nxrange module.
+_field_interval = {Field: NotImplemented,
+                   Raw: NotImplemented,
+                   Nested: NotImplemented,
+                   Dict: NotImplemented,
+                   List: NotImplemented,
+                   String: string_interval,
+                   UUID: string_interval,
+                   Number: float_interval,
+                   Integer: float_interval,
+                   Decimal: float_interval,
+                   Boolean: float_interval,
+                   FormattedString: string_interval,
+                   Float: float_interval,
+                   DateTime: time_interval,
+                   LocalDateTime: time_interval,
+                   Time: time_interval,
+                   Date: time_interval,
+                   TimeDelta: NotImplemented,
+                   Url: string_interval,
+                   URL: string_interval,
+                   Email: string_interval,
+                   Method: NotImplemented,
+                   Function: NotImplemented,
+                   Str: string_interval,
+                   Bool: float_interval,
+                   Int: float_interval,
+                   Constant: NotImplemented,
+                   }
+
+
+# Mapping from numpy dtype kinds to interval function
+_scalar_field_interval = {'b': float_interval,
+                          'i': float_interval,
+                          'u': float_interval,
+                          'f': float_interval,
+                          'c': NotImplemented,  # complex floating-point
+                          'm': NotImplemented,  # timedelta
+                          'M': time_interval,
+                          'O': NotImplemented,  # Object
+                          'S': NotImplemented,  # (byte-)string
+                          'U': string_interval,  # Unicode
+                          'V': NotImplemented,  # void
+                          }
+
+
 def supported(field_type):
     """Returns True if field_type is supported in Anaximander.
 
@@ -83,6 +134,21 @@ def supported(field_type):
         return _field_check.get(field_type, True)
     raise TypeError("Non Field subclass supplied to supported.")
 
+
+def interval(field):
+    """Returns an interval helper function appropriate for field."""
+    if field.__interval__ is not None:
+        return field.__interval__.__func__
+    if isinstance(field, Scalar):
+        kind = field.datatype.dtype.kind
+        return _scalar_field_interval.get(kind, NotImplemented)
+    for ft in type(field).__mro__:
+        try:
+            return _field_interval[ft]
+        except KeyError:
+            pass
+    return NotImplemented   
+
 # =============================================================================
 # Field patching
 # =============================================================================
@@ -91,6 +157,7 @@ def supported(field_type):
 class _FieldPatch:
     """Patch of attributes and methods for Field."""
     _name = None  # replaces name in the original implementation.
+    __interval__ = None  # placeholder for specifiying interval function
 
     @property
     def name(self):
@@ -197,6 +264,15 @@ class _FieldPatch:
         """Reverse operation of pythonize (see corresponding doc.)"""
         return val
 
+    @property
+    def interval(self):
+        """Returns a helper function to create relevant interval for self."""
+        func = interval(self)
+        if func is NotImplemented:
+            msg = "{0} does not implement intervals"
+            raise AttributeError(msg.format(type(self)))
+        return func
+
 monkeypatch(msh.fields.Field, _FieldPatch)
 
 
@@ -296,6 +372,7 @@ class Scalar(NxDataField):
 
 class Timestamp(Field):
     """A field that deserializes to a pandas Timestamp."""
+    __interval__ = time_interval
 
     def _serialize(self, value, attr, obj):
         if not isinstance(value, pd.Timestamp):
@@ -304,7 +381,7 @@ class Timestamp(Field):
 
     def _deserialize(self, value, attr, data_):
         try:
-            return pd.to_datetime(value)
+            return datetime(value)
         except ValueError:
             self.fail('validator_failed')
 
@@ -312,7 +389,7 @@ class Timestamp(Field):
         return val.to_pydatetime(warn=False)
 
     def _depythonize(self, val):
-        return pd.to_datetime(val)
+        return datetime(val)
 
 
 class Duration(Field):

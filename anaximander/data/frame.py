@@ -20,6 +20,7 @@ import pandas as pd
 
 from ..utilities import functions as fun
 from ..utilities import nxattr, xprops
+from ..utilities.nxrange import levels, Level, Levels
 from ..meta import NxObject, metacharacter, typeinitmethod, newtypemethod, \
     cachedtypeproperty, prototype, clade
 from .exceptions import DataError
@@ -143,7 +144,8 @@ class NxDataFrame(IndexedDataObject):
         else:
             return NxDataCollection[cls.schema]
 
-    def __init__(self, data=None, context=None, validate=False):
+    def __init__(self, data=None, context=None, validate=False,
+                 **rgargs):
         """Data can be any admissible data argument to a dataframe.
 
         params:
@@ -153,6 +155,11 @@ class NxDataFrame(IndexedDataObject):
             validate: if True, the entire data gets validated against the
                 class' schema. Must be used intentionally as there is a
                 performance penalty.
+            **rgargs: range arguments. Admissible keys are the names of
+                the schema's key fields. Sequential keys accept values that
+                can be coerced into a nxrange.Interval, whereas non-sequential
+                keys accept values that can be coerced into an
+                nxrange.DiscreteRange.
 
         If validate is False, the method nonetheless performs a schema-level
         validation to verify conformity between the DataFrame's column names
@@ -161,6 +168,8 @@ class NxDataFrame(IndexedDataObject):
         if isinstance(data, NxDataFrame):
             context = context or data.context
             data = data.data
+        data = self.subset(data, **rgargs)
+        self.keyrange = rgargs
         self._data = self.cast(data)
         if validate:
             self.validate()
@@ -214,6 +223,30 @@ class NxDataFrame(IndexedDataObject):
         else:
             dataframe.reset_index(drop=True, inplace=True)
         return dataframe.sort_index()
+
+    @classmethod
+    def subset(cls, data, **rgargs):
+        """Subsets a valid dataframe with supplied range arguments."""
+        for key, value in rgargs.items():
+            is_key_field = False
+            try:
+                field = getattr(cls.schema, key)
+                is_key_field = field.key
+            except AttributeError:
+                pass
+            if not is_key_field:
+                msg = "Improper argument {0} passed to {1}"
+                raise FrameError(msg.format(key, cls))
+            if field.sequential:
+                lower, upper = field.interval(*value).bounds
+                data = data[(data[key] >= lower) & (data[key] <= upper)]
+            else:
+                target = levels(value)
+                if isinstance(target, Level):
+                    data = data[target == data[key]]
+                elif isinstance(target, Levels):
+                    data = data[data[key].isin(target)]
+        return data
 
     def validate(self):
         """Validates all records in a frame against the schema."""
@@ -430,14 +463,19 @@ class ColumnProxy:
     field = nxattr.ib()
 
     @property
-    def column(self):
+    def name(self):
         """Returns the corresponding column name."""
         return self.field.name
 
     @property
+    def column(self):
+        """Returns the corresponding column in self.frame.data."""
+        return self.frame.data[self.name]
+
+    @property
     def dtype(self):
         """Returns the dtype of the underlying data."""
-        return self.frame.data.dtypes[self.column]
+        return self.column.dtype
 
     @property
     def ftype(self):
@@ -445,13 +483,28 @@ class ColumnProxy:
         return type(self.field)
 
     def __call__(self):
-        series = self.frame.data[self.column]
+        series = self.column
         if isinstance(self.field, NxDataField):
             datatype = self.field.datatype
             context = self.frame.context
             return NxSeries[datatype](series, context=context)
         else:
             return series
+
+    def describe(self):
+        return self.column.describe()
+
+    @property
+    def min(self):
+        return self.column.min()
+
+    @property
+    def max(self):
+        return self.column.max()
+
+    @property
+    def unique(self):
+        return set(self.column.unique())
 
     @classmethod
     def propertyfactory(cls, field):

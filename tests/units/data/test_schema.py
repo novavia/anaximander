@@ -17,6 +17,7 @@ import datetime as dt
 import pandas as pd
 import pytest
 
+from anaximander.utilities.nxtime import datetime, UTC
 from anaximander.data import fields, schema as sch, quantities as qnt, \
     NxScalar
 
@@ -89,16 +90,17 @@ def test_pythonize():
 
     _serialized = OrderedDict([('person', OrderedDict([('name', 'Joe'),
                                                       ('height', 1.8)])),
-                               ('time', '2017-02-17 15:00:00'),
+                               ('time', '2017-02-17 15:00:00+00:00'),
                                ('thing', 'hammer')])
     _unserialized = OrderedDict([('person',
                                   OrderedDict([('name', 'Joe'),
                                                ('height', Length(1.8))])),
-                                 ('time', pd.Timestamp('2017-02-17 15:00:00')),
+                                 ('time', datetime('2017-02-17 15:00:00')),
                                  ('thing', 'hammer')])
     _pythonized = OrderedDict([('person', OrderedDict([('name', 'Joe'),
                                                        ('height', 1.8)])),
-                               ('time', dt.datetime(2017, 2, 17, 15)),
+                               ('time',
+                                 dt.datetime(2017, 2, 17, 15, tzinfo=UTC)),
                                ('thing', 'hammer')])
     serialized = _rdict(_serialized)
     unserialized = _rdict(_unserialized)

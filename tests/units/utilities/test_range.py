@@ -29,35 +29,37 @@ class TestTimeInterval(TestCase):
     def test_init(self):
         lower = '2017-3-20'
         upper = '2017-3-21'
-        interval = rge.TimeInterval(lower, upper)
+        interval = rge.time_interval(lower, upper)
         assert interval.lower == datetime('2017-3-20')
-        interval = rge.TimeInterval('2017-3-20 12:00', None)
+        interval = rge.time_interval('2017-3-20 12:00', None)
         assert interval.upper == datetime.max
         with pytest.raises(ValueError):
-            rge.TimeInterval('one', 'two')
+            rge.time_interval('one', 'two')
+        assert rge.time_interval(interval) == interval
 
     def test_properties(self):
         lower = '2017-3-20'
         upper = '2017-3-21'
-        interval = rge.TimeInterval(lower, upper)
+        interval = rge.time_interval(lower, upper)
         assert interval.length == pd.Timedelta(days=1)
         assert datetime('2017-3-20 12:00') in interval
-        i0 = rge.TimeInterval('2017-3-20 12:00', '2017-3-20 13:00')
+        i0 = rge.time_interval('2017-3-20 12:00', '2017-3-20 13:00')
         assert i0 in interval
-        i1 = rge.TimeInterval('2017-3-20 12:00', None)
+        i1 = rge.time_interval('2017-3-20 12:00', None)
         assert not i1 in interval        
 
 
 class TestDiscreteRange(TestCase):
 
-    def test_new(self):
+    def test_helper(self):
         item, items = 'item', ['i0', 'i1', 'i2']
-        assert isinstance(rge.DiscreteRange(item), rge.Level)
-        assert isinstance(rge.DiscreteRange(items), rge.Levels)
+        assert isinstance(rge.levels(item), rge.Level)
+        assert isinstance(rge.levels(items), rge.Levels)
         
     def test_level(self):
         level = rge.Level('item')
         assert repr(level) == "Level('item')"
+        assert level == 'item'
 
     def test_levels(self):
         levels = rge.Levels(['i0', 'i1', 'i2'])

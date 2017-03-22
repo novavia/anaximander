@@ -17,6 +17,8 @@ import marshmallow as msh
 import pandas as pd
 import pytest
 
+from anaximander.utilities.nxtime import datetime, UTC
+from anaximander.utilities import nxrange as rge
 from anaximander.data import fields, schema as sch, quantities as qnt, NxScalar
 
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
@@ -42,6 +44,7 @@ def test_restring():
     assert MySchema().validate(good_mac) == {}
     with pytest.raises(sch.ValidationError):
         MySchema().validate(bad_mac)
+    assert MySchema.mac.interval == rge.string_interval
 
 
 def test_scalar():
@@ -61,6 +64,7 @@ def test_scalar():
     dump = MySchema().dump(obj).data
     assert dump == data
     assert type(dump['mph']) is float
+    assert MySchema.mph.interval == rge.float_interval
 
     bad_data = {'mph': '?'}
     with pytest.raises(sch.ValidationError):
@@ -72,12 +76,12 @@ def test_timestamp():
     class MySchema(sch.Schema):
         timestamp = fields.Timestamp()
 
-    timestring = '2017-02-17 01:55:27.985550'
-    datetime = dt.datetime(2017, 2, 17, 1, 55, 27, 985550)
+    timestring = '2017-02-17 01:55:27.985550+00:00'
+    pydatetime = dt.datetime(2017, 2, 17, 1, 55, 27, 985550, tzinfo=UTC)
     data = {'timestamp': timestring}
     obj = MySchema().load(data).data
-    assert obj['timestamp'] == pd.Timestamp(timestring)
-    assert MySchema.timestamp.pygetattr(obj) == ('timestamp', datetime)
+    assert obj['timestamp'] == datetime(timestring)
+    assert MySchema.timestamp.pygetattr(obj) == ('timestamp', pydatetime)
     dump = MySchema().dump(obj).data
     assert dump == data
 
@@ -103,11 +107,11 @@ def test_period():
         period = fields.Period('5min')
 
     pstring = '2017-02-17 02:00'
-    datetime = dt.datetime(2017, 2, 17, 2, 0)
+    pydatetime = dt.datetime(2017, 2, 17, 2, 0)
     data = {'period': pstring}
     obj = MySchema().load(data).data
     assert obj['period'] == pd.Period(pstring, freq='5min')
-    assert MySchema.period.pygetattr(obj) == ('period', datetime)
+    assert MySchema.period.pygetattr(obj) == ('period', pydatetime)
     dump = MySchema().dump(obj).data
     assert dump['period'] == '2017-02-17 02:00'
 
