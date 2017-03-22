@@ -11,7 +11,6 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-import abc
 from collections import deque
 
 import functools
@@ -109,6 +108,25 @@ def dictunion(*dicts, unique_keys=False):
                   "with the unique_keys flag set to True."
             raise ValueError(msg)
     return union
+
+
+def vfilter(function, mapping):
+    """Analogous to built-in filter, but targets a mapping's values.
+
+    Returns an iterator of key, value pairs where the values have been
+    filtered by function returning True.
+    """
+    return ((k, v) for k, v in mapping.items() if function(v))
+
+
+def vmap(function, mapping):
+    """Analogous to built-in map, but targets a mapping's values.
+
+    Returns an iterator of key, value pairs where function has been
+    applied to values.
+    """
+    return ((k, function(v)) for k, v in mapping.items())
+
 
 # =============================================================================
 # Function decorators

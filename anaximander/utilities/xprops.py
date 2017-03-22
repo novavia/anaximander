@@ -14,7 +14,10 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
+from collections.abc import Iterable
 import weakref
+
+from .functions import typecheck
 
 # =============================================================================
 # Properties
@@ -35,7 +38,10 @@ class cachedproperty(property):
     def __init__(self, fget=None, fset=None, fdel=None, doc=None,
                  cache=None):
         super().__init__(fget, fset, fdel)
-        self.cache = cache or '_' + fget.__name__
+        if cache is None and fget is not None:
+            self.cache = '_' + fget.__name__
+        else:
+            self.cache = cache
         if doc is None and fget is not None:
             doc = fget.__doc__
         self.__doc__ = doc
@@ -45,8 +51,6 @@ class cachedproperty(property):
             return self
         try:
             return obj.__dict__[self.cache]
-#            return getattr(obj, self.cache)
-#        except AttributeError:
         except KeyError:
             if self.fget is None:
                 raise AttributeError("Unreadable attribute.")
@@ -106,7 +110,6 @@ class singlesetproperty(settablecachedproperty):
 
     def __set__(self, obj, value):
         if not self.cache in obj.__dict__:
-#        if getattr(obj, self.cache, None) is None:
             super().__set__(obj, value)
         else:
             raise AttributeError("Can't set attribute.")
@@ -118,6 +121,12 @@ class weakproperty(settablecachedproperty):
     weakproperty decorates a function that returns a default value -usually
     None. It is meant to be set and will keep a weak reference in cache.
     """
+
+    def __init__(self, fget=None, fset=None, fdel=None, doc=None,
+                 cache=None, types=None):
+        """types is an optional iterable of valid types."""
+        super().__init__(fget, fset, fdel, doc, cache)
+        self.types = types
 
     def __get__(self, obj, objtype=None):
         if obj is None:
@@ -133,6 +142,16 @@ class weakproperty(settablecachedproperty):
         if self.fset is not None:
             self.fset(obj, value)
         elif value is not None:
+            if self.types is not None:
+                if not typecheck(*self.types)(value):
+                    raise TypeError
             setattr(obj, self.cache, weakref.ref(value))
         else:
             setattr(obj, self.cache, None)
+
+
+def typedweakproperty(*types):
+    """A function helper to declare a weakproperty with type checking."""
+    def decorator(fget):
+        return weakproperty(fget, types=types)
+    return decorator

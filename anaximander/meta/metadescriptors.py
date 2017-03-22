@@ -18,7 +18,7 @@ from anaximander.utilities import xprops, nxattr
 
 __all__ = ['typeattribute', 'metacharacter', 'typeproperty',
            'cachedtypeproperty', 'typemethod', 'classtypemethod',
-           'newtypemethod', 'typeinitmethod', 'metamethod',
+           'newtypemethod', 'typeinitmethod', 'metamethod', 'metainstance',
            'ValidationError']
 
 # =============================================================================
@@ -101,14 +101,34 @@ class BindingError(MetaDescriptorError):
     pass
 
 
-# Attributes for MetaDescriptor
-metadescriptor_attrs = {'cls': nxattr.ib(init=False),
-                        'name': nxattr.ib(init=False)}
+# Attributes for MetaDeclaration
+metadeclaration_attrs = {'cls': nxattr.ib(init=False),
+                         'name': nxattr.ib(init=False)}
+
+
+@nxattr.s(these=metadeclaration_attrs, init=False)
+class MetaDeclaration(abc.ABC):
+    """MetaDeclaration are a generalization of metadescriptors.
+
+    MetaDeclarations are collected by metaclasses and used to implement
+    various initialization routines. The main application is MetaDescriptors.
+    However another application is MetaInstances, which are cached
+    instances that are created along with a type.
+    """
+
+    @xprops.singlesetproperty
+    def cls(self):
+        """The declaring class, set by NxType."""
+        return None
+
+    @xprops.singlesetproperty
+    def name(self):
+        """The declared name, set by NxType."""
+        return None    
 
 
 @metaregistry('__metadescriptors__')
-@nxattr.s(these=metadescriptor_attrs, init=False)
-class MetaDescriptor(abc.ABC):
+class MetaDescriptor(MetaDeclaration):
     """Base class for metadescriptors.
 
     Metadescriptors are intended to be inserted in type declarations
@@ -129,16 +149,6 @@ class MetaDescriptor(abc.ABC):
     is called and supplied a metaclass whose dictionary gets modified as
     a result.
     """
-
-    @xprops.singlesetproperty
-    def cls(self):
-        """The declaring class, set by NxType."""
-        return None
-
-    @xprops.singlesetproperty
-    def name(self):
-        """The declared name, set by NxType."""
-        return None
 
     def register(self, mcl):
         """Registers self with the supplied metaclass."""
@@ -551,3 +561,45 @@ class MetaMethod(MetaDescriptor):
 def metamethod(func):
     """A method decorator that declares a MetaMethod."""
     return MetaMethod(func)
+
+# =============================================================================
+# MetaInstance
+# =============================================================================
+
+
+class MetaInstance(MetaDeclaration):
+    """A facility to specify instances in class declarations.
+
+    MetaInstance is a facilty to declare cached instances at type creation.
+    The rationale for MetaInstance is to help the declaration of Marker shades
+    in the data.annotations module.
+    """
+
+    def __init__(self, *args, inherit=False, use_name=False, **kwargs):
+        """Supply arguments that match the declaring type's init signature.
+
+        If inherit is True, the declaration is passed on to subclasses, which
+        will create their own metainstance with the same arguments.
+        If use_name is set to True, then the name of the MetaInstance is
+        added as a keyword argument in the instantiation call with key 'name'.
+        Alternatively, use_name can receive any string, which will be used as
+        the keyword in the instantiation call.
+        """
+        self.args = args
+        self.inherit = inherit
+        self.use_name = use_name
+        self.kwargs = kwargs
+
+    def __call__(self):
+        """Generates an instance."""
+        if self.use_name:
+            if isinstance(self.use_name, str):
+                self.kwargs[self.use_name] = self.name
+            else:
+                self.kwargs['name'] = self.name
+        return self.cls(*self.args, **self.kwargs)
+
+
+def metainstance(*args, inherit=False, **kwargs):
+    """Helper function for class declarations."""
+    return MetaInstance(*args, inherit=inherit, **kwargs)

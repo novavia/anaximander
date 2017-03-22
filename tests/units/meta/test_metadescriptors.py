@@ -127,5 +127,26 @@ def test_typeproperty(C):
     assert C[0].greetings == inst.greetings == 1
 
 
+def test_metainstance():
+
+    class C(NxObject):
+        c0 = mtd.metainstance(0)
+        c1 = mtd.metainstance(0, 1, 2, a=0, b=1, c=2)
+
+        def __init__(self, *args, **kwargs):
+            self.arg = args[0]
+            self.klen = len(kwargs)
+
+    c0, c1 = C.__metainstances__.values()
+    assert all(isinstance(c, C) for c in (c0, c1))
+    assert c0.arg == c1.arg == 0
+    assert c0.klen == 0
+    assert c1.klen == 3
+
+    with pytest.raises(TypeError):
+        class C(NxObject):
+            c = mtd.metainstance(0)
+
+
 if __name__ == '__main__':
     pytest.main([__file__])

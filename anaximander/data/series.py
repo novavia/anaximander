@@ -25,7 +25,7 @@ import seaborn as sns
 from ..utilities import xprops
 from ..utilities.functions import spformat
 from ..utilities.nxrange import time_interval, float_interval, \
-    string_interval, levels, Interval, Level, Levels
+    string_interval, levels, Level, Levels
 from ..meta import prototype, metacharacter, typeproperty
 from .exceptions import DataError
 from .base import IndexedDataObject, RowSlicer

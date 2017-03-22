@@ -14,8 +14,9 @@ Copyright (C) Novavia Solutions, LLC.
 from collections import OrderedDict
 import itertools
 
+from ..utilities.functions import typecheck
 from ..registries import registries as nrg
-from .metadescriptors import metaregistries
+from .metadescriptors import metaregistries, MetaDescriptor
 
 __all__ = ['nxmeta', 'MetaError']
 
@@ -82,9 +83,11 @@ def nxmeta(basetype):
     name = basename + 'Type'
     bases = (type(basetype),)
     try:
-        metadescriptors = basetype.__metadeclarations__.values()
+        metadeclarations = basetype.__metadeclarations__.values()
     except AttributeError:
         metadescriptors = None
+    else:
+        metadescriptors = filter(typecheck(MetaDescriptor), metadeclarations)
     return NxMeta(name, bases, {}, basename, metadescriptors)
 
 # =============================================================================

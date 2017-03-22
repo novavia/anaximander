@@ -30,7 +30,8 @@ from inspect import getmodule
 import sys
 import types
 
-from .metadescriptors import MetaDescriptor, TypeAttribute, MetaMethod
+from .metadescriptors import MetaDeclaration, TypeAttribute, MetaMethod, \
+    MetaInstance
 from .nxmeta import NxMeta, archmeta, protometa, MetaError, ProtoType
 from ..utilities import functions as fun
 from ..registries import registries as reg
@@ -87,7 +88,7 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
         # whereas __metadeclarations__ also carries inherited metadeclarations.
         metadeclarations = OrderedDict()
         for k, v in OrderedDict(namespace).items():
-            if isinstance(v, MetaDescriptor):
+            if isinstance(v, MetaDeclaration):
                 metadeclarations[k] = v
                 del namespace[k]
         try:
@@ -172,6 +173,15 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
                 cls.__registry__ = NoRegistry()
             else:
                 cls.__registry__ = registry()
+        # Creates a __metainstances__ cache and populates it if needed
+        cls.__metainstances__ = OrderedDict()
+        for mi in filter(fun.typecheck(MetaInstance),
+                         cls.__metadeclarations__.copy().values()):
+            instance = mi()
+            cls.__metainstances__[mi.name] = instance
+            if not mi.inherit:
+                del cls.__metadeclarations__[mi.name]
+        
 
     def subtype(cls, *traits, name=None, **kwargs):
         """Returns a subtype, equivalent to nxtype."""
