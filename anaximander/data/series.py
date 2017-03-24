@@ -24,12 +24,13 @@ import seaborn as sns
 
 from ..utilities import xprops
 from ..utilities.functions import spformat
-from ..utilities.nxrange import time_interval, float_interval, \
-    string_interval, levels, Level, Levels
+from ..utilities.nxtime import datetime, tz_aware
+from ..utilities.nxrange import levels, Level, Levels
 from ..meta import prototype, metacharacter, typeproperty
 from .exceptions import DataError
 from .base import IndexedDataObject, RowSlicer
 from .data import NxData
+from .annotations import interval
 
 __all__ = ['NxSeries']
 
@@ -72,26 +73,6 @@ BGC = (0.85, 0.85, 0.85, 0.75)  # Background highlight color
 THOSEP = mpl.ticker.FuncFormatter(lambda x, p: format(int(x), ','))
 
 # =============================================================================
-# Range selection utilities
-# =============================================================================
-
-# Maps index types to the appropriate range helper function from nxrange
-_range_type = {pd.CategoricalIndex: levels,
-               pd.Int64Index: float_interval,
-               pd.Float64Index: float_interval,
-               pd.DatetimeIndex: time_interval}
-
-def rangefunc(index):
-    """Returns the appropriate range function helper for a given index."""
-    for ixtype in type(index).__mro__:
-        try:
-            return _range_type[ixtype]
-        except KeyError:
-            pass
-    msg = "No range function is provided for index type {0}"
-    raise AttributeError(msg.format(type(index)))
-
-# =============================================================================
 # NxSeries prototype
 # =============================================================================
 
@@ -127,7 +108,8 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
     def unit(cls):
         return cls.datatype.unit
 
-    def __init__(self, data, index=None, context=None, ix_range=None):
+    def __init__(self, data, index=None, context=None, ix_range=None,
+                 **rgarg):
         """Creates an NxSeries instance.
 
         Params:
@@ -139,6 +121,9 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
                 ix_range can be a tuple that specifies a min and max time.
                 For a categorical index, ix_range may be a single value
                 or an iterable of admissiable levels.
+            **rgarg: accepts a single keyword corresponding the index's name.
+                if both ix_range and **rgarg are specified, a ValueError
+                is raised.
         """
         # XXX: Eventually, add the possibility that what is passed to the
         # constructor is a Sequence of NxData. If this is done right, such
@@ -150,6 +135,17 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
             context = context or data.context
             data = data.data
         series = pd.Series(data, index, self.datatype.dtype)
+        series = tz_aware(series)
+        if rgarg:
+            if not list(rgarg.keys()) == [series.index.name]:
+                msg = "Incorrect range argument passed to NxSeries."
+                raise ValueError(msg)
+            elif ix_range is not None:
+                msg = "Specify either the index range or a named range \
+                       argument but not both."
+                raise ValueError(msg)
+            else:
+                ix_range = rgarg[series.index.name]
         self._data = self.subset(series, ix_range)
         self.context = context
 
@@ -177,21 +173,16 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
         """Subsets a valid series with supplied range argument."""
         if ix_range is None:
             return series
-        try:
-            rfunc = rangefunc(series.index)
-        except AttributeError:
-            msg = "Cannot subset series {0} with index type {1}"
-            raise SeriesError(msg.format(series, type(series.index)))
-        if rfunc in (time_interval, float_interval, string_interval):
-            range_ = rfunc(*ix_range)
-            lower, upper = range_.bounds
-            series = series[(series.index >= lower) & (series.index <= upper)]
-        else:
+        if isinstance(series.index, pd.CategoricalIndex):
             range_ = levels(ix_range)
             if isinstance(range_, Level):
                 series = series[range_ == series.index]
             elif isinstance(range_, Levels):
-                series = series[series.index.isin(range_)]
+                series = series[series.index.isin(range_)]            
+        else:
+            range_ = interval(*ix_range, ref=series.index)
+            lower, upper = range_.bounds
+            series = series[(series.index >= lower) & (series.index <= upper)]
         return series
 
     def recast(self, data):

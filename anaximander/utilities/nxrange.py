@@ -19,7 +19,7 @@ from . import nxattr
 from .functions import passthrough
 
 
-__all__ = ['float_interval', 'time_interval', 'levels']
+__all__ = ['float_interval', 'time_interval', 'string_interval', 'levels']
 
 # =============================================================================
 # Class declarations
@@ -40,7 +40,7 @@ class DiscreteRange(Range):
 
 
 @nxattr.s
-class Interval(ContinuousRange):
+class Interval(ContinuousRange, Iterable):
     lower = nxattr.ib()
     upper = nxattr.ib()
 
@@ -51,6 +51,9 @@ class Interval(ContinuousRange):
     @property
     def bounds(self):
         return (self.lower, self.upper)
+
+    def __iter__(self):
+        return iter((self.lower, self.upper))
 
     def __contains__(self, item):
         if isinstance(item, Interval):

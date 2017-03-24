@@ -14,21 +14,207 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import OrderedDict
 
+import numpy as np
+import pandas as pd
 import seaborn as sns
 from seaborn.palettes import _ColorPalette as ColorPalette
 
 from ..utilities.functions import typecheck
 from ..utilities import xprops
+from ..utilities.nxtime import datetime
+from ..utilities.nxrange import float_interval, time_interval, \
+    string_interval
 from ..meta.metadescriptors import MetaInstance
 from ..meta import NxObject, archetype, typeattribute, typeproperty, \
     typeinitmethod, typemethod
 from .base import DataObject
-
+from .data import NxScalar
+from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
+    Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
+    LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
+    Str, Bool, Int, Constant, Scalar, Timestamp, Duration, Period
 
 __all__ = []
 
 
 PALETTE = sns.color_palette("muted")
+
+# =============================================================================
+# Selection domain functions, extending nxrange
+# =============================================================================
+
+# Mapping from field type to selection domain
+_field_domain = {Field: None,
+                 Raw: None,
+                 Nested: None,
+                 Dict: None,
+                 List: None,
+                 String: 'string',
+                 UUID: 'string',
+                 Number: 'float',
+                 Integer: 'float',
+                 Decimal: 'float',
+                 Boolean: 'float',
+                 FormattedString: 'string',
+                 Float: 'float',
+                 DateTime: 'time',
+                 LocalDateTime: 'time',
+                 Time: 'time',
+                 Date: 'time',
+                 TimeDelta: None,
+                 Url: 'string',
+                 URL: 'string',
+                 Email: 'string',
+                 Method: None,
+                 Function: None,
+                 Str: 'string',
+                 Bool: 'float',
+                 Int: 'float',
+                 Constant: None,
+                 Timestamp: 'time',
+                 Duration: None,
+                 Period: 'time'
+                 }
+
+# Mapping from numpy dtype kinds to selection domain
+_kind_domain = {'b': 'float',
+                'i': 'float',
+                'u': 'float',
+                'f': 'float',
+                'c': None,  # complex floating-point
+                'm': None,  # timedelta
+                'M': 'time',
+                'O': None,  # Object
+                'S': None,  # (byte-)string
+                'U': 'string',  # Unicode
+                'V': None,  # void
+                }
+
+# Maps index types to the appropriate selection domain
+_index_domain = {pd.Int64Index: 'float',
+                 pd.Float64Index: 'float',
+                 pd.DatetimeIndex: 'time'}
+
+
+def _kind_to_domain(kind):
+    """Returns a domain from a numpy dtype.kind."""
+    try:
+        return _kind_domain[kind]
+    except KeyError:
+        return None
+
+
+def _fieldtype_to_domain(field_type):
+    """Returns a domain from a field type."""
+    if field_type.__interval__ is not None:
+        return field_type.__interval__.__func__
+    for ft in field_type.__mro__:
+        try:
+            return _field_domain[ft]
+        except KeyError:
+            pass
+    return None
+
+
+def _indextype_to_domain(index_type):
+    """Returns an interval helper function from a pandas index type."""
+    for it in index_type.__mro__:
+        try:
+            return _index_domain[it]
+        except KeyError:
+            pass
+    return None    
+
+
+def domain(ref):
+    """Returns a selection domain based on ref.
+
+    ref accepts a wide range of possible values:
+        * A numpy dtype kind
+        * A numpy dtype
+        * A data.field or field type
+        * A data.NxScalar instance or type
+        * A pandas index or index type
+    """
+    if isinstance(ref, type):
+        if issubclass(ref, Field):
+            return _fieldtype_to_domain(ref)
+        elif issubclass(ref, NxScalar):
+            return _kind_to_domain(NxScalar.dtype.kind)
+        elif issubclass(ref, pd.Index):
+            return _indextype_to_domain(ref)
+    elif isinstance(ref, np.dtype):
+        return _kind_to_domain(ref.kind)
+    elif isinstance(ref, str):
+        return _kind_to_domain(ref)
+    elif isinstance(ref, Field):
+        if isinstance(ref, Scalar):
+            kind = ref.datatype.dtype.kind
+            return _kind_to_domain(kind)
+        else:
+            return _fieldtype_to_domain(type(ref))
+    elif isinstance(ref, NxScalar):
+        return _kind_to_domain(ref.dtype.kind)
+    elif isinstance(ref, pd.Index):
+        return _indextype_to_domain(type(ref))
+    else:
+        return None
+
+
+# Maps domain to interval helper function
+_domain_interval = {'float': float_interval,
+                    'string': string_interval,
+                    'time': time_interval}
+
+
+def _domain_to_interval(domain):
+    return _domain_interval.get(domain, NotImplemented)
+
+
+def interval(lower=None, upper=None, *, ref):
+    """Returns an interval helper function based on ref keyword-only argument.
+
+    ref accepts a wide range of possible values:
+        * A numpy dtype kind
+        * A numpy dtype
+        * A data.field or field type
+        * A data.NxScalar instance or type
+        * A pandas index or index type
+    """
+    dom = domain(ref)
+    func = _domain_to_interval(dom)
+    if func is NotImplemented:
+        msg = "No interval function is provided for {0}"
+        raise ValueError(msg.format(ref))
+    return func(lower, upper)
+
+
+# Maps domain to location function
+_domain_location = {'float': float,
+                    'string': str,
+                    'time': datetime}
+
+
+def _domain_to_location(domain):
+    return _domain_location.get(domain, NotImplemented)
+
+
+def location(loc, *, ref):
+    """Returns a properly formatted location from loc based on ref.
+
+    ref accepts a wide range of possible values:
+        * A numpy dtype kind
+        * A numpy dtype
+        * A data.field or field type
+        * A data.NxScalar instance or type
+        * A pandas index or index type
+    """
+    dom = domain(ref)
+    func = _domain_to_location(dom)
+    if func is NotImplemented:
+        msg = "No location function is provided for {0}"
+        raise ValueError(msg.format(ref))
+    return func(loc)        
 
 # =============================================================================
 # Marker base class
@@ -135,27 +321,54 @@ class DataAnnotation(NxObject):
 class Mark(DataAnnotation):
     """An annotation with a location on a sequential axis."""
 
-    def __init__(self, dataobject, marker, location):
+    def __init__(self, dataobject, marker, loc):
         super().__init__(dataobject, marker)
-        self.location = location
+        self._location = location(loc, ref=dataobject.index)
 
-    # TODO:
-        # * Make a data property. It returns either a Record or a value.
-        # Make it a placeholder for now, as doing interpolation systematically
-        # will be a bit time-consuming.
+    @xprops.cachedproperty
+    def location(self):
+        return None
+
+    @property
+    def ix(self):
+        """The index position closest to self.location in dataobject."""
+        return self.dataobject.index.get_loc(self.location, method='nearest')
+
+    @property
+    def dataloc(self):
+        """The location closest to self.location in dataobject.index."""
+        return self.dataobject.index[self.ix]
+
+    @property
+    def data(self):
+        """Extracts data from dataobject at self's location.
+
+        This returns either a NxData if dataobject is a series, or an
+        NxRecord if dataobject is a dataframe.
+        """
+        return self.dataobject.iloc[self.ix]
 
 
 class Highlight(DataAnnotation):
     """An annotation with a lower and upper location."""
 
-    def __init__(self, dataobject, marker, lower, upper):
+    def __init__(self, dataobject, marker, lower=None, upper=None):
         super().__init__(dataobject, marker)
-        self.lower = lower
-        self.upper = upper
+        self._interval = interval(lower, upper, ref=dataobject.index)
 
-    # TODO:
-        # * Make an interval property. It needs to look up the kind of
-        # of index of dataobject (either index of a series, or sequential
-        # key of a frame) to return the appropriate interval type.
-        # * Create a data property, which returns a subset of dataobject
-        # after applying the range arguments.
+    @xprops.cachedproperty
+    def interval(self):
+        return None
+
+    @xprops.cachedproperty
+    def lower(self):
+        return self.interval.lower
+
+    @xprops.cachedproperty
+    def upper(self):
+        return self.interval.upper
+
+    @property
+    def data(self):
+        """Returns the slice of dataobject corresponding to self's bounds."""
+        return self.dataobject.loc[self.lower:self.upper]

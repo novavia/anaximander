@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 import anaximander as nx
+from anaximander.utilities.nxtime import datetime, tz_aware, tz_naive
 from anaximander.data import fields, frame as frm, schema
 from anaximander.data import NxFloat, NxRecord, NxSeries
 
@@ -49,7 +50,7 @@ MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 def featurelog():
     """Returns a nominal dataframe."""
     dataframe = pd.read_csv(FEATURELOG_PATH)
-    dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+    dataframe.timestamp = dataframe.timestamp.apply(datetime)
     return dataframe
 
 LOG = featurelog()
@@ -59,7 +60,7 @@ LOG = featurelog()
 def featurelog_partial():
     """Returns a dataframe with missing columns."""
     dataframe = pd.read_csv(FEATURELOG_PARTIAL_PATH)
-    dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+    dataframe.timestamp = dataframe.timestamp.apply(datetime)
     return dataframe
 
 
@@ -67,7 +68,7 @@ def featurelog_partial():
 def featurelog_no_device():
     """Returns a dataframe missing a key column."""
     dataframe = pd.read_csv(FEATURELOG_NO_DEVICE_PATH)
-    dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+    dataframe.timestamp = dataframe.timestamp.apply(datetime)
     return dataframe
 
 
@@ -75,7 +76,7 @@ def featurelog_no_device():
 def featurelog_shuffled():
     """Returns a dataframe with columns shuffled."""
     dataframe = pd.read_csv(FEATURELOG_SHUFFLED_PATH)
-    dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+    dataframe.timestamp = dataframe.timestamp.apply(datetime)
     return dataframe
 
 
@@ -83,7 +84,7 @@ def featurelog_shuffled():
 def featurelog_superfluous():
     """Returns a dataframe with an extra column not in the schema."""
     dataframe = pd.read_csv(FEATURELOG_SUPERFLUOUS_PATH)
-    dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+    dataframe.timestamp = dataframe.timestamp.apply(datetime)
     return dataframe
 
 
@@ -91,7 +92,7 @@ def featurelog_superfluous():
 def featurelog_invalid():
     """Returns a dataframe with invalid values."""
     dataframe = pd.read_csv(FEATURELOG_INVALID_PATH)
-    dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+    dataframe.timestamp = dataframe.timestamp.apply(datetime)
     return dataframe
 
 
@@ -225,14 +226,14 @@ class TestFrame(TestCase):
         """Tests with a dataframe whose columns are out of sequence."""
         log = featurelog_shuffled()
         cast = FeatureMappingNK.cast(log)
-        assert frm.dtypes(FeatureSchema) == OrderedDict(cast.dtypes)
+        assert frm.dtypes(FeatureSchema) == OrderedDict(tz_naive(cast).dtypes)
 
     def test_cast_superfluous(self):
         """Tests with a dataframe with a superfluous column."""
         log = featurelog_superfluous()
         cast = FeatureMappingNK.cast(log)
         assert len(log.columns) == len(cast.columns) + 1
-        assert frm.dtypes(FeatureSchema) == OrderedDict(cast.dtypes)
+        assert frm.dtypes(FeatureSchema) == OrderedDict(tz_naive(cast).dtypes)
 
     def test_init(self):
         frame = FeatureMappingNK(LOG)
@@ -431,14 +432,14 @@ class TestDumper(TestCase):
         dumper = frm.CsvDumper(frame, DUMP_PATH)
         dumper()
         dataframe = pd.read_csv(DUMP_PATH)
-        dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+        dataframe.timestamp = dataframe.timestamp.apply(datetime)
         assert dataframe.equals(frame.data)
 
     def test_to_csv(self):
         frame = FeatureMappingNK(LOG)
         frame.to_csv(DUMP_PATH)
         dataframe = pd.read_csv(DUMP_PATH)
-        dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
+        dataframe.timestamp = dataframe.timestamp.apply(datetime)
         assert dataframe.equals(frame.data)
 
 
@@ -449,10 +450,15 @@ def test_range_attributes(featurelog):
     assert len(frame) == 3    
     frame = FeatureMapping(featurelog, timestamp=('2016-9-14 10:03', None))
     assert len(frame) == 5
+    frame = FeatureMapping(featurelog, ix_range=('2016-9-14 10:03', None))
+    assert len(frame) == 5    
     frame = FeatureMappingMK(featurelog, Feature_Value_0=0)
     assert len(frame) == 0
     with pytest.raises(frm.FrameError):
         frame = FeatureMapping(featurelog, Feature_Value_0=0)
+    with pytest.raises(ValueError):
+        frame = FeatureMapping(featurelog, ix_range=('2016-9-14 10:03', None),
+                               timestamp=('2016-9-14 10:03', None))
 
 if __name__ == '__main__':
     pytest.main([__file__])

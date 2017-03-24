@@ -20,6 +20,7 @@ import pandas as pd
 
 from ..utilities import functions as fun
 from ..utilities import nxattr, xprops
+from ..utilities.nxtime import datetime, tz_aware
 from ..utilities.nxrange import levels, Level, Levels
 from ..meta import NxObject, metacharacter, typeinitmethod, newtypemethod, \
     cachedtypeproperty, prototype, clade
@@ -30,6 +31,7 @@ from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
     Str, Bool, Int, Constant, NxDataField, Scalar, Timestamp, Duration, Period
+from .annotations import interval
 from .record import NxRecord
 from .series import NxSeries
 
@@ -145,7 +147,7 @@ class NxDataFrame(IndexedDataObject):
             return NxDataCollection[cls.schema]
 
     def __init__(self, data=None, context=None, validate=False,
-                 **rgargs):
+                 ix_range=None, **rgargs):
         """Data can be any admissible data argument to a dataframe.
 
         params:
@@ -155,6 +157,9 @@ class NxDataFrame(IndexedDataObject):
             validate: if True, the entire data gets validated against the
                 class' schema. Must be used intentionally as there is a
                 performance penalty.
+            ix_range: an optional range argument for subsetting based on
+                self's index. If the index name is also specified in **rgargs,
+                a ValueError is raised.
             **rgargs: range arguments. Admissible keys are the names of
                 the schema's key fields. Sequential keys accept values that
                 can be coerced into a nxrange.Interval, whereas non-sequential
@@ -168,6 +173,13 @@ class NxDataFrame(IndexedDataObject):
         if isinstance(data, NxDataFrame):
             context = context or data.context
             data = data.data
+        if ix_range is not None:
+            if self.sqcol in rgargs:
+                msg = "Specify either the index range or a range for the \
+                       sequential key but not both."
+                raise ValueError(msg)
+            else:
+                rgargs[self.sqcol] = ix_range
         data = self.subset(data, **rgargs)
         self.keyrange = rgargs
         self._data = self.cast(data)
@@ -218,6 +230,7 @@ class NxDataFrame(IndexedDataObject):
             except ValueError:
                 msg = "Data cannot be cast to required types."
                 raise ConformityError(msg)
+        dataframe = tz_aware(dataframe)
         if cls.sqcol is not None:
             dataframe.index = dataframe[cls.sqcol]
         else:
@@ -238,7 +251,7 @@ class NxDataFrame(IndexedDataObject):
                 msg = "Improper argument {0} passed to {1}"
                 raise FrameError(msg.format(key, cls))
             if field.sequential:
-                lower, upper = field.interval(*value).bounds
+                lower, upper = interval(*value, ref=field).bounds
                 data = data[(data[key] >= lower) & (data[key] <= upper)]
             else:
                 target = levels(value)

@@ -86,10 +86,17 @@ def test_subset(datatypes):
     smph = NxSeries[SpeedMPH]([25, 35, 55, 65], ix_range=(1, 1))
     assert len(smph) == 1
     timeindex = pd.date_range('2017', periods=4, tz='utc')
+    timeindex.name = 'timestamp'
     smph = NxSeries[SpeedMPH]([25, 35, 55, 65], index=timeindex,
                               ix_range=('2017-1-3', None))
     assert len(smph) == 2
-
+    smph = NxSeries[SpeedMPH]([25, 35, 55, 65], index=timeindex,
+                              timestamp=('2017-1-3', None))    
+    assert len(smph) == 2
+    with pytest.raises(ValueError):
+        smph = NxSeries[SpeedMPH]([25, 35, 55, 65], index=timeindex,
+                                  timestamp=('2017-1-3', None),
+                                  ix_range=('2017-1-3', None))        
 
 if __name__ == '__main__':
     pytest.main([__file__])

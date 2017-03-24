@@ -44,7 +44,6 @@ def test_restring():
     assert MySchema().validate(good_mac) == {}
     with pytest.raises(sch.ValidationError):
         MySchema().validate(bad_mac)
-    assert MySchema.mac.interval == rge.string_interval
 
 
 def test_scalar():
@@ -64,7 +63,6 @@ def test_scalar():
     dump = MySchema().dump(obj).data
     assert dump == data
     assert type(dump['mph']) is float
-    assert MySchema.mph.interval == rge.float_interval
 
     bad_data = {'mph': '?'}
     with pytest.raises(sch.ValidationError):
