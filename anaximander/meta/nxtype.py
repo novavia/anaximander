@@ -177,7 +177,7 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
         cls.__metainstances__ = OrderedDict()
         for mi in filter(fun.typecheck(MetaInstance),
                          cls.__metadeclarations__.copy().values()):
-            instance = mi()
+            instance = mi(cls)
             cls.__metainstances__[mi.name] = instance
             if not mi.inherit:
                 del cls.__metadeclarations__[mi.name]

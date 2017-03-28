@@ -20,7 +20,7 @@ import pandas as pd
 
 from ..utilities import functions as fun
 from ..utilities import nxattr, xprops
-from ..utilities.nxtime import datetime, tz_aware
+from ..utilities.nxtime import tz_aware
 from ..utilities.nxrange import levels, Level, Levels
 from ..meta import NxObject, metacharacter, typeinitmethod, newtypemethod, \
     cachedtypeproperty, prototype, clade
@@ -240,6 +240,10 @@ class NxDataFrame(IndexedDataObject):
     @classmethod
     def subset(cls, data, **rgargs):
         """Subsets a valid dataframe with supplied range arguments."""
+        if data is None:
+            return None
+        elif data.empty:
+            return data
         for key, value in rgargs.items():
             is_key_field = False
             try:
@@ -274,6 +278,10 @@ class NxDataFrame(IndexedDataObject):
             return list()
         recs = self._data[self.kcols].drop_duplicates().to_records(index=False)
         return list(tuple(r) for r in recs)
+
+    @property
+    def empty(self):
+        return self.data.empty
 
     @typeinitmethod
     def _assign_column_proxies(cls):
@@ -439,8 +447,9 @@ class NxDataSequence(NxDataFrame, traits=(Sequence,)):
     """An NxDataFrame indexed by a unique sequential key field."""
     schema = metacharacter(validate=lambda s: issubclass(s, Schema))
 
-    def __init__(self, data, context=None, validate=False):
-        super().__init__(data, context, validate)
+    def __init__(self, data=None, context=None, validate=False,
+                 ix_range=None, **rgargs):
+        super().__init__(data, context, validate, ix_range, **rgargs)
         self.verify()
 
     def __getitem__(self, key):

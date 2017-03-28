@@ -146,6 +146,8 @@ def domain(ref):
     elif isinstance(ref, np.dtype):
         return _kind_to_domain(ref.kind)
     elif isinstance(ref, str):
+        if ref in ('float', 'string', 'time'):
+            return ref
         return _kind_to_domain(ref)
     elif isinstance(ref, Field):
         if isinstance(ref, Scalar):
@@ -217,31 +219,31 @@ def location(loc, *, ref):
     return func(loc)        
 
 # =============================================================================
-# Marker base class
+# Pen base class for Marker and Highlighter
 # =============================================================================
 
 
-class MarkerError(Exception):
-    """Specialized exception type for Markers."""
+class PenError(Exception):
+    """Specialized exception type for Pens."""
     pass
 
 
 class Shade(MetaInstance):
-    """Specialized MetaInstance declarator for Marker shades."""
+    """Specialized MetaInstance declarator for Pen shades."""
 
     def __init__(self, **plargs):
         """Takes plot arguments for instantiation."""
-        super().__init__(inherit=True, use_name=True, **plargs)
+        super().__init__(use_name=True, inherit=True, **plargs)
 
 
 def shade(**plargs):
-    """Helper function used in Marker type declarations."""
+    """Helper function used in Pen type declarations."""
     return Shade(**plargs)
 
 
 @archetype
-class Marker(NxObject):
-    """Archetype for Marker types."""
+class Pen(NxObject):
+    """Archetype for Pen types."""
     palette = typeattribute(default=PALETTE, validate=typecheck(ColorPalette))
 
     @typeproperty
@@ -281,6 +283,8 @@ class Marker(NxObject):
     @typemethod
     def __call__(cls, name, register=True, **plargs):
         """Customizes the metaclass __call__ to fetch from instance cache."""
+        if isinstance(name, cls):
+            return name
         try:
             return cls.__shades__[name]
         except KeyError:
@@ -288,6 +292,15 @@ class Marker(NxObject):
             cls.__init__(instance, name, register, **plargs)
             return instance
 
+
+class Marker(Pen):
+    """Base class for all Marker types."""
+    blank = shade(color='white')
+
+
+class Highlighter(Pen):
+    """Base class for all Highlighter types."""
+    blank = shade(color='white')
 
 # =============================================================================
 # Marks and Highlights
@@ -302,15 +315,9 @@ class DataAnnotation(NxObject):
         """A weak reference to the target data object."""
         return None
 
-    @xprops.typedweakproperty(Marker)
-    def marker(self):
-        """A weak reference to a marker instance."""
-        return None
-
-    def __init__(self, dataobject, marker):
+    def __init__(self, dataobject):
         """Requires a DataObject and a Marker instance."""
         self.dataobject = dataobject
-        self.marker = marker
 
     @abc.abstractproperty
     def data(self):
@@ -322,12 +329,10 @@ class Mark(DataAnnotation):
     """An annotation with a location on a sequential axis."""
 
     def __init__(self, dataobject, marker, loc):
-        super().__init__(dataobject, marker)
-        self._location = location(loc, ref=dataobject.index)
-
-    @xprops.cachedproperty
-    def location(self):
-        return None
+        super().__init__(dataobject)
+        self.marker = marker
+        self.domain = domain(dataobject.index)
+        self.location = location(loc, ref=self.domain)
 
     @property
     def ix(self):
@@ -352,19 +357,17 @@ class Mark(DataAnnotation):
 class Highlight(DataAnnotation):
     """An annotation with a lower and upper location."""
 
-    def __init__(self, dataobject, marker, lower=None, upper=None):
-        super().__init__(dataobject, marker)
-        self._interval = interval(lower, upper, ref=dataobject.index)
+    def __init__(self, dataobject, highlighter, lower=None, upper=None):
+        super().__init__(dataobject)
+        self.highlighter = highlighter
+        self.domain = domain(dataobject.index)
+        self.interval = interval(lower, upper, ref=self.domain)
 
-    @xprops.cachedproperty
-    def interval(self):
-        return None
-
-    @xprops.cachedproperty
+    @property
     def lower(self):
         return self.interval.lower
 
-    @xprops.cachedproperty
+    @property
     def upper(self):
         return self.interval.upper
 
@@ -372,3 +375,16 @@ class Highlight(DataAnnotation):
     def data(self):
         """Returns the slice of dataobject corresponding to self's bounds."""
         return self.dataobject.loc[self.lower:self.upper]
+
+    def transitions(self, prev='blank', next='blank'):
+        """Returns the lower and upper transitions.
+
+        Highlighters before and after the highlight can be specified with
+        prev and next, both defaulting to the blank highligher.
+        """
+        highlighter_type = type(self.highlighter)
+        prev_highlighter = highlighter_type(prev).name
+        next_highlighter = highlighter_type(next).name
+        this_highlighter = self.highlighter.name
+        return ((self.lower, prev_highlighter, this_highlighter),
+                (self.upper, this_highlighter, next_highlighter))

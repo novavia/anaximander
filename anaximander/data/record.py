@@ -20,9 +20,11 @@ from ..meta import prototype, metacharacter, newtypemethod, typeinitmethod
 from .base import DataObject
 from .fields import Scalar
 from .schema import Schema, SampleLogSchema, EventLogSchema, \
-    TransitionLogSchema, CycleLogSchema, PhaseLogSchema
+    PhaseLogSchema, ClipLogSchema, FixChartSchema, PostChartSchema, \
+    SectionChartSchema, SpanChartSchema
 
-__all__ = ['NxRecord', 'Sample', 'Event', 'Transition', 'Cycle', 'Phase']
+__all__ = ['NxRecord', 'Sample', 'Event', 'Transition', 'Clip',
+           'Fix', 'Post', 'Junction', 'Span']
 
 # =============================================================================
 # Record base class
@@ -180,13 +182,25 @@ class Event(NxRecord[EventLogSchema], overtype=True):
     pass
 
 
-class Transition(NxRecord[TransitionLogSchema], overtype=True):
+class Transition(NxRecord[PhaseLogSchema], overtype=True):
     pass
 
 
-class Cycle(NxRecord[CycleLogSchema], overtype=True):
+class Clip(NxRecord[ClipLogSchema], overtype=True):
     pass
 
 
-class Phase(NxRecord[PhaseLogSchema], overtype=True):
+class Fix(NxRecord[FixChartSchema], overtype=True):
+    pass
+
+
+class Post(NxRecord[PostChartSchema], overtype=True):
+    pass
+
+
+class Junction(NxRecord[SectionChartSchema], overtype=True):
+    pass
+
+
+class Span(NxRecord[SpanChartSchema], overtype=True):
     pass

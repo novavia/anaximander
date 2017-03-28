@@ -62,7 +62,7 @@ def featurelog():
 
 def test_instantiation(markertype):
     green = markertype('green')
-    assert list(markertype.shades.keys()) == ['red', 'green']
+    assert list(markertype.shades.keys()) == ['blank', 'red', 'green']
     assert markertype('green') == green
 
 
@@ -72,7 +72,7 @@ def test_declaration():
         red = ant.shade(color='red')
         green = ant.shade(color='green')
         
-    assert list(MyMarker.shades.keys()) == ['red', 'green']
+    assert list(MyMarker.shades.keys()) == ['blank', 'red', 'green']
     assert MyMarker('red').plargs == {'color': 'red'}
 
 

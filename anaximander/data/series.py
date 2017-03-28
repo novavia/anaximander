@@ -189,6 +189,10 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
         """Returns updated version of self with a new pandas Series."""
         return type(self)(data, context=self.context)
 
+    @property
+    def empty(self):
+        return self.data.empty
+
     # Extension / contraction methods
 
     def extend(self, series):

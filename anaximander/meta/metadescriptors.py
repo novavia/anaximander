@@ -211,7 +211,12 @@ class TypeAttribute(MetaDescriptor):
         type_property = property(lambda t: getattr(t, '_' + self.name))
         setattr(mcl, self.name, type_property)
         inst_property = property(lambda i: getattr(type(i), self.name))
-        setattr(self.cls, self.name, inst_property)
+        try:
+            setattr(self.cls, self.name, inst_property)
+        # This happens when an archetype redefines a typeattribute
+        # declared in a parent archetype.
+        except AttributeError:
+            pass
 
     def assign(self, class_or_namespace, value):
         """Assign value to cls or namespace.
@@ -590,14 +595,14 @@ class MetaInstance(MetaDeclaration):
         self.use_name = use_name
         self.kwargs = kwargs
 
-    def __call__(self):
-        """Generates an instance."""
+    def __call__(self, cls):
+        """Generates an instance of the calling class."""
         if self.use_name:
             if isinstance(self.use_name, str):
                 self.kwargs[self.use_name] = self.name
             else:
                 self.kwargs['name'] = self.name
-        return self.cls(*self.args, **self.kwargs)
+        return cls(*self.args, **self.kwargs)
 
 
 def metainstance(*args, inherit=False, **kwargs):

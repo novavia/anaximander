@@ -59,8 +59,11 @@ from ..utilities.functions import monkeypatch
 from ..utilities.xprops import weakproperty, cachedproperty
 from .exceptions import DataError
 from . import fields
+from .data import NxFloat
 
-__all__ = ['Schema', 'SchemaError']
+__all__ = ['Schema', 'SchemaError', 'SampleLogSchema', 'EventLogSchema',
+           'PhaseLogSchema', 'ClipLogSchema', 'FixChartSchema',
+           'PostChartSchema', 'SectionChartSchema', 'SpanChartSchema']
 
 # =============================================================================
 # Schema patching
@@ -302,28 +305,27 @@ class EventLogSchema(TimeSchema):
     """Base schema class for event logs.
 
     Event logs list timestamped events. The events are typed with
-    an integer code, which may be uniform if there is a single type of
-    events. A lookup table from event type to either a string or an object
-    can be provided in a Tract object.
+    an string code, which may be uniform if there is a single type of
+    events.
     """
-    event_type_id = fields.Int(required=True)
+    event_type = fields.Str(required=True)
 
 
-class TransitionLogSchema(TimeSchema):
-    """Base schema class for state transition logs.
+class PhaseLogSchema(TimeSchema):
+    """Base schema class for phase transition logs.
 
-    State transition logs record changes in state, using integer identifier.
+    Phase logs record changes in state, using string identifier.
     Hence a time range-based query on the log allows to reconstruct phases
     spent in different states across the entire range.
     """
-    prev_state_id = fields.Int(required=True)
-    next_state_id = fields.Int(required=True)
+    prev_state = fields.Str(required=True)
+    next_state = fields.Str(required=True)
 
 
-class CycleLogSchema(TimeSchema):
-    """Base schema class for cycle logs.
+class ClipLogSchema(TimeSchema):
+    """Base schema class for clip logs.
 
-    cycle logs require an offset (pandas.DateOffset), which is specified
+    Clip logs require an offset (pandas.DateOffset), which is specified
     in the timestamp field (of type Period). It defaults to hourly.
     """
     timestamp = fields.Period(freq='H', key=True, sequential=True)
@@ -337,13 +339,40 @@ class CycleLogSchema(TimeSchema):
         return self.timestamp.freqstr
 
 
-class PhaseLogSchema(Schema):
-    """A convenience schema type to represent phases.
+class LinearSchema(Schema):
+    """Base class for schemas indexed with a univariate coordinate."""
+    coordinate = fields.Scalar(NxFloat, key=True, sequential=True)
 
-    Phase logs are bijective to Transition logs but may be more convenient
-    for some manipulations. However because they require two timestamps,
-    Transition logs are preferred as primary storage classes.
+
+class FixChartSchema(LinearSchema):
+    """Base class for for fix charts.
+
+    Fix charts simply provide data records at various locations.
     """
-    start_time = fields.Timestamp(required=True)
-    end_time = fields.Timestamp(required=True)
-    state_id = fields.Int(required=True)
+    pass
+
+
+class PostChartSchema(LinearSchema):
+    """Base class for post charts.
+
+    Post charts list typed post along a linear axis.
+    """
+    post_type = fields.Str(required=True)
+
+
+class SectionChartSchema(LinearSchema):
+    """Base class for section charts.
+
+    Section charts record transition between different types of sections.
+    """
+    prev_type = fields.Str(required=True)
+    next_type = fields.Str(required=True)
+
+
+class SpanChartSchema(LinearSchema):
+    """Base class for span charts.
+
+    Span charts require a stride, which is specified in the
+    coordinate field (of type TBD, such as MilePost).
+    """
+    pass
