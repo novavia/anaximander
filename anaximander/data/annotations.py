@@ -22,6 +22,7 @@ from seaborn.palettes import _ColorPalette as ColorPalette
 from ..utilities.functions import typecheck
 from ..utilities import xprops
 from ..utilities.nxtime import datetime
+from ..utilities import nxattr
 from ..utilities.nxrange import float_interval, time_interval, \
     string_interval
 from ..meta.metadescriptors import MetaInstance
@@ -233,7 +234,7 @@ class Shade(MetaInstance):
 
     def __init__(self, **plargs):
         """Takes plot arguments for instantiation."""
-        super().__init__(use_name=True, inherit=True, **plargs)
+        super().__init__(use_name='shade', inherit=True, **plargs)
 
 
 def shade(**plargs):
@@ -250,28 +251,28 @@ class Pen(NxObject):
     def shades(cls):
         return cls.__shades__.copy()
 
-    def __init__(self, name, register=True, **plargs):
+    def __init__(self, shade, register=True, **plargs):
         """Creates a new marker instance.
 
         Params:
-            name: a string used for representational purposes, and optionally
+            shade: a string used for representational purposes, and optionally
                 tor register the marker as a shades in its type.
             register: whether to register the instance as a shade or not.
             **plargs: plot arguments used in figures.
         """
-        self.name = name
+        self.shade = shade
         self.plargs = plargs
         if register:
             self._register()
 
     def _register(self):
         """Registers self as a shade."""
-        self.__shades__[self.name] = self
+        self.__shades__[self.shade] = self
 
     def _unregister(self):
         """Unregisters self as a shade."""
         try:
-            del self.__shades__[self.name]
+            del self.__shades__[self.shade]
         except KeyError:
             pass
 
@@ -281,15 +282,15 @@ class Pen(NxObject):
         cls.__shades__ = OrderedDict()
 
     @typemethod
-    def __call__(cls, name, register=True, **plargs):
+    def __call__(cls, shade, register=True, **plargs):
         """Customizes the metaclass __call__ to fetch from instance cache."""
-        if isinstance(name, cls):
-            return name
+        if isinstance(shade, cls):
+            return shade
         try:
-            return cls.__shades__[name]
+            return cls.__shades__[shade]
         except KeyError:
-            instance = cls.__new__(cls, name, register, **plargs)
-            cls.__init__(instance, name, register, **plargs)
+            instance = cls.__new__(cls, shade, register, **plargs)
+            cls.__init__(instance, shade, register, **plargs)
             return instance
 
 
@@ -325,8 +326,12 @@ class DataAnnotation(NxObject):
         return None
 
 
+@nxattr.s(init=False)
 class Mark(DataAnnotation):
     """An annotation with a location on a sequential axis."""
+    dataobject = nxattr.ib()
+    marker = nxattr.ib()
+    location = nxattr.ib()
 
     def __init__(self, dataobject, marker, loc):
         super().__init__(dataobject)
@@ -353,9 +358,17 @@ class Mark(DataAnnotation):
         """
         return self.dataobject.iloc[self.ix]
 
+    @property
+    def shade(self):
+        return self.marker.shade
 
+
+@nxattr.s(init=False)
 class Highlight(DataAnnotation):
     """An annotation with a lower and upper location."""
+    dataobject = nxattr.ib()
+    highlighter = nxattr.ib()
+    interval = nxattr.ib()
 
     def __init__(self, dataobject, highlighter, lower=None, upper=None):
         super().__init__(dataobject)
@@ -372,6 +385,18 @@ class Highlight(DataAnnotation):
         return self.interval.upper
 
     @property
+    def length(self):
+        return self.interval.length
+
+    @property
+    def bounds(self):
+        return self.interval.bounds
+
+    @property
+    def shade(self):
+        return self.highlighter.shade
+
+    @property
     def data(self):
         """Returns the slice of dataobject corresponding to self's bounds."""
         return self.dataobject.loc[self.lower:self.upper]
@@ -383,8 +408,8 @@ class Highlight(DataAnnotation):
         prev and next, both defaulting to the blank highligher.
         """
         highlighter_type = type(self.highlighter)
-        prev_highlighter = highlighter_type(prev).name
-        next_highlighter = highlighter_type(next).name
-        this_highlighter = self.highlighter.name
-        return ((self.lower, prev_highlighter, this_highlighter),
-                (self.upper, this_highlighter, next_highlighter))
+        prev_shade = highlighter_type(prev).shade
+        next_shade = highlighter_type(next).shade
+        this_shade = self.highlighter.shade
+        return ((self.lower, prev_shade, this_shade),
+                (self.upper, this_shade, next_shade))

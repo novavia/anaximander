@@ -12,6 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import deque
+import itertools
 
 import functools
 import sys
@@ -127,6 +128,15 @@ def vmap(function, mapping):
     """
     return ((k, function(v)) for k, v in mapping.items())
 
+
+def pairwise(iterable):
+    """Returns an iterator over successive pairs in iterable.
+
+    Practically, returns a zip(iterable[:-1], iterable[1:]).
+    """
+    left, right = itertools.tee(iterable)
+    next(right, None)
+    return zip(left, right)    
 
 # =============================================================================
 # Function decorators

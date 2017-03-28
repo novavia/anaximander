@@ -140,12 +140,35 @@ class MarkDigest(Digest, schema=MarkSchema):
 
     @classmethod
     def from_marks(cls, dataobject, marker_type, marks):
+        marks = list(marks)
         if not marks:
             return EmptyMarkDigest(dataobject, marker_type)
-        marksdata = ((m.location, m.marker.name) for m in marks)
+        marksdata = ((m.location, m.marker.shade) for m in marks)
         schema = _domain_to_mark_schema[marks[0].domain]
         data = pd.DataFrame(marksdata, columns=schema.fieldnames)
         return cls(dataobject, marker_type, data)
+
+    def marks(self, *shades):
+        """Returns the list of marks, with optional shade filter.
+
+        By default, blank shades are ignored.
+        """
+        dataobject = self.dataobject
+        marker_type = self.marker_type
+        def mark(record):
+            loc, shade = record.as_tuple()
+            return Mark(dataobject, marker_type(shade), loc)
+        marks = [mark(r) for r in self]
+        def filter_(mark):
+            if not shades:
+                return mark.shade != 'blank'
+            else:
+                return mark.shade in shades
+        return list(filter(filter_, marks))
+
+    def records(self, *shades):
+        """Returns the records from dataobject corresponding to marks."""
+        return [self.dataobject.loc[m.location] for m in self.marks(*shades)]
 
 
 class HighlightDigest(Digest, schema=HighlightSchema):
@@ -170,6 +193,7 @@ class HighlightDigest(Digest, schema=HighlightSchema):
 
     @classmethod
     def from_highlights(cls, dataobject, highlighter_type, highlights):
+        highlights = list(highlights)
         if not highlights:
             return EmptyHighlightDigest(dataobject, highlighter_type)
         highsdata = list(chain(*[h.transitions() for h in highlights]))
@@ -189,6 +213,32 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         data = data[(data.prev_highlighter != 'blank') | \
                     (data.next_highlighter != 'blank')]
         return cls(dataobject, highlighter_type, data)
+
+    def highlights(self, *shades):
+        """Returns the list of highlights, with optional filter.
+
+        By default, blank shades are ignored.
+        """
+        dataobject = self.dataobject
+        highlighter_type = self.highlighter_type
+        def highlight(pair):
+            """Returns a highlight from a successive record pair."""
+            left, right = pair
+            lower, _, shade = left.as_tuple()
+            upper, *_ = right.as_tuple()
+            return Highlight(dataobject, highlighter_type(shade), lower, upper)
+        highlights = [highlight(pair) for pair in fun.pairwise(self)]
+        def filter_(highlight):
+            if not shades:
+                return highlight.shade != 'blank'
+            else:
+                return highlight.shade in shades
+        return list(filter(filter_, highlights))
+
+    def sessions(self, *shades):
+        """Returns the list of sessions corresponding to highlights."""
+        highlights = self.highlights(*shades)
+        return [self.dataobject.loc[h.lower:h.upper] for h in highlights]
 
 # =============================================================================
 # Concrete Digest classes
@@ -297,7 +347,7 @@ class MarkSurvey(Survey):
 
     def __call__(self, plot=False):
         """Calls the survey function with optional runtime arguments."""
-        marks = self.__marks__(*self.series, **self.params)
+        marks = self.marks()
         digest = MarkDigest.from_marks(self.dataobject, self.markertype, marks)
         self._digest = digest
         if plot:
@@ -308,6 +358,16 @@ class MarkSurvey(Survey):
     def mark(self, shade, loc):
         marker = self.markertype(shade)
         return Mark(self.dataobject, marker, loc)
+
+    def marks(self, *shades):
+        """Returns the marks from survey, with optional filter."""
+        marks = self.__marks__(*self.series, **self.params)
+        def filter_(mark):
+            if not shades:
+                return True
+            else:
+                return mark.shade in shades
+        return list(filter(filter_, marks))
 
     @abc.abstractmethod
     def __marks__(self, *series, **params):
@@ -320,7 +380,7 @@ class HighlightSurvey(Survey):
 
     def __call__(self, plot=False):
         """Calls the survey function with optional runtime arguments."""
-        highlights = self.__highlights__(*self.series, **self.params)
+        highlights = self.highlights()
         digest = HighlightDigest.from_highlights(self.dataobject,
                                                  self.highlightertype,
                                                  highlights)
@@ -333,6 +393,16 @@ class HighlightSurvey(Survey):
     def highlight(self, shade, lower, upper):
         highligther = self.highlightertype(shade)
         return Highlight(self.dataobject, highligther, lower, upper)
+
+    def highlights(self, *shades):
+        """Returns the highlights from survey, with optional filter."""
+        highlights = self.__highlights__(*self.series, **self.params)
+        def filter_(highlight):
+            if not shades:
+                return True
+            else:
+                return highlight.shade in shades
+        return list(filter(filter_, highlights))
 
     @abc.abstractmethod
     def __highlights__(self, *series, **params):

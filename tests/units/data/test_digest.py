@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import os.path
 
+import pandas as pd
 import pytest
 
 import anaximander as nx
@@ -106,17 +107,40 @@ def test_instantiation(featurelog, turefealog):
 
 def test_mark_survey(featurelog, turefealog):
     survey = ThresholdMarkSurvey(featurelog, 'Feature_Value_0', threshold=500)
-    assert len(survey()) == 2
+    marks = survey.marks()
+    digest = survey()
+    assert len(digest) == 2
+    assert digest.marks() == marks
+    assert len(digest.records()) == 2
+    assert all(isinstance(r, Feature.Record) for r in digest.records())
+    assert len(digest.records('purple')) == 0
     survey = ThresholdMarkSurvey(turefealog, 'Feature_Value_0', threshold=500)
-    assert len(survey()) == 2
+    marks = survey.marks()
+    digest = survey()
+    assert len(digest) == 2
+    assert digest.marks() == marks
 
 
 def test_highlight_survey(featurelog, turefealog):
-    survey = ThresholdHighlightSurvey(featurelog, 2, threshold=10)
-    assert len(survey()) == 4
+    def th_survey(log):
+        return ThresholdHighlightSurvey(log, 2, threshold=10)
+    survey = th_survey(featurelog)
+    highlights = survey.highlights()
+    digest = survey()
+    assert len(digest) == 4
+    zero = pd.Timedelta(microseconds=1)
+    assert digest.highlights() == [h for h in highlights if h.length > zero]
+    assert len(digest.sessions()) == 2
+    assert all(isinstance(s, Feature.Sequence) for s in digest.sessions())
+    assert all(len(th_survey(s)().sessions()) == 1 for s in digest.sessions())
+    assert len(digest.sessions('purple')) == 0
+    assert len(digest.sessions('yellow', 'blank')) == 3
     dt_threshold = datetime.min
     survey = ThresholdHighlightSurvey(turefealog, 2, threshold=dt_threshold)
-    assert len(survey()) == 2
+    highlights = survey.highlights()
+    digest = survey()
+    assert len(digest) == 2
+    assert digest.highlights() == highlights
 
 
 if __name__ == '__main__':
