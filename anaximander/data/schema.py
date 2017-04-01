@@ -166,6 +166,11 @@ class _SchemaMetaPatch:
         return OrderedDict((k, v) for k, v in cls.fields.items() if v.key)
 
     @cachedproperty
+    def keynames(cls):
+        """Returns a tuple of key field names, in sequence."""
+        return tuple(cls.keys().keys())
+
+    @cachedproperty
     def nskeys(cls):
         """Returns an OrderedDict of non-sequential key fields in a Schema."""
         pairs = ((k, v) for k, v in cls.keys.items() if not v.sequential)

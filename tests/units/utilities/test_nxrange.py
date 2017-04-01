@@ -34,7 +34,8 @@ class TestTimeInterval(TestCase):
         interval = rge.time_interval('2017-3-20 12:00', None)
         assert interval.upper == datetime.max
         with pytest.raises(ValueError):
-            rge.time_interval('one', 'two')
+            interval = rge.time_interval('one', 'two')
+            interval.bounds
         assert rge.time_interval(interval) == interval
 
     def test_properties(self):
@@ -48,6 +49,23 @@ class TestTimeInterval(TestCase):
         i1 = rge.time_interval('2017-3-20 12:00', None)
         assert not i1 in interval        
 
+    def test_sql(self):
+        lower = '2017-3-20'
+        upper = '2017-3-21'
+        interval = rge.time_interval(lower, upper)
+        sql = "timestamp >= '2017-03-20 00:00:00+00:00' AND " + \
+              "timestamp <= '2017-03-21 00:00:00+00:00'"
+        assert interval.sql('timestamp') == sql
+        interval = rge.time_interval(lower)
+        sql = "timestamp >= '2017-03-20 00:00:00+00:00'"
+        assert interval.sql('timestamp') == sql
+        interval = rge.time_interval()
+        assert interval.sql('timestamp') == ""
+        lower = 0.0
+        upper = 1.0
+        interval = rge.float_interval(lower, upper)
+        sql = "x >= 0.0 AND x <= 1.0"
+        assert interval.sql('x') == sql
 
 class TestDiscreteRange(TestCase):
 
@@ -67,6 +85,14 @@ class TestDiscreteRange(TestCase):
         assert 'i0' in levels
         levels_repr = repr(levels._levels)
         assert repr(levels) == "Levels({0})".format(levels_repr)
+
+    def test_sql(self):
+        levels = rge.Levels(['i0', 'i1'])
+        sqls = ["x IN ('i0', 'i1')", "x IN ('i1', 'i0')"]
+        assert levels.sql('x') in sqls
+        level = rge.Level('item')
+        sql = "x = 'item'"
+        assert level.sql('x') == sql
 
 if __name__ == '__main__':
     pytest.main([__file__])

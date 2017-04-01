@@ -14,7 +14,6 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
-from collections.abc import Iterable
 import weakref
 
 from .functions import typecheck

@@ -290,7 +290,7 @@ class Scalar(NxDataField):
             self.fail('validator_failed')
 
     def _pythonize(self, val):
-        return val._data.item()
+        return self.datatype.number(val)
 
     def _depythonize(self, val):
         return self.datatype(val)

@@ -20,7 +20,8 @@ import numpy as np
 
 from anaximander.utilities import functions as fun
 from anaximander.meta.nxtype import archetype
-from anaximander.meta import typeattribute, metamethod, typeinitmethod
+from anaximander.meta import typeattribute, metamethod, typeinitmethod, \
+    cachedtypeproperty
 from .exceptions import ValidationError
 from .base import DataObject
 from .quantities import Quantity
@@ -186,11 +187,27 @@ class NxScalar(NxData):
     def __round__(self):
         return round(self._data)
 
+    def __bool__(self):
+        return bool(self._data)
+
     @typeinitmethod
     def __coerce_index__(cls):
         """Adds __index__ coercion method based on dtype."""
         if cls.dtype.kind in ('b', 'i', 'u'):
             cls.__index__ = lambda s: int(s._data)
+
+    @cachedtypeproperty
+    def number(cls):
+        """Returns a number coercion function appropriate for cls."""
+        numbermap = {'b': bool,
+                     'i': int,
+                     'u': int,
+                     'f': float,
+                     'c': complex}
+        try:
+            return numbermap[cls.dtype.kind]
+        except (KeyError, AttributeError):
+            return lambda d: NotImplemented
 
     def __repr__(self):
         type_name = type(self).__name__

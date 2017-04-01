@@ -81,6 +81,12 @@ class TestCollectionFunctions(TestCase):
         with self.assertRaises(ValueError):
             union = fun.dictunion(d0, d1, unique_keys=True)
 
+def test_pairwise():
+    iterable = range(4)
+    assert list(fun.pairwise(iterable)) == [(0, 1), (1, 2), (2, 3)]
+    assert list(fun.pairwise(iterable, 2)) == [(0, 1), (2, 3)]
+    assert list(fun.pairwise(iterable, 3)) == [(0, 1)]
+
 
 class TestDecorators(TestCase):
 

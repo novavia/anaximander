@@ -34,6 +34,7 @@ from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
 from .annotations import interval
 from .record import NxRecord
 from .series import NxSeries
+from .plot import plot_series
 
 __all__ = ['NxDataFrame', 'NxDataCollection', 'NxDataMapping',
            'NxDataSequence', 'CsvLoader', 'CsvDumper', 'ConformityError']
@@ -316,6 +317,24 @@ class NxDataFrame(IndexedDataObject):
 
     def __str__(self):
         return self._data.__str__()
+
+    # Plotting
+
+    def plot(self, field=None, ax='new', **kwargs):
+        """Customized plot function.
+
+        Params:
+            field: a fieldname to plot. Defaults to the first non-key field.
+            ax: 'new' for new plot, otherwise see pandas series plot.
+        """
+        try:
+            field = fun.get(field, self.schema.nonkeyfieldnames[0])
+        except IndexError:
+            msg = "Could not determine which field to plot."
+            raise FrameError(msg)
+        series = getattr(self, field)()
+        ax = plot_series(series, ax, **kwargs)
+        return ax
 
     # I/O methods
 

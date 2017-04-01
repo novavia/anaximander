@@ -13,9 +13,10 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections.abc import Set, Iterable
+from numbers import Number
 
 from .nxtime import datetime
-from . import nxattr
+from . import nxattr, xprops
 from .functions import passthrough
 
 
@@ -39,10 +40,33 @@ class DiscreteRange(Range):
     """Abstract base class for Ranges in discrete data dimensions."""
 
 
-@nxattr.s
+def _sqlstring(val):
+    """Makes val into a string, single-quoted or unquoted as appropriate."""
+    if isinstance(val, Number):
+        return str(val)
+    else:
+        return "'{0}'".format(val)
+
+
+@nxattr.s(init=False, these={'lower': nxattr.ib(), 'upper': nxattr.ib()})
 class Interval(ContinuousRange, Iterable):
-    lower = nxattr.ib()
-    upper = nxattr.ib()
+    """For now intervals are closed."""
+    __lower_convert__ = None
+    __upper_convert__ = None
+    
+    def __init__(self, lower=None, upper=None):
+        self._lower_input = lower
+        self._lower = self.__lower_convert__(lower)
+        self._upper_input = upper
+        self._upper = self.__upper_convert__(upper)
+    
+    @xprops.cachedproperty
+    def lower(self):
+        return None
+
+    @xprops.cachedproperty
+    def upper(self):
+        return None
 
     @property
     def length(self):
@@ -61,7 +85,18 @@ class Interval(ContinuousRange, Iterable):
         else:
             return item >= self.lower and item <= self.upper
 
-
+    def sql(self, attr):
+        """Returns a sql statement fragment making attr within self."""
+        if self._lower_input is not None:
+            lower = attr + " >= " + _sqlstring(self.lower)
+        else:
+            lower = None
+        if self._upper_input is not None:
+            upper = attr + " <= " + _sqlstring(self.upper)
+        else:
+            upper = None
+        return " AND ".join((s for s in (lower, upper) if s is not None))
+    
 
 def _lower_float_convert(value):
     if value is None:
@@ -72,16 +107,15 @@ def _lower_float_convert(value):
 
 def _upper_float_convert(value):
     if value is None:
-        return float('-inf')
+        return float('inf')
     else:
         return float(value)
 
 
-@nxattr.s(inherit=False)
 class FloatInterval(Interval):
     """An interval of floats."""
-    lower = nxattr.ib(convert=_lower_float_convert)
-    upper = nxattr.ib(convert=_upper_float_convert)    
+    __lower_convert__ = staticmethod(_lower_float_convert)
+    __upper_convert__ = staticmethod(_upper_float_convert)
 
 
 def _lower_time_convert(value):
@@ -98,7 +132,6 @@ def _upper_time_convert(value):
         return datetime(value)
 
 
-@nxattr.s(inherit=False)
 class TimeInterval(Interval):
     """An interval of datetimes.
 
@@ -109,8 +142,8 @@ class TimeInterval(Interval):
     which case it will be converted to anaximander's absolute time bounds,
     currently set at Jan. 1 1970, UTC and Jan. 1 2100, UTC.
     """
-    lower = nxattr.ib(convert=_lower_time_convert)
-    upper = nxattr.ib(convert=_upper_time_convert)
+    __lower_convert__ = staticmethod(_lower_time_convert)
+    __upper_convert__ = staticmethod(_upper_time_convert)
 
 
 def _lower_string_convert(value):
@@ -131,11 +164,10 @@ def _upper_string_convert(value):
         return str(value)
 
 
-@nxattr.s(inherit=False)
 class StringInterval(Interval):
     """An interval of strings."""
-    lower = nxattr.ib(convert=_lower_string_convert)
-    upper = nxattr.ib(convert=_upper_string_convert)
+    __lower_convert__ = staticmethod(_lower_string_convert)
+    __upper_convert__ = staticmethod(_upper_string_convert)
 
 
 class Levels(DiscreteRange, Set):
@@ -156,6 +188,10 @@ class Levels(DiscreteRange, Set):
     def __repr__(self):
         return "Levels({0})".format(repr(self._levels))
 
+    def sql(self, attr):
+        """Returns a sql statement fragment making attr within self."""
+        return attr + " IN (" + ", ".join(_sqlstring(l) for l in self) + ")"
+
 
 class Level(DiscreteRange):
     """Holds a single level."""
@@ -168,6 +204,10 @@ class Level(DiscreteRange):
 
     def __repr__(self):
         return "Level({0})".format(repr(self._level))
+
+    def sql(self, attr):
+        """Returns a sql statement fragment making attr equals to self."""
+        return attr + " = " + _sqlstring(self._level)
 
 # =============================================================================
 # Helper functions

@@ -145,3 +145,13 @@ def test_highlight_survey(featurelog, turefealog):
 
 if __name__ == '__main__':
     pytest.main([__file__])
+    def th_survey(log):
+        return ThresholdHighlightSurvey(log, 2, threshold=10)
+    log = featurelog()
+    survey = th_survey(log)    
+    digest = survey()
+    from anaximander.data.plot import plot_highlights
+#    ax = log.plot()
+#    plot_highlights(digest, ax, ymin=0, ymax=200)
+    ax = plot_highlights(digest, ymin=0, ymax=200)
+    log.plot(ax=ax)

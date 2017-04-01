@@ -129,14 +129,15 @@ def vmap(function, mapping):
     return ((k, function(v)) for k, v in mapping.items())
 
 
-def pairwise(iterable):
-    """Returns an iterator over successive pairs in iterable.
-
-    Practically, returns a zip(iterable[:-1], iterable[1:]).
-    """
+def pairwise(iterable, step=1):
+    """Returns an iterator of element pairs, progressing with step."""
     left, right = itertools.tee(iterable)
     next(right, None)
-    return zip(left, right)    
+    pairs = zip(left, right)
+    if step == 1:
+        return pairs
+    else:
+        return itertools.islice(pairs, 0, None, step)
 
 # =============================================================================
 # Function decorators

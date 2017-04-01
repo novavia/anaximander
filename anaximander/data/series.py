@@ -24,12 +24,13 @@ import seaborn as sns
 
 from ..utilities import xprops
 from ..utilities.functions import spformat
-from ..utilities.nxtime import datetime, tz_aware
+from ..utilities.nxtime import tz_aware
 from ..utilities.nxrange import levels, Level, Levels
 from ..meta import prototype, metacharacter, typeproperty
 from .exceptions import DataError
 from .base import IndexedDataObject, RowSlicer
 from .data import NxData
+from .plot import plot_series
 from .annotations import interval
 
 __all__ = ['NxSeries']
@@ -193,6 +194,10 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
     def empty(self):
         return self.data.empty
 
+    @property
+    def name(self):
+        return self.data.name
+
     # Extension / contraction methods
 
     def extend(self, series):
@@ -204,11 +209,6 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
     # Plotting functionalities
 
     @xprops.cachedproperty
-    def pencolor(self):
-        """Caches the pen color for plotting self's data."""
-        return DC1
-
-    @xprops.cachedproperty
     def curax(self):
         """Caches a matplotlib axis on which the series is plot."""
         return self.plot()
@@ -218,12 +218,7 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
 
         :param ax: 'new' for new plot, otherwise see super.
         """
-        if ax == 'new':
-            fig, ax = plt.subplots()
-        self._pencolor = kwargs.setdefault('color', DC1)
-        kwargs.setdefault('title', str(self.context) if self.context else None)
-        ax = self.data.plot(ax=ax, **kwargs)
-        ax.set_xlabel('')
+        ax = plot_series(self, ax, **kwargs)
         self._curax = ax
         return ax
 

@@ -170,6 +170,36 @@ class MarkDigest(Digest, schema=MarkSchema):
         """Returns the records from dataobject corresponding to marks."""
         return [self.dataobject.loc[m.location] for m in self.marks(*shades)]
 
+    def sub(self, data):
+        """Returns an object with identical attributes except for mark data."""
+        return type(self)(self.dataobject, self.marker_type, data)
+
+    def shades(self, *shades):
+        """Returns a set of shades found in self, with optional fiter.
+
+        By default the blank shade is ommitted.
+        """
+        datashades = set(self.data.marker.unique())
+        if not shades:
+            return datashades - {'blank'}
+        else:
+            return datashades & set(shades)
+
+    def shadegroups(self, *shades):
+        """Returns a list of digests with single markers.
+
+        Optionally, a set of shades can be specified to downselect.
+        By default, the blank shade is ommitted.
+        """
+        grouped = self.data.groupby('marker')
+        keys = set(grouped.groups.keys())
+        if not shades:
+            keys -= {'blank'}
+        else:
+            keys &= set(shades)
+        groups = (grouped.get_group(k) for k in keys)
+        return [self.sub(g) for g in groups]
+
 
 class HighlightDigest(Digest, schema=HighlightSchema):
     """Base class and interface for Highlight Digests."""
@@ -240,32 +270,76 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         highlights = self.highlights(*shades)
         return [self.dataobject.loc[h.lower:h.upper] for h in highlights]
 
+    def sub(self, data):
+        """Returns an object with identical attributes except for data."""
+        return type(self)(self.dataobject, self.highlighter_type, data)
+
+    def shades(self, *shades):
+        """Returns a set of shades found in self, with optional fiter.
+
+        By default the blank shade is ommitted.
+        """
+        prev_shades = set(self.data.prev_highlighter.unique())
+        next_shades = set(self.data.next_highlighter.unique())
+        datashades = prev_shades | next_shades
+        if not shades:
+            return datashades - {'blank'}
+        else:
+            return datashades & set(shades)
+
+    def shadegroups(self, *shades):
+        """Returns a list of digests with single markers.
+
+        Optionally, a set of shades can be specified to downselect.
+        By default, the blank shade is ommitted.
+        """
+        grouped_prev = self.data.groupby('prev_highlighter')
+        grouped_next = self.data.groupby('next_highlighter')
+        keys = grouped_next.groups.keys() | grouped_prev.groups.keys()
+        if not shades:
+            keys -= {'blank'}
+        else:
+            keys &= set(shades)
+        groups = []
+        for k in keys:
+            try:
+                gprev = grouped_prev.get_group(k)
+                gnext = grouped_next.get_group(k)
+            except KeyError:
+                continue
+            group = gprev.merge(gnext, 'outer')
+            groups.append(group)
+        return [self.sub(g) for g in groups]
+
 # =============================================================================
 # Concrete Digest classes
 # =============================================================================
 
 
 class FloatMarkDigest(MarkDigest, schema=FloatMarkSchema):
+    domain = 'float'
 
     def __new__(cls, dataobject, marker_type, data=None):
         return NxObject.__new__(cls)
 
 
 class FloatHighlightDigest(HighlightDigest, schema=FloatHighlightSchema):
+    domain = 'float'
 
-    
     def __new__(cls, dataobject, highlighter_type, data=None):
         return NxObject.__new__(cls)
 
 
 class TimeMarkDigest(MarkDigest, schema=TimeMarkSchema):
+    domain = 'time'
 
     def __new__(cls, dataobject, marker_type, data=None):
         return NxObject.__new__(cls)
 
 
 class TimeHighlightDigest(HighlightDigest, schema=TimeHighlightSchema):
-    
+    domain = 'time'
+
     def __new__(cls, dataobject, highlighter_type, data=None):
         return NxObject.__new__(cls)
 
