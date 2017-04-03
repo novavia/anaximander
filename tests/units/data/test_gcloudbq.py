@@ -36,10 +36,6 @@ MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 # =============================================================================
 
 
-test_domain = dat.Domain('test')
-
-
-@dat.domain('test')
 @dat.tract
 class DeviceData(sch.Schema):
     mac = fld.ReStr(key=True, pattern=MAC_PATTERN)
@@ -69,12 +65,11 @@ def storage():
         cleanup(dataset)
     else:
         dataset.create()
-    tables = gbq.create_all(dataset, test_domain)
-    table = list(tables)[0]
+    table = gbq.BigQueryDataTable[DeviceData.Schema](dataset, 'DeviceData')
+    table.create()
     # Populates the table with some data
     data = DeviceData.Frame(featurelog())
-    channel = gbq.BigQueryChannel(DeviceData, table)
-    channel.append(data)
+    table.append(data)
     yield dataset, table  # provide the fixture value
     cleanup(dataset)
 
@@ -86,59 +81,16 @@ def storage():
 pytestmark = [pytest.mark.online, pytest.mark.gcloud]
 
 
-#def test_bqfield():
-#    mac = gbq.bqfield(DeviceData.Schema.mac)
-#    timestamp = gbq.bqfield(DeviceData.Schema.timestamp)
-#    accel_x = gbq.bqfield(DeviceData.Schema.accel_x)
-#    assert isinstance(mac, bq.SchemaField)
-#    assert isinstance(timestamp, bq.SchemaField)
-#    assert isinstance(accel_x, bq.SchemaField)
-#    assert mac.field_type is 'STRING'
-#    assert timestamp.field_type is 'TIMESTAMP'
-#    assert accel_x.field_type is 'FLOAT'
-#
-#
-#def test_create_all(storage):
-#    _, table = storage
-#    assert table.exists()
-#    assert table.friendly_name == 'DeviceData'
-#
-#
-#def test_append(storage):
-#    _, table = storage
-#    data = DeviceData.Frame(featurelog())
-#    channel = gbq.BigQueryChannel(DeviceData, table)
-#    response = channel.append(data)
-#    assert response == []
-#
-#
-#def test_insert(storage):
-#    _, table = storage
-#    data = DeviceData.Frame(featurelog())
-#    channel = gbq.BigQueryChannel(DeviceData, table)
-#    records = data.to_records()
-#    response = channel.insert(*records)
-#    assert response == []
-#
-#
-#def test_query(storage):
-#    _, table = storage
-#    channel = gbq.BigQueryChannel(DeviceData, table)
-#    query = channel.query(limit=10)
-#    frame = query()
-#    assert type(frame) is DeviceData.Frame
-#    assert len(frame) == 10
-#
-#
-#def test_raw_query(storage):
-#    _, table = storage
-#    channel = gbq.BigQueryChannel(DeviceData, table)
-#    sql = "SELECT * FROM [{p}:{d}.{t}] LIMIT 10"
-#    sql = sql.format(p=PROJECT_ID, d=DATASET_ID, t=DeviceData.tbname)
-#    query = channel.rawquery(sql)
-#    frame = query()
-#    assert type(frame) is DeviceData.Frame
-#    assert len(frame) == 10
+def test_bqfield():
+    mac = gbq.bqfield(DeviceData.Schema.mac)
+    timestamp = gbq.bqfield(DeviceData.Schema.timestamp)
+    accel_x = gbq.bqfield(DeviceData.Schema.accel_x)
+    assert isinstance(mac, bq.SchemaField)
+    assert isinstance(timestamp, bq.SchemaField)
+    assert isinstance(accel_x, bq.SchemaField)
+    assert mac.field_type is 'STRING'
+    assert timestamp.field_type is 'TIMESTAMP'
+    assert accel_x.field_type is 'FLOAT'
 
 
 def test_bqtable_instance(storage):
@@ -159,7 +111,22 @@ def test_sql_generator(storage):
     assert query.sql == "SELECT mac, timestamp, accel_x FROM " + \
         "[anaximander-tests:InterfaceTesting.DeviceData] " + \
         "WHERE mac = '68:9E:19:07:DE:C3' AND " + \
-        "timestamp >= '2016-09-14 10:04:00+00:00' ORDER BY timestamp"    
+        "timestamp >= '2016-09-14 10:04:00+00:00' ORDER BY timestamp" 
+
+
+def test_append(storage):
+    _, table = storage
+    data = DeviceData.Frame(featurelog())
+    response = table.append(data)
+    assert response == []
+
+
+def test_insert(storage):
+    _, table = storage
+    data = DeviceData.Frame(featurelog())
+    records = data.to_records()
+    response = table.insert(*records)
+    assert response == []
 
 
 def test_fetch(storage):
@@ -174,9 +141,29 @@ def test_frame(storage):
     dataset, _ = storage
     bqtable = gbq.BigQueryDataTable[DeviceData.Schema](dataset, 'DeviceData')
     query = gbq.BigQueryQuery(bqtable, mac='68:9E:19:07:DE:C3')
-    frame = query.frame()
+    frame = query.frame(limit=3)
     assert type(frame) == DeviceData.Frame
+    assert frame.mac.unique == {'68:9E:19:07:DE:C3'}
     assert len(frame) == 3
+
+
+def test_query(storage):
+    _, table = storage
+    query = table.query()
+    frame = query.frame(limit=5)
+    assert type(frame) is DeviceData.Frame
+    assert len(frame) == 5
+
+
+def test_raw_query(storage):
+    _, table = storage
+    sql = "SELECT * FROM [{p}:{d}.{t}] LIMIT 5"
+    sql = sql.format(p=PROJECT_ID, d=DATASET_ID, t=DeviceData.tbname)
+    query = table.query(sql=sql)
+    frame = query.frame()
+    assert type(frame) is DeviceData.Frame
+    assert len(frame) == 5
+
 
 if __name__ == '__main__':
     pytest.main([__file__])

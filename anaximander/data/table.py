@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import OrderedDict
+import warnings
 
 import pandas as pd
 
@@ -47,7 +48,12 @@ class DataTableReadException(DataTableException):
 
 class DataTableWriteException(DataTableException):
     """Exception related to writing / updating data in a table."""
+    pass
 
+
+class DataTableWarning(UserWarning):
+    """Customized warning type for data tables."""
+    pass
 
 # =============================================================================
 # Class declaration
@@ -70,17 +76,38 @@ class DataTable(NxObject):
     def exists(self):
         pass
 
-    # TODO: add check for table existence and options for warning / overwrite
-    def create(self, **kwargs):
-        """Creates the table in the database."""
+    def create(self, warn=True, **kwargs):
+        """Creates the table in the database.
+
+        Params:
+            warn (Bool): if True, a warning and confirmation prompt are raised
+                if the table already exists.
+        """
+        if warn and self.exists:
+            msg = "Attempting to create table {0}, which already exists."
+            warnings.warn(msg.format(self), DataTableWarning)
+            if self.remove() is False:
+                return   
         return self.__create__(**kwargs)
 
     @abc.abstractmethod
     def __remove__(self):
         pass
 
-    def remove(self, **kwargs):
-        """Removes the table in the database."""
+    def remove(self, confirm=True, **kwargs):
+        """Removes the table in the database.
+
+        Params:
+            confirm: a confirmation prompt designed to prevent accidental
+                mistakes.
+        """
+        if confirm:
+            msg = "This operation will delete {0} and all its data. \
+                   Type 'YES' if you wish to proceed."
+            confirmation = input(msg.format(self))
+            if not confirmation == 'YES':
+                print("Table remove operation aborted.")
+                return False
         return self.__remove__(**kwargs)
 
     @abc.abstractmethod
