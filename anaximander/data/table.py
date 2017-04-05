@@ -76,18 +76,26 @@ class DataTable(NxObject):
     def exists(self):
         pass
 
-    def create(self, warn=True, **kwargs):
+    def create(self, warn=True, remove=None, **kwargs):
         """Creates the table in the database.
 
         Params:
             warn (Bool): if True, a warning and confirmation prompt are raised
                 if the table already exists.
+            remove: if None, proceed to prompt the user in case an existing
+                table needs to be removed. If T/F, skips the prompt and
+                operate accordingly.
         """
         if warn and self.exists:
             msg = "Attempting to create table {0}, which already exists."
             warnings.warn(msg.format(self), DataTableWarning)
-            if self.remove() is False:
-                return   
+            if remove is None:
+                if self.remove() is False:
+                    return
+            elif remove is True:
+                self.remove(False)
+            elif remove is False:
+                return
         return self.__create__(**kwargs)
 
     @abc.abstractmethod
@@ -119,12 +127,13 @@ class DataTable(NxObject):
         return self.__query__(*fields, **kwargs)
 
     @abc.abstractmethod
-    def __insert__(self, *records, **kwargs):
+    def __insert__(self, record, **kwargs):
         pass
 
     def insert(self, *records, **kwargs):
         """Inserts one or more records into table."""
-        return self.__insert__(*records, **kwargs)
+        for record in records:
+            self.__insert__(record, **kwargs)
 
     @abc.abstractmethod
     def __append__(self, frame, **kwargs):
@@ -135,26 +144,28 @@ class DataTable(NxObject):
         if not isinstance(frame, NxDataFrame) or frame.schema != self.schema:
             msg = "Incorrect data frame type supplied to {0}."
             raise TypeError(msg.format(self))
-        return self.__append__(frame, **kwargs)
+        self.__append__(frame, **kwargs)
 
-    def __update__(self, *records, **kwargs):
+    def __update__(self, record, **kwargs):
         raise NotImplementedError
 
     def update(self, *records, **kwargs):
         """Updates rows in place from records, or inserts if not found."""
         try:
-            return self.__update__(*records, **kwargs)
+            for record in records:
+                self.__update__(record, **kwargs)
         except NotImplementedError:
             msg = "Updating is not implemented on {0} table objects."""
             raise DataTableWriteException(msg.format(type(self)))
 
-    def __delete__(self, *rowkeys, **kwargs):
+    def __delete__(self, rowkey, **kwargs):
         raise NotImplementedError
 
     def delete(self, *rowkeys, **kwargs):
         """Deletes the specified rows from a key or other arguments."""
         try:
-            return self.__delete__(*rowkeys, **kwargs)
+            for rowkey in rowkeys:
+                self.__delete__(rowkeys, **kwargs)
         except NotImplementedError:
             msg = "Deleting is not implemented on {0} table objects."""
             raise DataTableWriteException(msg.format(type(self)))
@@ -249,18 +260,17 @@ class DataQuery(NxObject):
         return iter([])
 
     def fetch(self, **kwargs):
-        """Returns an iterator of query results, as data records."""
-        rowgenerator = self.__fetch__(**kwargs)
-        schema = self.table.schema()
-        rows = [{k: v for k, v in zip(self.fields, r)} for r in rowgenerator]
-        return (schema.load(r).data for r in rows)
+        """Returns an iterator of query results, as rows."""
+        return self.__fetch__(**kwargs)
 
-    def first(self):
+    def first(self, **kwargs):
         try:
-            return next(self.fetch())
+            row = dict(zip(self.fields, next(self.fetch(**kwargs))))
         except StopIteration:
             msg = "Query returns no results."
             raise DataTableReadException(msg)
+        schema = self.table.schema()
+        return schema.load(row).data
 
     @property
     def frametype(self):

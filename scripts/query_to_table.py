@@ -24,8 +24,6 @@ from anaximander.data.tract import tract, DataDomain, domain
 
 
 PROJECT_ID = 'infinite-uptime-1232'
-DATA_TABLE_NAME = "IU_device_data"
-RAW_DATA_TABLE_NAME = "Raw_Data"
 
 SCRIPT_DIR = os.path.dirname(__file__)
 DATA_DIR = SCRIPT_DIR
@@ -151,9 +149,9 @@ class Query:
 
 if __name__ == '__main__':
     frame = DeviceData.Frame.from_csv(DATA_FILE)
-#    create_table()
-#    upload(frame)
-#    query = Query()
-#    print(query.to_frame().data)
-#    delete_table()
+    create_table()
+    upload(frame)
+    query = Query()
+    print(query.to_frame().data)
+    delete_table()
     

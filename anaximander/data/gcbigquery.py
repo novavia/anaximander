@@ -180,14 +180,14 @@ class BigQueryDataTable(DataTable):
     def __query__(self, *fields, **kwargs):
         return BigQueryQuery(self, *fields, **kwargs)
 
-    def __insert__(self, *records, **kwargs):
-        rows = [self.schema.pythonize(r, mapping=False) for r in records]
-        return self.table.insert_data(rows, **kwargs)
+    def __insert__(self, record, **kwargs):
+        row = self.schema.pythonize(record, mapping=False)
+        self.table.insert_data([row], **kwargs)
 
     def __append__(self, frame, **kwargs):
         pdrows = frame.data.values
         rows = [self.schema.pythonize(tuple(r), mapping=False) for r in pdrows]
-        return self.table.insert_data(rows, **kwargs)
+        self.table.insert_data(rows, **kwargs)
 
 
 class BigQueryQuery(DataQuery):
@@ -230,6 +230,6 @@ class BigQueryQuery(DataQuery):
                 counter += 1
                 if counter >= limit:
                     break
-            print("Downloaded {} rows out of {}".format(counter, rowcount))
+            print("Downloaded {} rows out of {}.".format(counter, rowcount))
             if not pg_token:
                 break

@@ -15,6 +15,9 @@ import abc
 from collections.abc import Set, Iterable
 from numbers import Number
 
+from google.cloud.bigtable.row_filters import ValueRangeFilter, \
+    ColumnQualifierRegexFilter, RowFilterChain
+
 from .nxtime import datetime
 from . import nxattr, xprops
 from .functions import passthrough
@@ -96,7 +99,21 @@ class Interval(ContinuousRange, Iterable):
         else:
             upper = None
         return " AND ".join((s for s in (lower, upper) if s is not None))
-    
+
+    def btfilter(self, attr):
+        """Returns bigtable row filter applying self's range to target cell."""
+        colfilter = ColumnQualifierRegexFilter(attr.encode('utf-8'))
+        if self._lower_input is None:
+            lower = None
+        else:
+            lower = str(self.lower).encode('utf-8')
+        if self._upper_input is None:
+            upper = None
+        else:
+            upper = str(self.upper).encode('utf-8')
+        rgefilter = ValueRangeFilter(lower, upper)
+        return RowFilterChain([colfilter, rgefilter])
+
 
 def _lower_float_convert(value):
     if value is None:
@@ -185,6 +202,9 @@ class Levels(DiscreteRange, Set):
     def __len__(self):
         return self._levels.__len__()
 
+    def __eq__(self, other):
+        return self._levels == set(other)
+
     def __repr__(self):
         return "Levels({0})".format(repr(self._levels))
 
@@ -193,10 +213,11 @@ class Levels(DiscreteRange, Set):
         return attr + " IN (" + ", ".join(_sqlstring(l) for l in self) + ")"
 
 
-class Level(DiscreteRange):
+class Level(Levels):
     """Holds a single level."""
 
     def __init__(self, level):
+        super().__init__([level])
         self._level = level
 
     def __eq__(self, other):

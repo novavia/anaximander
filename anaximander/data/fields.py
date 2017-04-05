@@ -107,6 +107,14 @@ class _FieldPatch:
 
     @property
     def key(self):
+        """Specifies whether a field acts as a key within the host schema.
+
+        Values are typically True/False, however a string can be passed that
+        specifies how to design a unique table row key from the key fields.
+        Such values can be 'hash', 'reverse' (hashes field values, or
+        rewrites them in reverse, respectively), and 'timestamp' for
+        UNIX timestamp conversion. See gcbigtable module for details.
+        """
         return self.metadata.get('key', False)
 
     @property
@@ -116,6 +124,18 @@ class _FieldPatch:
     @property
     def description(self):
         return self.metadata.get('description', None)
+
+    @property
+    def family(self):
+        """An optional column family.
+
+        By convention this is always 'keys' for key fields (any metadata
+        specifying otherwise is ignored). For non-key fields, it is looked
+        up in metadata and defaults to 'values'.
+        """
+        if self.key:
+            return 'keys'
+        return self.metadata.get('family', 'values')
 
     @property
     def _attribute_default(self):

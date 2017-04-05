@@ -119,7 +119,7 @@ class _SchemaMetaPatch:
                     "will use in lieu of missing. The offending field is " + \
                     "{0} in {1}"
                 raise SchemaError(msg.format(k, cls.__name__))
-            if v.key is True and v.default is msh.missing:
+            if v.key and (v.default is msh.missing):
                 v.required = True
             if required_flag is True:
                 if not v.required:
@@ -168,7 +168,7 @@ class _SchemaMetaPatch:
     @cachedproperty
     def keynames(cls):
         """Returns a tuple of key field names, in sequence."""
-        return tuple(cls.keys().keys())
+        return tuple(cls.keys.keys())
 
     @cachedproperty
     def nskeys(cls):
@@ -184,6 +184,17 @@ class _SchemaMetaPatch:
         check.
         """
         return None
+
+    @cachedproperty
+    def seqkeyix(cls):
+        """Returns the index of the sequential key among the other key fields.
+
+        Returns None if there is no sequential key field.
+        """
+        try:
+            return cls.keynames.index(cls.seqkey)
+        except ValueError:
+            return None
 
     @cachedproperty
     def nonkeyfields(cls):

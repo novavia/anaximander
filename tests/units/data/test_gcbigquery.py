@@ -20,7 +20,7 @@ from google.cloud import bigquery as bq
 
 import anaximander as nx
 from anaximander import data as dat
-from anaximander.data import fields as fld, schema as sch, gcloudbq as gbq
+from anaximander.data import fields as fld, schema as sch, gcbigquery as gbq
 
 PROJECT_ID = 'anaximander-tests'
 DATASET_ID = 'InterfaceTesting'
@@ -118,7 +118,7 @@ def test_append(storage):
     _, table = storage
     data = DeviceData.Frame(featurelog())
     response = table.append(data)
-    assert response == []
+    assert response is None
 
 
 def test_insert(storage):
@@ -126,15 +126,16 @@ def test_insert(storage):
     data = DeviceData.Frame(featurelog())
     records = data.to_records()
     response = table.insert(*records)
-    assert response == []
+    assert response is None
 
 
-def test_fetch(storage):
+def test_first(storage):
     dataset, _ = storage
     bqtable = gbq.BigQueryDataTable[DeviceData.Schema](dataset, 'DeviceData')
     query = gbq.BigQueryQuery(bqtable, mac='68:9E:19:07:DE:C3')
-    record_generator = query.fetch()
-    assert type(next(record_generator)) == DeviceData.Record
+    record = query.first()
+    assert type(record) == DeviceData.Record
+    assert record.mac == '68:9E:19:07:DE:C3'
 
 
 def test_frame(storage):

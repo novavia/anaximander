@@ -16,8 +16,7 @@ import pandas as pd
 
 from anaximander.data import fields, schema as sch, data
 from anaximander.data.tract import tract
-
-from analytics.dbclients.bqclient import RawQuery
+from anaximander.data import gcbigquery as gbq
 
 
 PROJECT_ID = 'infinite-uptime-1232'
@@ -40,11 +39,6 @@ class DeviceData(sch.Schema):
     Timestamp = fields.Timestamp(key=True, sequential=True)
     Timestamp_Pi = fields.Timestamp()
     Feature_Value_0 = fields.Scalar(data.NxFloat)
-    Feature_Value_1 = fields.Scalar(data.NxFloat)
-    Feature_Value_2 = fields.Scalar(data.NxFloat)
-    Feature_Value_3 = fields.Scalar(data.NxFloat)
-    Feature_Value_4 = fields.Scalar(data.NxFloat)
-    Feature_Value_5 = fields.Scalar(data.NxFloat)
 
 
 def frame_multi(data, fieldnames):
@@ -67,18 +61,14 @@ def nxframe(data, fieldnames):
 
 
 if __name__ == '__main__':
-#    channel = gbq.BigQueryChannel.from_dataset(DATASET, DeviceData, TBNAME)
-    sql = "SELECT * FROM [{p}:{d}.{t}] LIMIT 1000"
+    sql = "SELECT MAC_ADDRESS, Timestamp, Timestamp_Pi, Feature_Value_0 \
+           FROM [{p}:{d}.{t}] LIMIT 1000"
     sql = sql.format(p=PROJECT_ID, d=DATASET_ID, t=TBNAME)
-#    rawquery = channel.rawquery(sql)
-#    frame_from_rawquery = rawquery()
-#    query = channel.query()
-#    frame_from_query = query()
-    q = RawQuery(sql)
-    data = q.all()
-#    ms = DeviceData.Schema(many=True)
-#    r = [DeviceData.schema.load({k: v for k, v in zip(q.fieldnames, d)}).data for d in data]
-    f = frame(data, q.fieldnames)
-    fm = frame_multi(data, q.fieldnames)
-    fx = nxframe(data, q.fieldnames)
+    schema = DeviceData.Schema
+    table = gbq.BigQueryDataTable[schema](DATASET, TBNAME)
+    q = table.query(sql=sql)
+    data = list(q.fetch())
+    f = frame(data, q.fields)
+    fm = frame_multi(data, q.fields)
+    fx = nxframe(data, q.fields)
     

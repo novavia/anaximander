@@ -20,7 +20,7 @@ import pandas as pd
 
 import anaximander as nx
 from anaximander.data import data as dat, fields as fld, schema as sch, \
-    tract as trc, gcloudbq as gbq
+    tract as trc, gcbigquery as gbq
 
 
 PROJECT_ID = 'infinite-uptime-1232'

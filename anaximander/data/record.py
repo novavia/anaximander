@@ -33,7 +33,6 @@ __all__ = ['NxRecord', 'Sample', 'Event', 'Transition', 'Clip',
 
 @prototype
 class NxRecord(DataObject):
-
     schema = metacharacter(validate=lambda s: issubclass(s, Schema))
 
     @property
@@ -49,6 +48,11 @@ class NxRecord(DataObject):
     def dump(self):
         """Serializes a record."""
         return self.schema().dump(self).data
+
+    @property
+    def keys(self):
+        """Return a tuple corresponding to the schema's key fields."""
+        return (getattr(self, k) for k in self.schema.keynames)
 
     def as_dict(self, **kwargs):
         """Returns self's field attributes in dictionary form.
