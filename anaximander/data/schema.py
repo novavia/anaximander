@@ -61,9 +61,10 @@ from .exceptions import DataError
 from . import fields
 from .data import NxFloat
 
-__all__ = ['Schema', 'SchemaError', 'SampleLogSchema', 'EventLogSchema',
-           'PhaseLogSchema', 'ClipLogSchema', 'FixChartSchema',
-           'PostChartSchema', 'SectionChartSchema', 'SpanChartSchema']
+__all__ = ['Schema', 'SchemaError', 'TimeSchema', 'SampleLogSchema', 
+           'EventLogSchema', 'PhaseLogSchema', 'ClipLogSchema', 
+           'LinearSchema', 'FixChartSchema', 'PostChartSchema',
+           'SectionChartSchema', 'SpanChartSchema']
 
 # =============================================================================
 # Schema patching

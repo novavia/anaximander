@@ -54,6 +54,7 @@ class ThresholdHighlightSurvey(dig.HighlightSurvey):
     highlightertype = MyHighlighter
 
     def __highlights__(self, series, threshold=0):
+        """Highlights spans over which series exceeds threshold."""
         above = series >= threshold
         groups = above.diff().cumsum()
         groups.iloc[0] = 0
@@ -149,9 +150,4 @@ if __name__ == '__main__':
         return ThresholdHighlightSurvey(log, 2, threshold=10)
     log = featurelog()
     survey = th_survey(log)    
-    digest = survey()
-    from anaximander.data.plot import plot_highlights
-#    ax = log.plot()
-#    plot_highlights(digest, ax, ymin=0, ymax=200)
-    ax = plot_highlights(digest, ymin=0, ymax=200)
-    log.plot(ax=ax)
+    digest = survey(plot=True)

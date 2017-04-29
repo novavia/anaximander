@@ -52,9 +52,9 @@ def test_instance(datatypes):
     skph = SpeedKPH(np.float(100))
     assert smph.data == np.float(65)
     assert smph.context is None
-    assert repr(smph) == '<SpeedMPH(65.0)>'
+    assert repr(smph) == 'SpeedMPH(65.0)'
     assert str(smph) == '65.0 mph'
-    assert repr(skph) == "<SpeedKPH(100.0)>"
+    assert repr(skph) == "SpeedKPH(100.0)"
     assert str(skph) == '1e+02 kph'
 
 

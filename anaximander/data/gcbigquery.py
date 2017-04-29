@@ -12,6 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from google.cloud import bigquery as bq
+from google.cloud.bigquery.client import Client
 from google.cloud.bigquery.dataset import Dataset
 
 from ..utilities import functions as fun, nxattr, xprops
@@ -23,7 +24,7 @@ from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
 from .schema import Schema
 from .table import DataTable, DataQuery
 
-__all__ = ['BigQueryDataTable']
+__all__ = ['BigQueryDataTable', 'BigQueryQuery', 'Dataset', 'Client']
 
 # =============================================================================
 # Field mapping
@@ -203,6 +204,8 @@ class BigQueryQuery(DataQuery):
         seqkey = self.table.schema.seqkey
         if seqkey:
             order_ = "ORDER BY " + seqkey
+        else:
+            order_ = ""
         parts = [select_, from_, where_, order_]
         return " ".join(parts)
 

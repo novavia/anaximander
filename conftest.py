@@ -13,31 +13,16 @@ Copyright (C) Novavia Solutions, LLC.
 
 import os
 import pytest
-import socket
 import sys
 
 from oauth2client.client import GoogleCredentials, \
     ApplicationDefaultCredentialsError
 
-REMOTE_SERVER = "www.google.com"
-
+# I believe this is done to enable testing in a docker container
+# but I'm no longer sure. At any rate it is not harmful.
 ANAXIMANDER = os.path.dirname(__file__)
 sys.path.append(ANAXIMANDER)
-
-# =============================================================================
-# Utility functions
-# =============================================================================
-
-
-def is_online():
-    """Function that determines if the tester is online."""
-    try:
-        host = socket.gethostbyname(REMOTE_SERVER)
-        socket.create_connection((host, 80), 2)
-    except:
-        return False
-    else:
-        return True
+from anaximander.utilities.functions import is_online
 
 # =============================================================================
 # Configuration
@@ -47,6 +32,9 @@ def is_online():
 def pytest_addoption(parser):
     parser.addoption('--offline', action='store_true',
                      help="Skips tests that require an online connection.")
+    parser.addoption('--bigtable', action='store_true',
+                     help="Executes bigtable tests, which must be used \
+                     sparingly because it triggers billing.")
 
 
 def pytest_configure(config):
@@ -68,6 +56,13 @@ def pytest_configure(config):
         GOOGLE_CREDENTIALS = True
     os.environ['GOOGLE_CREDENTIALS'] = str(GOOGLE_CREDENTIALS)
 
+    global BIGTABLE
+    try:
+        BIGTABLE = config.option.bigtable
+    except AttributeError:
+        BIGTABLE = False
+    os.environ['BIGTABLE'] = str(BIGTABLE)
+
 # =============================================================================
 # Pytest runner setup
 # =============================================================================
@@ -80,3 +75,6 @@ def pytest_runtest_setup(item):
     if 'gcloud' in item.keywords:
         if not GOOGLE_CREDENTIALS:
             pytest.skip("No Google cloud credentials.")
+    if 'bigtable' in item.keywords:
+        if not BIGTABLE:
+            pytest.skip("Bigtable option not selected.")

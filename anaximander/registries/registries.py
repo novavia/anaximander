@@ -644,7 +644,7 @@ class Directory(NxRegistry):
         return self.root.unregister(obj, key)
 
     def get(self, key):
-        return self.root.get(key)
+        return self.root[key]
 
     def fetch(self, key):
-        return self.root.get(key)
+        return self.root.get[key]

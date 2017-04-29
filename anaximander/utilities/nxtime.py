@@ -37,10 +37,12 @@ MAX_TIMESTAMP = MAX.timestamp()
 def datetime(value):
     """Equivalent to pd.Timestamp, but converts naive datetime to UTC."""
     timestamp = pd.to_datetime(value)
-    if not timestamp.tz:
-        return timestamp.tz_localize(UTC)
-    else:
-        return timestamp
+    try:
+        if not timestamp.tz:
+            return timestamp.tz_localize(UTC)
+    except AttributeError:
+        pass
+    return timestamp
 
 datetime.min = MIN
 datetime.max = MAX
@@ -80,6 +82,7 @@ def tz_aware(data):
 
     Naive datetimes are converted to UTC.
     """
+    data = data.copy()
     try:
         index = data.index
     except AttributeError:
@@ -109,7 +112,8 @@ def tz_naive(data):
     """Makes a series or dataframe datetime fields naive.
 
     Non-naive datetimes are first converted to UTC.
-    """   
+    """
+    data = data.copy()
     try:
         index = data.index
     except AttributeError:

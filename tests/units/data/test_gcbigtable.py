@@ -18,14 +18,18 @@ import pandas as pd
 import pytest
 
 from google.cloud import bigtable as bt
+from grpc._channel import _Rendezvous
+from google.cloud.happybase.connection import Connection
 
 import anaximander as nx
 from anaximander import data as dat
 from anaximander.data import fields as fld, schema as sch, gcbigtable as gbt
-from anaximander.data.table import DataTableWarning
 
-PROJECT_ID = 'anaximander-tests'
+#PROJECT_ID = 'anaximander-tests'
+#INSTANCE_ID = 'testinstance'
+PROJECT_ID = 'infinite-uptime-1232'
 INSTANCE_ID = 'testinstance'
+INSTANCE_LOC = 'us-central1-c'
 
 NXPATH = os.path.dirname(nx.__path__[0])
 TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
@@ -59,47 +63,53 @@ def cleanup(instance):
     """Cleans up the supplied BigQuery dataset."""
     for table in instance.list_tables():
         table.delete()
+    instance.delete()
 
 
-@pytest.fixture(scope="module")
-def ghost_table():
-    """Yields uncreated table instance that is not meant to be populated."""
+@pytest.fixture(scope="session")
+def instance():
+    """Creates a bigtable instance for testing purposes."""
     btclient = bt.Client(project=PROJECT_ID, admin=True)
-    instance = btclient.instance(INSTANCE_ID)
-    table = gbt.BigTableDataTable[DeviceData.Schema](instance, 'ghost')
-    yield table  # provide the fixture value
+    instance = btclient.instance(INSTANCE_ID, INSTANCE_LOC)
+    instance.display_name = INSTANCE_ID
+    try:
+        instance.create()     
+    except _Rendezvous:
+        pass
+    time.sleep(10)
+    yield instance
     cleanup(instance)
 
 
 @pytest.fixture(scope="module")
-def empty_table():
+def ghost_table(instance):
+    """Yields uncreated table instance."""
+    return gbt.BigTableDataTable[DeviceData.Schema](instance, 'ghost')
+
+
+@pytest.fixture(scope="module")
+def empty_table(instance):
     """Yields an empty table to test insertions and appends."""
-    btclient = bt.Client(project=PROJECT_ID, admin=True)
-    instance = btclient.instance(INSTANCE_ID)
     table = gbt.BigTableDataTable[DeviceData.Schema](instance, 'empty')
     table.create(warn=False, remove=True)
-    yield table  # provide the fixture value
-    cleanup(instance)
+    return table
 
 
 @pytest.fixture(scope="module")
-def full_table(frame):
+def full_table(instance, frame):
     """Yields a populated table to test queries."""
-    btclient = bt.Client(project=PROJECT_ID, admin=True)
-    instance = btclient.instance(INSTANCE_ID)
     table = gbt.BigTableDataTable[DeviceData.Schema](instance, 'full')
     table.create(warn=False, remove=True)
     # Populates the table with some data
     table.append(frame)
-    yield table  # provide the fixture value
-    cleanup(instance)
+    return table
 
 # =============================================================================
 # Test Cases
 # =============================================================================
 
 # Specifies that tests are skipped if tester is not online.
-pytestmark = [pytest.mark.online, pytest.mark.gcloud]
+pytestmark = [pytest.mark.online, pytest.mark.gcloud, pytest.mark.bigtable]
 
 
 def test_btcolumns():
@@ -124,6 +134,12 @@ def test_insert(empty_table, frame):
     rowkey = empty_table.rowkey(*record.keys)
     row = empty_table.table.read_row(rowkey.encode('utf-8'))
     assert isinstance(row, bt.row_data.PartialRowData)
+
+
+def test_connection(empty_table):
+    pool = empty_table.pool
+    with pool.connection() as connection:
+        assert isinstance(connection, Connection)
 
 
 def test_append(empty_table, frame):
@@ -161,4 +177,4 @@ def test_fields(full_table):
 
 
 if __name__ == '__main__':
-    pytest.main([__file__, '-x', '--pdb'])
+    pytest.main([__file__, '-x', '--pdb', '--bigtable'])

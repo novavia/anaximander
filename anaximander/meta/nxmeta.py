@@ -213,13 +213,13 @@ class ArcheType(metaclass=ArchMeta):
 def protonew(cls, *args, **kwargs):
     """Implementation of __new__ for ProtoTypes."""
     try:
-        metacharacters = {}
+        metacharacters = []
         for k in cls.__metacharacters__:
-            metacharacters[k] = kwargs.pop(k)
+            metacharacters.append(kwargs.pop(k))
     except KeyError:
         raise TypeError("Cannot instantiate a prototype without a full \
                         set of metacharacters.")
-    return type(cls).registry.get(**metacharacters)(*args[1:], **kwargs)
+    return cls[tuple(metacharacters)](*args[1:], **kwargs)
 
 
 class ProtoType(ArcheType):

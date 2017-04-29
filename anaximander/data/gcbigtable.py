@@ -12,9 +12,13 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import defaultdict, OrderedDict, ChainMap
+from concurrent.futures import ThreadPoolExecutor
 from itertools import product
 
+from google.cloud.bigtable.client import Client
 from google.cloud.bigtable.instance import Instance
+from google.cloud.happybase.pool import ConnectionPool
+from google.cloud.happybase.table import Table as HbTable
 from google.cloud.bigtable.row_filters import ColumnQualifierRegexFilter, \
     RowFilterChain, RowFilterUnion
 
@@ -22,9 +26,11 @@ from ..utilities import functions as fun, nxattr, xprops
 from ..meta import prototype, metacharacter
 from .schema import Schema
 from .annotations import interval
+from .data import NxData
 from .table import DataTable, DataQuery, DataQueryException
 
-__all__ = ['BigTableDataTable']
+__all__ = ['BigTableDataTable', 'BigTableQuery', 'BigTableQueryException',
+           'Client', 'Instance']
 
 # =============================================================================
 # Schema specification and table creation
@@ -54,7 +60,8 @@ def keymaker(schema):
     """
     strategies = {'hash': lambda x: str(hash(x)),
                   'reverse': lambda x: str(x)[::-1],
-                  'timestamp': lambda x: str(int(1e6 * x.timestamp()))}
+                  'timestamp': lambda x: str(int(1e6 * x.timestamp())),
+                  'pmatsemit': lambda x: str(int(1e6 * x.timestamp()))[::-1]}
     keyfuncs = [strategies.get(f.key, lambda x: str(x))
                 for f in schema.keys.values()]
     sqix = schema.seqkeyix
@@ -93,6 +100,7 @@ class BigTableDataTable(DataTable):
     schema = metacharacter(validate=fun.subcheck(Schema))
     instance = nxattr.ib(validator=nxattr.validators.instance_of(Instance))
     name = nxattr.ib(validator=nxattr.validators.instance_of(str))
+    threadpoolsize = 250  # size of thread pool for inserts
 
     @xprops.cachedproperty
     def table(self):
@@ -118,6 +126,11 @@ class BigTableDataTable(DataTable):
     @property
     def client(self):
         return self.instance._client
+
+    @xprops.cachedproperty
+    def pool(self):
+        """A connection pool from the happybase API."""
+        return ConnectionPool(1, instance=self.instance)
 
     @xprops.cachedproperty
     def columns(self):
@@ -147,14 +160,48 @@ class BigTableDataTable(DataTable):
         row = self.table.row(rowkey)
         for family, columns in self.columns.items():
             for col in columns:
+                value = getattr(record, col, '')
+                if isinstance(value, NxData):
+                    value = str(value.data)
+                else:
+                    value = str(value)
                 row.set_cell(family,
                              col.encode('utf-8'),
-                             str(getattr(record, col)).encode('utf-8'))
+                             value.encode('utf-8'))
         row.commit()
 
     def __append__(self, frame, **kwargs):
-        for record in frame.to_records():
-            self.__insert__(record, **kwargs)
+        records = frame.to_records()
+        n = self.threadpoolsize
+        with ThreadPoolExecutor(n) as executor:
+            executor.map(self.__insert__, records)
+
+    # Redefinition of DataTable.insert to take advantage of threads
+    def insert(self, *records, **kwargs):
+        """Inserts one or more records into table."""
+        n = self.threadpoolsize
+        with ThreadPoolExecutor(n) as executor:
+            executor.map(self.__insert__, records)
+
+    def _hbase_append__(self, frame, **kwargs):
+        """Not in use because the connection pool is an illusion.
+        
+        In actuality this code makes individual inserts with the same
+        row.commit programmed in __insert__. This is very slow because
+        every commit is a blocking I/O operation.
+        """
+        keys = frame.data[list(self.schema.keynames)].values
+        rowkeys = [self.rowkey(*k) for k in keys]
+        rows = [tuple(str(v) for v in row) for row in frame.data.values]
+        cols = tuple(':'.join((f, c)) for f, cols in self.columns.items()
+                     for c in cols)
+        data = (dict(zip(cols, (s.encode('utf-8') for s in r))) for r in rows)
+        with self.pool.connection() as connection:
+            table = HbTable(self.table_id, connection)
+            batch = table.batch(transaction=True)
+            for rowkey, rowdata in zip(rowkeys, data):
+                batch.put(rowkey, rowdata)
+            batch.send()
 
 
 class BigTableQueryException(DataQueryException):
@@ -162,7 +209,7 @@ class BigTableQueryException(DataQueryException):
 
 
 class BigTableQuery(DataQuery):
-
+    
     def __init__(self, *fields, **quargs):
         super().__init__(*fields, **quargs)
         if not all(nskey in self.quargs for nskey in self.table.schema.nskeys):

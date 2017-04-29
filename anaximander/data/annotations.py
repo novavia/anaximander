@@ -11,15 +11,16 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements and constants
 # =============================================================================
 
+import anaximander as nx
+
 import abc
 from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
-import seaborn as sns
-from seaborn.palettes import _ColorPalette as ColorPalette
+if nx.INTERACTIVE:
+    import seaborn as sns
 
-from ..utilities.functions import typecheck
 from ..utilities import xprops
 from ..utilities.nxtime import datetime
 from ..utilities import nxattr
@@ -38,7 +39,10 @@ from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
 __all__ = []
 
 
-PALETTE = sns.color_palette("muted")
+if nx.INTERACTIVE:
+    PALETTE = sns.color_palette("muted")
+else:
+    PALETTE = ['blue', 'green', 'orange']
 
 # =============================================================================
 # Selection domain functions, extending nxrange
@@ -245,7 +249,7 @@ def shade(**plargs):
 @archetype
 class Pen(NxObject):
     """Archetype for Pen types."""
-    palette = typeattribute(default=PALETTE, validate=typecheck(ColorPalette))
+    palette = typeattribute(default=PALETTE)
 
     @typeproperty
     def shades(cls):

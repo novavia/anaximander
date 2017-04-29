@@ -12,6 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
+from collections.abc import Mapping
 from itertools import chain
 
 import pandas as pd
@@ -21,11 +22,13 @@ from ..meta import NxObject, prototype, archetype, typeattribute, \
     metacharacter
 from .exceptions import DataError
 from .fields import Str
-from .schema import Schema, LinearSchema, TimeSchema
+from .schema import Schema, LinearSchema, TimeSchema, PostChartSchema, \
+    SectionChartSchema, EventLogSchema, PhaseLogSchema
 from .base import DataObject
 from .series import NxSeries
 from .frame import NxDataSequence
 from .annotations import domain, Marker, Highlighter, Mark, Highlight
+from .plot import plot_marks, plot_highlights
 
 __all__ = []
 
@@ -117,6 +120,9 @@ class Digest(NxDataSequence, schema=DigestSchema):
         super().__init__(data)
         self.dataobject = dataobject
 
+    def to_frame(self):
+        pass
+
 
 class MarkDigest(Digest, schema=MarkSchema):
     """Base class and interface for Mark Digests."""
@@ -200,6 +206,9 @@ class MarkDigest(Digest, schema=MarkSchema):
         groups = (grouped.get_group(k) for k in keys)
         return [self.sub(g) for g in groups]
 
+    def plot(self, y, ax='new', **kwargs):
+        return plot_marks(self, y, ax, **kwargs)
+
 
 class HighlightDigest(Digest, schema=HighlightSchema):
     """Base class and interface for Highlight Digests."""
@@ -226,22 +235,28 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         highlights = list(highlights)
         if not highlights:
             return EmptyHighlightDigest(dataobject, highlighter_type)
+        # First, turns highlights into transitions
         highsdata = list(chain(*[h.transitions() for h in highlights]))
+        # Make an underlying pandas dataframe from the transitions
         schema = _domain_to_high_schema[highlights[0].domain]
         data = pd.DataFrame(highsdata, columns=schema.fieldnames)
+        # Check that there are no overlaps between highlights, raise otherwise
         diffs = data.iloc[:, 0].diff()
         if (diffs < -schema._zero).any():
             msg = "Cannot instantiate HighlightDigest from overlapping \
                    highlights."
             raise DigestError(msg)
+        # Eliminates zero-length highlights that provide no information
         keepers = diffs > schema._zero
         keepers.iloc[0] = True
         data = data[keepers]
+        # The elimination of rows require resetting the transitions
+        # We shift the prev_highlighter to populate next_highlighter
         next_highlights = data.prev_highlighter.shift(-1)
         next_highlights.iloc[-1] = 'blank'
         data['next_highlighter'] = next_highlights
-        data = data[(data.prev_highlighter != 'blank') | \
-                    (data.next_highlighter != 'blank')]
+        # Eliminates useless transitions where prev == next
+        data = data[data.prev_highlighter != data.next_highlighter]
         return cls(dataobject, highlighter_type, data)
 
     def highlights(self, *shades):
@@ -288,10 +303,13 @@ class HighlightDigest(Digest, schema=HighlightSchema):
             return datashades & set(shades)
 
     def shadegroups(self, *shades):
-        """Returns a list of digests with single markers.
+        """Returns a list of digests with single highlighter.
 
         Optionally, a set of shades can be specified to downselect.
         By default, the blank shade is ommitted.
+        The groups are meant to be read in pairs, where each pair
+        corresponds to a highlight whose shade is the next / prev
+        highlighter in the first / second element of the pair.
         """
         grouped_prev = self.data.groupby('prev_highlighter')
         grouped_next = self.data.groupby('next_highlighter')
@@ -311,6 +329,9 @@ class HighlightDigest(Digest, schema=HighlightSchema):
             groups.append(group)
         return [self.sub(g) for g in groups]
 
+    def plot(self, y0, y1, ax='new', **kwargs):
+        return plot_highlights(self, y0, y1, ax, **kwargs)
+
 # =============================================================================
 # Concrete Digest classes
 # =============================================================================
@@ -322,12 +343,27 @@ class FloatMarkDigest(MarkDigest, schema=FloatMarkSchema):
     def __new__(cls, dataobject, marker_type, data=None):
         return NxObject.__new__(cls)
 
+    def to_frame(self):
+        schema = PostChartSchema
+        cls = NxDataSequence[schema]
+        data = self.data
+        data['post_type'] = data['marker']
+        return cls(data, context=self.context)
+
 
 class FloatHighlightDigest(HighlightDigest, schema=FloatHighlightSchema):
     domain = 'float'
 
     def __new__(cls, dataobject, highlighter_type, data=None):
         return NxObject.__new__(cls)
+
+    def to_frame(self):
+        schema = SectionChartSchema
+        cls = NxDataSequence[schema]
+        data = self.data
+        data['prev_type'] = data['prev_highlighter']
+        data['next_type'] = data['next_highlighter']
+        return cls(data, context=self.context)
 
 
 class TimeMarkDigest(MarkDigest, schema=TimeMarkSchema):
@@ -336,12 +372,27 @@ class TimeMarkDigest(MarkDigest, schema=TimeMarkSchema):
     def __new__(cls, dataobject, marker_type, data=None):
         return NxObject.__new__(cls)
 
+    def to_frame(self):
+        schema = EventLogSchema
+        cls = NxDataSequence[schema]
+        data = self.data
+        data['event_type'] = data['marker']
+        return cls(data, context=self.context)
+
 
 class TimeHighlightDigest(HighlightDigest, schema=TimeHighlightSchema):
     domain = 'time'
 
     def __new__(cls, dataobject, highlighter_type, data=None):
         return NxObject.__new__(cls)
+
+    def to_frame(self):
+        schema = PhaseLogSchema
+        cls = NxDataSequence[schema]
+        data = self.data
+        data['prev_state'] = data['prev_highlighter']
+        data['next_state'] = data['next_highlighter']
+        return cls(data, context=self.context)
 
 
 class EmptyMarkDigest(MarkDigest, schema=MarkSchema, overwrite=True):
@@ -386,24 +437,23 @@ class Survey(NxObject):
         self.columns = columns
         self.params = params
 
-    @property
+    @xprops.cachedproperty
     def series(self):
-        """An iterable of pandas series to pass to the the survey function."""
+        """A list of NxSeries / pd.Seriesto pass to the the survey function."""
         if isinstance(self.dataobject, NxSeries):
-            return self.dataobject.data
-        else:
-            df = self.dataobject.data
+            return [self.dataobject]
         if not self.columns:
             # Returns the first column of dataobject, assumed to be dataframe
             col = self.dataobject.schema.fieldnames[0]
-            return df[col]
+            return [getattr(self.dataobject, col)()]
         elif all(isinstance(c, int) for c in self.columns):
-            return (df.iloc[:, c] for c in self.columns)
+            cols = [self.dataobject.schema.fieldnames[i] for i in self.columns]
         elif all(isinstance(c, str) for c in self.columns):
-            return (df.loc[:, c] for c in self.columns)
+            cols = self.columns
         else:
             msg = "Ambiguous column definition in {0}".format(self)
             raise SurveyError(msg)
+        return [getattr(self.dataobject, col)() for col in cols]
 
     @xprops.cachedproperty
     def digest(self):
@@ -420,13 +470,20 @@ class MarkSurvey(Survey):
     markertype = typeattribute(validate=fun.subcheck(Marker))
 
     def __call__(self, plot=False):
-        """Calls the survey function with optional runtime arguments."""
+        """Calls the survey function with optional runtime arguments.
+
+        The optional plot argument overlays the digest on the primary
+        series before returning. The argument can take a dictionary whose
+        key-value pairs will be passed to the plotting function.
+        """
         marks = self.marks()
         digest = MarkDigest.from_marks(self.dataobject, self.markertype, marks)
         self._digest = digest
-        if plot:
-            # TODO: insert plot routine
-            pass
+        if plot is not False:
+            if isinstance(plot, Mapping):
+                self._plot(**plot)
+            else:
+                self._plot()
         return digest
 
     def mark(self, shade, loc):
@@ -435,7 +492,12 @@ class MarkSurvey(Survey):
 
     def marks(self, *shades):
         """Returns the marks from survey, with optional filter."""
-        marks = self.__marks__(*self.series, **self.params)
+        series = [s.data if isinstance(s, NxSeries) else s
+                  for s in self.series]
+        if any(s.empty for s in series):
+            marks = []
+        else:
+            marks = self.__marks__(*series, **self.params)
         def filter_(mark):
             if not shades:
                 return True
@@ -447,21 +509,33 @@ class MarkSurvey(Survey):
     def __marks__(self, *series, **params):
         return []
 
+    def _plot(self, **kwargs):
+        kwargs.setdefault('y', self.series[0].data.mean())
+        ax = self._digest.plot(**kwargs)
+        self.series[0].plot(ax=ax)
+
 
 @archetype
 class HighlightSurvey(Survey):
     highlightertype = typeattribute(validate=fun.subcheck(Highlighter))
 
     def __call__(self, plot=False):
-        """Calls the survey function with optional runtime arguments."""
+        """Calls the survey function with optional runtime arguments.
+
+        The optional plot argument overlays the digest on the primary
+        series before returning. The argument can take a dictionary whose
+        key-value pairs will be passed to the plotting function.
+        """
         highlights = self.highlights()
         digest = HighlightDigest.from_highlights(self.dataobject,
                                                  self.highlightertype,
                                                  highlights)
         self._digest = digest
-        if plot:
-            # TODO: insert plot routine
-            pass
+        if plot is not False:
+            if isinstance(plot, Mapping):
+                self._plot(**plot)
+            else:
+                self._plot()
         return digest
 
     def highlight(self, shade, lower, upper):
@@ -470,7 +544,12 @@ class HighlightSurvey(Survey):
 
     def highlights(self, *shades):
         """Returns the highlights from survey, with optional filter."""
-        highlights = self.__highlights__(*self.series, **self.params)
+        series = [s.data if isinstance(s, NxSeries) else s
+                  for s in self.series]
+        if any(s.empty for s in series):
+            highlights = []
+        else:
+            highlights = self.__highlights__(*series, **self.params)
         def filter_(highlight):
             if not shades:
                 return True
@@ -481,3 +560,12 @@ class HighlightSurvey(Survey):
     @abc.abstractmethod
     def __highlights__(self, *series, **params):
         return []
+
+    def _plot(self, **kwargs):
+        mean = self.series[0].data.mean()
+        std = self.series[0].data.std()
+        y0, y1 = mean + 0.5 * std, mean - 0.5 * std
+        kwargs.setdefault('y0', y0)
+        kwargs.setdefault('y1', y1)
+        ax = self._digest.plot(**kwargs)
+        self.series[0].plot(ax=ax)

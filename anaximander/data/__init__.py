@@ -68,6 +68,7 @@ Copyright (C) Novavia Solutions, LLC.
 from .exceptions import *
 from .base import *
 from .data import *
+from .schema import *
 from .record import *
 from .series import *
 from .frame import *

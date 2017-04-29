@@ -17,10 +17,7 @@ Copyright (C) Novavia Solutions, LLC.
 from collections.abc import Sequence
 from functools import partial
 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
 
 from ..utilities import xprops
 from ..utilities.functions import spformat
@@ -34,44 +31,6 @@ from .plot import plot_series
 from .annotations import interval
 
 __all__ = ['NxSeries']
-
-# =============================================================================
-# Plotting constants
-# =============================================================================
-
-
-rcparams = {'lines.solid_capstyle': 'butt',
-            'lines.linewidth': 1,
-            'legend.fancybox': True,
-            'axes.facecolor': '#E8E8E8',
-            'axes.edgecolor': '#E8E8E8',
-            'axes.linewidth': 3.0,
-            'axes.titlesize': 'x-large',
-            'grid.color': '#D1D2D4',
-            'savefig.edgecolor': '#E8E8E8',
-            'savefig.facecolor': '#E8E8E8',
-            'figure.facecolor': '#E8E8E8',
-            }
-
-sns.set(font_scale=1.2, color_codes=True, rc=rcparams)
-
-sns.set_style({'axes.labelcolor': '.25',
-               'text.color': '0.25',
-               'xtick.color': '0.25',
-               'ytick.color': '0.25',
-               })
-
-CCV = mpl.colors.ColorConverter()
-
-PALETTE = sns.color_palette()
-DC1 = PALETTE[0]  # Data color #1
-DC2 = PALETTE[1]  # Data color #2
-TPC = PALETTE[2]  # Template color
-FLC = CCV.to_rgba('#898989', 0.5)  # Fill color
-BGC = (0.85, 0.85, 0.85, 0.75)  # Background highlight color
-
-# Ticker formatters
-THOSEP = mpl.ticker.FuncFormatter(lambda x, p: format(int(x), ','))
 
 # =============================================================================
 # NxSeries prototype

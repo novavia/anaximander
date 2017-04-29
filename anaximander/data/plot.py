@@ -11,14 +11,17 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
-import matplotlib as mpl
-import matplotlib.dates as mdates
-import matplotlib.pyplot as plt
+import anaximander as nx
+
 import numpy as np
 import pandas as pd
-import seaborn as sns
+if nx.INTERACTIVE:
+    import matplotlib as mpl
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+    import seaborn as sns
 
-from anaximander.utilities import functions as fun
+from ..utilities import functions as fun
 
 __all__ = []
 
@@ -26,42 +29,42 @@ __all__ = []
 # Plotting constants
 # =============================================================================
 
-
-rcparams = {'lines.solid_capstyle': 'butt',
-            'lines.linewidth': 1,
-            'legend.fancybox': True,
-            'axes.facecolor': '#E8E8E8',
-            'axes.edgecolor': '#E8E8E8',
-            'axes.linewidth': 3.0,
-            'axes.titlesize': 'x-large',
-            'grid.color': '#D1D2D4',
-            'savefig.edgecolor': '#E8E8E8',
-            'savefig.facecolor': '#E8E8E8',
-            'figure.facecolor': '#E8E8E8',
-            }
-
-sns.set(font_scale=1.2, color_codes=True, rc=rcparams)
-
-sns.set_style({'axes.labelcolor': '.25',
-               'text.color': '0.25',
-               'xtick.color': '0.25',
-               'ytick.color': '0.25',
-               })
-
-CCV = mpl.colors.ColorConverter()
-
-PALETTE = sns.color_palette()
-DC1 = PALETTE[0]  # Data color #1
-DC2 = PALETTE[1]  # Data color #2
-NC1 = PALETTE[2]  # Annotation color #1
-NC2 = PALETTE[3]  # Annotation color #2
-NC3 = PALETTE[4]  # Annotation color #3
-NC4 = PALETTE[5]  # Annotation color #4
-GREY = CCV.to_rgba('#898989', 0.5)  # Medium grey
-LGF = (0.85, 0.85, 0.85, 0.75)  # Light grey fill
-
-# Ticker formatters
-THOSEP = mpl.ticker.FuncFormatter(lambda x, p: format(int(x), ','))
+if nx.INTERACTIVE:
+    rcparams = {'lines.solid_capstyle': 'butt',
+                'lines.linewidth': 1,
+                'legend.fancybox': True,
+                'axes.facecolor': '#E8E8E8',
+                'axes.edgecolor': '#E8E8E8',
+                'axes.linewidth': 3.0,
+                'axes.titlesize': 'x-large',
+                'grid.color': '#D1D2D4',
+                'savefig.edgecolor': '#E8E8E8',
+                'savefig.facecolor': '#E8E8E8',
+                'figure.facecolor': '#E8E8E8',
+                }
+    
+    sns.set(font_scale=1.2, color_codes=True, rc=rcparams)
+    
+    sns.set_style({'axes.labelcolor': '.25',
+                   'text.color': '0.25',
+                   'xtick.color': '0.25',
+                   'ytick.color': '0.25',
+                   })
+    
+    CCV = mpl.colors.ColorConverter()
+    
+    PALETTE = sns.color_palette()
+    DC1 = PALETTE[0]  # Data color #1
+    DC2 = PALETTE[1]  # Data color #2
+    NC1 = PALETTE[2]  # Annotation color #1
+    NC2 = PALETTE[3]  # Annotation color #2
+    NC3 = PALETTE[4]  # Annotation color #3
+    NC4 = PALETTE[5]  # Annotation color #4
+    GREY = CCV.to_rgba('#898989', 0.5)  # Medium grey
+    LGF = (0.85, 0.85, 0.85, 0.75)  # Light grey fill
+    
+    # Ticker formatters
+    THOSEP = mpl.ticker.FuncFormatter(lambda x, p: format(int(x), ','))
 
 # =============================================================================
 # Plotting function
@@ -85,34 +88,36 @@ def plot_series(series, ax='new', **kwargs):
     return ax
 
 
-def plot_marks(digest, ax='new', y=None, **kwargs):
-    """Plots marks."""
+def plot_marks(digest, y, ax='new', **kwargs):
+    """Plots marks from a MarkDigest, at specified y-axis value."""
     if ax == 'new':
         fig, ax = plt.subplots()
     for i, dg in enumerate(digest.shadegroups()):
         shade = dg.shades().pop()
         marker = digest.marker_type(shade)
         color = marker.plargs.get('color', PALETTE[2 + i % 4])
-        yval = fun.get(y, 0)
-        plot_data = pd.Series(yval * np.ones(len(dg)), index=dg.data.index)
+        plot_data = pd.Series(y * np.ones(len(dg)), index=dg.data.index)
         plot_data.plot(ax=ax, marker='o', ls='none', color=color)
     return ax
 
 
-def plot_highlights(digest, ax='new', ymin=None, ymax=None, **kwargs):
-    """Plots marks."""
+def plot_highlights(digest, y0=None, y1=None, ax='new', **kwargs):
+    """Plots highlights from a HighlightDigest.
+
+    y0 and y1 specify the lower and upper y-axis position of the highlights.
+    """
     if ax == 'new':
         fig, ax = plt.subplots()
     for i, dg in enumerate(digest.shadegroups()):
-        shade = dg.shades().pop()
+        if dg.empty:
+            continue
+        shade = dg.data['next_highlighter'][0]
         highlighter = digest.highlighter_type(shade)
         color = highlighter.plargs.get('color', PALETTE[2 + i % 4])
-        y = fun.get(ymin, 0)
-        h = fun.get(ymax, 1) - y
         if digest.domain == 'time':
             index = (mdates.date2num(i) for i in dg.data.index)
         else:
             index = iter(dg.data)
         intervals = [(p, n - p) for p, n in fun.pairwise(index, 2)]
-        ax.broken_barh(intervals, (y, h), facecolor=color, zorder=-1)
+        ax.broken_barh(intervals, (y0, y1 - y0), facecolor=color, zorder=-1)
     return ax

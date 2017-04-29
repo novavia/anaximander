@@ -11,9 +11,8 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
-from anaximander.utilities import nxattr
-from anaximander.meta.nxtype import directory
-from anaximander.meta.nxobject import NxObject
+from ..utilities import nxattr
+from ..meta import directory, NxObject
 from .exceptions import DataError
 
 __all__ = ['Quantity']

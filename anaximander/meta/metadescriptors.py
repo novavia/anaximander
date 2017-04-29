@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import ChainMap, OrderedDict
 
-from anaximander.utilities import xprops, nxattr
+from ..utilities import xprops, nxattr
 
 __all__ = ['typeattribute', 'metacharacter', 'typeproperty',
            'cachedtypeproperty', 'typemethod', 'classtypemethod',

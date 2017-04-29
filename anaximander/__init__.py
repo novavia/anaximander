@@ -10,6 +10,20 @@ Copyright (C) Novavia Solutions, LLC.
 import os.path
 import sys
 
+
+from .utilities.functions import boolean, is_online
+
+# Tests whether running locally or on Google Cloud
+IS_LOCAL = not('SERVER_SOFTWARE' in os.environ)
+LOCAL = boolean(os.environ.setdefault('LOCAL', str(IS_LOCAL)))
+
+
+# Interactive and Offline flags to manage imports
+# The default values can get overriden by a caller script.
+INTERACTIVE = boolean(os.environ.setdefault('INTERACTIVE', 'True'))
+OFFLINE = boolean(os.environ.setdefault('OFFLINE', str(not is_online())))
+
+
 from . import utilities
 from . import registries
 from . import meta

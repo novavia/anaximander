@@ -16,9 +16,8 @@ from collections.abc import Sequence
 
 import pandas as pd
 
-from anaximander.utilities import xprops
-from anaximander.meta.nxtype import archetype
-from anaximander.meta.nxobject import NxObject
+from ..utilities import xprops
+from ..meta import archetype, NxObject
 from .exceptions import DataError
 
 __all__ = ['DataObject']

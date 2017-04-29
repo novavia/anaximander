@@ -18,9 +18,8 @@ import abc
 
 import numpy as np
 
-from anaximander.utilities import functions as fun
-from anaximander.meta.nxtype import archetype
-from anaximander.meta import typeattribute, metamethod, typeinitmethod, \
+from ..utilities import functions as fun
+from ..meta import archetype, typeattribute, metamethod, typeinitmethod, \
     cachedtypeproperty
 from .exceptions import ValidationError
 from .base import DataObject
@@ -211,7 +210,7 @@ class NxScalar(NxData):
 
     def __repr__(self):
         type_name = type(self).__name__
-        return '<{t}({d})>'.format(t=type_name, d=self._data)
+        return '{t}({d})'.format(t=type_name, d=self._data)
 
     def __str__(self):
         units = '' if self.unit is None else ' ' + self.unit

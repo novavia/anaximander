@@ -12,9 +12,9 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import deque
-import itertools
-
 import functools
+import itertools
+import socket
 import sys
 
 # =============================================================================
@@ -52,6 +52,16 @@ def subcheck(*types):
     def checker(cls):
         return issubclass(cls, types)
     return checker
+
+
+def boolean(string):
+    """Converts a string to a boolean."""
+    if string == 'True':
+        return True
+    elif string == 'False':
+        return False
+    else:
+        raise ValueError
 
 # =============================================================================
 # String formatting
@@ -212,3 +222,18 @@ def monkeypatch(cls, mixin, *exclusions):
     if not hasattr(cls, '__patches__'):
         cls.__patches__ = deque()
     cls.__patches__.appendleft(mixin)
+
+# =============================================================================
+# Networking
+# =============================================================================
+
+
+def is_online():
+    """Function that determines if the tester is online."""
+    try:
+        host = socket.gethostbyname("www.google.com")
+        socket.create_connection((host, 80), 2)
+    except:
+        return False
+    else:
+        return True
