@@ -23,6 +23,7 @@ from google.cloud.bigtable.row_filters import ColumnQualifierRegexFilter, \
     RowFilterChain, RowFilterUnion
 
 from ..utilities import functions as fun, nxattr, xprops
+from ..utilities.nxtime import MAX_TIMESTAMP
 from ..meta import prototype, metacharacter
 from .schema import Schema
 from .annotations import interval
@@ -60,7 +61,8 @@ def keymaker(schema):
     """
     strategies = {'hash': lambda x: str(hash(x)),
                   'reverse': lambda x: str(x)[::-1],
-                  'timestamp': lambda x: str(int(1e6 * x.timestamp())),
+                  'timestamp': lambda x: str(int(1e6 * (MAX_TIMESTAMP - \
+                                                        x.timestamp()))),
                   'pmatsemit': lambda x: str(int(1e6 * x.timestamp()))[::-1]}
     keyfuncs = [strategies.get(f.key, lambda x: str(x))
                 for f in schema.keys.values()]
@@ -260,7 +262,7 @@ class BigTableQuery(DataQuery):
         ix = self.table.schema.seqkeyix
         startkeys.insert(ix, seqkeyrange.lower)
         endkeys.insert(ix, seqkeyrange.upper)
-        return (rowkey(*startkeys), rowkey(*endkeys))
+        return tuple(sorted((rowkey(*startkeys), rowkey(*endkeys))))
 
     def _make_rowkeypairs(self):
         """Returns an iterable of rowkey pairs to slice the table."""
@@ -290,6 +292,11 @@ class BigTableQuery(DataQuery):
         row_groups = [self.table.table.read_rows(s, e, filter_=self.rowfilter)
                       for s, e in rowkeypairs]
         for g in row_groups:
-            g.consume_all()
-            for row in g.rows.values():
-                yield self.read_row(row)
+            g._rows = OrderedDict()
+            while True:
+                try:
+                    g.consume_next()
+                except StopIteration:
+                    break                
+                for row in g.rows.values():
+                    yield self.read_row(row)

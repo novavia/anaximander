@@ -48,6 +48,10 @@ datetime.min = MIN
 datetime.max = MAX
 
 
+def now():
+    return pd.Timestamp.utcnow()
+
+
 def naify(dt):
     """Returns a tz_naive pd.Timestamp, after conversion to UTC if needed."""
     timestamp = pd.to_datetime(dt)

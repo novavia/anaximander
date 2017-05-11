@@ -125,7 +125,7 @@ def test_table_instantiation(ghost_table):
 def test_keymaker(frame):
     rowkey = gbt.keymaker(DeviceData.Schema)
     record = frame.iloc[0]
-    assert rowkey(*record.keys) == '2A:FD:96:AE:A4:88#1473847201520000'
+    assert rowkey(*record.keys) == '2A:FD:96:AE:A4:88#2628597598480000'
 
 
 def test_insert(empty_table, frame):
@@ -160,6 +160,11 @@ def test_first(full_table):
     record = query.first()
     assert type(record) == DeviceData.Record
     assert record.mac == '88:4A:EA:69:DF:A2'
+    assert record.timestamp == pd.Timestamp('2016-09-14 10:04:58.700000+00:00')
+    query = full_table.query(mac='88:4A:EA:69:DF:A2',
+                             timestamp=(None, '2016-09-14 10:03:00'))
+    record = query.first()
+    assert record.timestamp == pd.Timestamp('2016-09-14 10:02:27.800000+00:00')
 
 
 def test_frame(full_table):
