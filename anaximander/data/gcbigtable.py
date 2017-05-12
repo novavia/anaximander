@@ -270,7 +270,10 @@ class BigTableQuery(DataQuery):
         seqkey = self.table.schema.seqkey
         seqkeyfield = self.table.schema.keys.get(seqkey, None)
         nskeyquargs = OrderedDict(((k, self.quargs[k]) for k in nskeys))
-        groups = product(*nskeyquargs.values())
+        if nskeys:
+            groups = product(*nskeyquargs.values())
+        else:
+            groups = [tuple()]
         if seqkeyfield is not None:
             try:
                 seqkeyrange = self.quargs[seqkey]
