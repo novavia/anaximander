@@ -130,6 +130,15 @@ def vfilter(function, mapping):
     return ((k, v) for k, v in mapping.items() if function(v))
 
 
+def kfilter(function, mapping):
+    """Analogous to built-in filter, but targets a mapping's keys.
+
+    Returns an iterator of key, value pairs where the keys have been
+    filtered by function returning True.
+    """
+    return ((k, v) for k, v in mapping.items() if function(k))
+
+
 def vmap(function, mapping):
     """Analogous to built-in map, but targets a mapping's values.
 
