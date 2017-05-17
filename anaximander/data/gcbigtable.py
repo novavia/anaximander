@@ -289,17 +289,21 @@ class BigTableQuery(DataQuery):
                            for family in self.columns])
         return tuple(attrs[k] for k in self.fields)
     
-    def __fetch__(self):
+    def __fetch__(self, maxrows=1e6):
         """Fetch primitive."""
         rowkeypairs = self._make_rowkeypairs()
         row_groups = [self.table.table.read_rows(s, e, filter_=self.rowfilter)
                       for s, e in rowkeypairs]
+        row_count = 0
         for g in row_groups:
             g._rows = OrderedDict()
-            while True:
+            while row_count < maxrows:
                 try:
                     g.consume_next()
                 except StopIteration:
                     break                
                 for row in g.rows.values():
                     yield self.read_row(row)
+                    row_count += 1
+                    if row_count >= maxrows:
+                        break

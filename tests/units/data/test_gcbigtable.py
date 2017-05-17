@@ -153,6 +153,7 @@ def test_query(full_table, frame):
     query = full_table.query(mac=DEVICES)
     assert query.columns == full_table.columns
     assert len(list(query.fetch())) == len(frame)
+    assert len(list(query.fetch(maxrows=5))) == 5
 
 
 def test_first(full_table):
@@ -173,6 +174,9 @@ def test_frame(full_table):
     assert type(frame) == DeviceData.Frame
     assert frame.mac.unique == {'68:9E:19:07:DE:C3'}
     assert len(frame) == 3
+    query = full_table.query(mac=DEVICES)
+    frame = query.frame(maxrows=1)
+    assert len(frame) == 1
 
 
 def test_fields(full_table):

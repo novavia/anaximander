@@ -228,11 +228,36 @@ class HighlightDigest(Digest, schema=HighlightSchema):
 
     def __init__(self, dataobject, highlighter_type, data=None):
         super().__init__(dataobject, data)
+        self._data = self.normalize(self._data)
         self.highlighter_type = highlighter_type
+
+    @classmethod
+    def normalize(cls, data):
+        """Normalizes a dataframe that already contain transitions."""
+        if data.empty:
+            return data
+        # Check that there are no overlaps between highlights, raise otherwise
+        diffs = data.iloc[:, 0].diff()
+        if (diffs < -cls.schema._zero).any():
+            msg = "Cannot instantiate HighlightDigest from overlapping \
+                   highlights."
+            raise DigestError(msg)
+        # Eliminates zero-length highlights that provide no information
+        keepers = diffs > cls.schema._zero
+        keepers.iloc[0] = True
+        data = pd.DataFrame(data[keepers])
+        # The elimination of rows require resetting the transitions
+        # We shift the prev_highlighter to populate next_highlighter
+        next_highlights = data.prev_highlighter.shift(-1)
+        next_highlights.iloc[-1] = 'blank'
+        data['next_highlighter'] = next_highlights
+        # Eliminates useless transitions where prev == next
+        return data[data.prev_highlighter != data.next_highlighter]
 
     @classmethod
     def from_highlights(cls, dataobject, highlighter_type, highlights):
         highlights = list(highlights)
+        highlights.sort(key=lambda h: h.lower)
         if not highlights:
             return EmptyHighlightDigest(dataobject, highlighter_type)
         # First, turns highlights into transitions
@@ -240,23 +265,25 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         # Make an underlying pandas dataframe from the transitions
         schema = _domain_to_high_schema[highlights[0].domain]
         data = pd.DataFrame(highsdata, columns=schema.fieldnames)
-        # Check that there are no overlaps between highlights, raise otherwise
-        diffs = data.iloc[:, 0].diff()
-        if (diffs < -schema._zero).any():
-            msg = "Cannot instantiate HighlightDigest from overlapping \
-                   highlights."
-            raise DigestError(msg)
-        # Eliminates zero-length highlights that provide no information
-        keepers = diffs > schema._zero
-        keepers.iloc[0] = True
-        data = data[keepers]
-        # The elimination of rows require resetting the transitions
-        # We shift the prev_highlighter to populate next_highlighter
-        next_highlights = data.prev_highlighter.shift(-1)
-        next_highlights.iloc[-1] = 'blank'
-        data['next_highlighter'] = next_highlights
-        # Eliminates useless transitions where prev == next
-        data = data[data.prev_highlighter != data.next_highlighter]
+
+#        # Check that there are no overlaps between highlights, raise otherwise
+#        diffs = data.iloc[:, 0].diff()
+#        if (diffs < -schema._zero).any():
+#            msg = "Cannot instantiate HighlightDigest from overlapping \
+#                   highlights."
+#            raise DigestError(msg)
+#        # Eliminates zero-length highlights that provide no information
+#        keepers = diffs > schema._zero
+#        keepers.iloc[0] = True
+#        data = data[keepers]
+#        # The elimination of rows require resetting the transitions
+#        # We shift the prev_highlighter to populate next_highlighter
+#        next_highlights = data.prev_highlighter.shift(-1)
+#        next_highlights.iloc[-1] = 'blank'
+#        data.loc[:, 'next_highlighter'] = next_highlights
+#        # Eliminates useless transitions where prev == next
+#        data = data[data.prev_highlighter != data.next_highlighter]
+
         return cls(dataobject, highlighter_type, data)
 
     def highlights(self, *shades):
@@ -564,7 +591,7 @@ class HighlightSurvey(Survey):
     def _plot(self, **kwargs):
         mean = self.series[0].data.mean()
         std = self.series[0].data.std()
-        y0, y1 = mean + 0.5 * std, mean - 0.5 * std
+        y0, y1 = mean - 0.5 * std, mean + 0.5 * std
         kwargs.setdefault('y0', y0)
         kwargs.setdefault('y1', y1)
         ax = self._digest.plot(**kwargs)
