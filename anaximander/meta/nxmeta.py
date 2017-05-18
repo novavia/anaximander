@@ -322,7 +322,7 @@ class ProtoRegistry(nrg.Hierarchy):
                 if issubclass(cls, xcls):
                     return
                 else:
-                    msg = "{0} is already registered with the same " + \
-                        "metacharacters as {1}"
-                    raise nrg.RegistrationError(msg.format(xcls, cls))
+                    msg = "{0} is already registered with " + \
+                        "metacharacters {1}"
+                    raise nrg.RegistrationError(msg.format(xcls, args))
         super().register(cls, *args, **kwargs)
