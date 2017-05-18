@@ -27,7 +27,7 @@ from .schema import Schema, LinearSchema, TimeSchema, PostChartSchema, \
 from .base import DataObject
 from .series import NxSeries
 from .frame import NxDataSequence
-from .annotations import domain, Marker, Highlighter, Mark, Highlight
+from .annotations import Marker, Highlighter, Mark, Highlight
 from .plot import plot_marks, plot_highlights
 
 __all__ = []
@@ -128,12 +128,9 @@ class MarkDigest(Digest, schema=MarkSchema):
     """Base class and interface for Mark Digests."""
 
     def __new__(cls, dataobject, marker_type, data=None):
-        if dataobject.empty:
-            return EmptyMarkDigest(dataobject, marker_type, None)
-        else:
-            dom = domain(dataobject.index)
+        domain = dataobject.domain
         try:
-            schema = _domain_to_mark_schema[dom]
+            schema = _domain_to_mark_schema[domain]
         except KeyError:
             msg = "Unrecognized survey domain for {0}"
             raise DigestError(msg.format(dataobject))           
@@ -214,12 +211,9 @@ class HighlightDigest(Digest, schema=HighlightSchema):
     """Base class and interface for Highlight Digests."""
 
     def __new__(cls, dataobject, highlighter_type, data=None):
-        if dataobject.empty:
-            return EmptyHighlightDigest(dataobject, highlighter_type, None)
-        else:
-            dom = domain(dataobject.index)
+        domain = dataobject.domain
         try:
-            schema = _domain_to_high_schema[dom]
+            schema = _domain_to_high_schema[domain]
         except KeyError:
             msg = "Unrecognized survey domain for {0}"
             raise DigestError(msg.format(dataobject))           
@@ -446,6 +440,8 @@ class SurveyError(DataError):
 
 class Survey(NxObject):
     """Wraps a function to produce a Digest."""
+    survey_empty = False  # Indicates whether __highlights__ supports empty
+                          # series.
 
     def __init__(self, dataobject, *columns, **params):
         """Instantiates a survey object.
@@ -466,7 +462,12 @@ class Survey(NxObject):
 
     @xprops.cachedproperty
     def series(self):
-        """A list of NxSeries / pd.Seriesto pass to the the survey function."""
+        """A list of NxSeries / pd.Series passed to the the survey function."""
+        if self.dataobject.empty:
+            if not self.columns:
+                return [pd.Series()]
+            else:
+                return [pd.Series() for c in self.columns]
         if isinstance(self.dataobject, NxSeries):
             return [self.dataobject]
         if not self.columns:
@@ -521,7 +522,7 @@ class MarkSurvey(Survey):
         """Returns the marks from survey, with optional filter."""
         series = [s.data if isinstance(s, NxSeries) else s
                   for s in self.series]
-        if any(s.empty for s in series):
+        if any(s.empty for s in series) and not self.survey_empty:
             marks = []
         else:
             marks = self.__marks__(*series, **self.params)
@@ -566,14 +567,14 @@ class HighlightSurvey(Survey):
         return digest
 
     def highlight(self, shade, lower, upper):
-        highligther = self.highlightertype(shade)
-        return Highlight(self.dataobject, highligther, lower, upper)
+        highlighter = self.highlightertype(shade)
+        return Highlight(self.dataobject, highlighter, lower, upper)
 
     def highlights(self, *shades):
         """Returns the highlights from survey, with optional filter."""
         series = [s.data if isinstance(s, NxSeries) else s
                   for s in self.series]
-        if any(s.empty for s in series):
+        if any(s.empty for s in series) and not self.survey_empty:
             highlights = []
         else:
             highlights = self.__highlights__(*series, **self.params)
@@ -589,6 +590,10 @@ class HighlightSurvey(Survey):
         return []
 
     def _plot(self, **kwargs):
+        if len(self.series[0]) <= 1:
+            return
+        if not isinstance(self.series[0], NxSeries):
+            return
         mean = self.series[0].data.mean()
         std = self.series[0].data.std()
         y0, y1 = mean - 0.5 * std, mean + 0.5 * std

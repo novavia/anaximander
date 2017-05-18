@@ -83,6 +83,11 @@ class DataTract:
         # Rename the Data types.
         for attr in self.__attributes__.values():
             getattr(self, attr).__rename__(self.name + attr)
+        # Caches the derived types
+        self.Record
+        self.Collection
+        self.Sequence
+        self.Mapping
 
     @property
     def name(self):

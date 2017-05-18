@@ -340,7 +340,7 @@ class Mark(DataAnnotation):
     def __init__(self, dataobject, marker, loc):
         super().__init__(dataobject)
         self.marker = marker
-        self.domain = domain(dataobject.index)
+        self.domain = dataobject.domain
         self.location = location(loc, ref=self.domain)
 
     @property
@@ -377,7 +377,7 @@ class Highlight(DataAnnotation):
     def __init__(self, dataobject, highlighter, lower=None, upper=None):
         super().__init__(dataobject)
         self.highlighter = highlighter
-        self.domain = domain(dataobject.index)
+        self.domain = dataobject.domain
         self.interval = interval(lower, upper, ref=self.domain)
 
     @property

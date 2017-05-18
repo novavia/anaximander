@@ -28,7 +28,7 @@ from .exceptions import DataError
 from .base import IndexedDataObject, RowSlicer
 from .data import NxData
 from .plot import plot_series
-from .annotations import interval
+from .annotations import interval, domain
 
 __all__ = ['NxSeries']
 
@@ -67,6 +67,14 @@ class NxSeries(IndexedDataObject, overtype=True, traits=(Sequence,)):
     @typeproperty
     def unit(cls):
         return cls.datatype.unit
+
+    @property
+    def domain(self):
+        """The sequential domain for self.
+        
+        XXX: Note this is weak as it only works for non-empty series.
+        """
+        return domain(self.index)
 
     def __init__(self, data, index=None, context=None, ix_range=None,
                  **rgarg):

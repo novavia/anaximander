@@ -31,7 +31,7 @@ from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
     Str, Bool, Int, Constant, NxDataField, Scalar, Timestamp, Duration, Period
-from .annotations import interval
+from .annotations import interval, domain
 from .record import NxRecord
 from .series import NxSeries
 from .plot import plot_series
@@ -131,6 +131,14 @@ class NxDataFrame(IndexedDataObject):
     @cachedtypeproperty
     def rowtype(cls):
         return NxRecord[cls.schema]
+
+    @cachedtypeproperty
+    def domain(cls):
+        """The sequential domain for self, if any."""
+        if not cls.sqcol:
+            return None
+        else:
+            return domain(cls.schema.fields[cls.sqcol])
 
     @cachedtypeproperty
     def frametype(cls):
