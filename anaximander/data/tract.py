@@ -132,19 +132,19 @@ class DataTract:
         except AttributeError:
             return type_
 
-    @property
+    @xprops.cachedproperty
     def Record(self):
         return rec.NxRecord[self.Schema]
 
-    @property
+    @xprops.cachedproperty
     def Collection(self):
         return frm.NxDataCollection[self.Schema]
 
-    @property
+    @xprops.cachedproperty
     def Sequence(self):
         return frm.NxDataSequence[self.Schema]
 
-    @property
+    @xprops.cachedproperty
     def Mapping(self):
         return frm.NxDataMapping[self.Schema]
 
