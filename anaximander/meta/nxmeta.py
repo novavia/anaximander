@@ -210,6 +210,12 @@ class ArcheType(metaclass=ArchMeta):
         return type(archetype).registry.values()
 
 
+def protobaptize(mcl, basetype, traits=None, **kwargs):
+    """A specialized __baptize__ method for prototypes."""
+    metacharacters = [kwargs.get(k) for k in mcl.__metacharacters__]
+    return mcl.__basename__ + str(metacharacters)
+
+
 def protonew(cls, *args, **kwargs):
     """Implementation of __new__ for ProtoTypes."""
     try:
@@ -243,6 +249,8 @@ class ProtoType(ArcheType):
         metacharacters = prototype.__metacharacters__
         type(prototype).registry = ProtoRegistry(*metacharacters)
         prototype.__new__ = classmethod(protonew)
+        # XXX: incompatible with attrs' code generator
+        # prototype.__metatype__.__baptize__ = classmethod(protobaptize)
 
     def nxregister(prototype, cls, **kwargs):
         if any(v is None for v in cls.metacharacters):

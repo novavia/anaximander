@@ -210,7 +210,8 @@ class MarkDigest(Digest, schema=MarkSchema):
 class HighlightDigest(Digest, schema=HighlightSchema):
     """Base class and interface for Highlight Digests."""
 
-    def __new__(cls, dataobject, highlighter_type, data=None):
+    def __new__(cls, dataobject, highlighter_type, data=None,
+                normalize=True):
         domain = dataobject.domain
         try:
             schema = _domain_to_high_schema[domain]
@@ -220,9 +221,11 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         concrete_type = Digest[schema]
         return concrete_type(dataobject, highlighter_type, data)
 
-    def __init__(self, dataobject, highlighter_type, data=None):
+    def __init__(self, dataobject, highlighter_type, data=None,
+                 normalize=True):
         super().__init__(dataobject, data)
-        self._data = self.normalize(self._data)
+        if normalize:
+            self._data = self.normalize(self._data)
         self.highlighter_type = highlighter_type
 
     @classmethod
@@ -259,25 +262,6 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         # Make an underlying pandas dataframe from the transitions
         schema = _domain_to_high_schema[highlights[0].domain]
         data = pd.DataFrame(highsdata, columns=schema.fieldnames)
-
-#        # Check that there are no overlaps between highlights, raise otherwise
-#        diffs = data.iloc[:, 0].diff()
-#        if (diffs < -schema._zero).any():
-#            msg = "Cannot instantiate HighlightDigest from overlapping \
-#                   highlights."
-#            raise DigestError(msg)
-#        # Eliminates zero-length highlights that provide no information
-#        keepers = diffs > schema._zero
-#        keepers.iloc[0] = True
-#        data = data[keepers]
-#        # The elimination of rows require resetting the transitions
-#        # We shift the prev_highlighter to populate next_highlighter
-#        next_highlights = data.prev_highlighter.shift(-1)
-#        next_highlights.iloc[-1] = 'blank'
-#        data.loc[:, 'next_highlighter'] = next_highlights
-#        # Eliminates useless transitions where prev == next
-#        data = data[data.prev_highlighter != data.next_highlighter]
-
         return cls(dataobject, highlighter_type, data)
 
     def highlights(self, *shades):
@@ -346,12 +330,15 @@ class HighlightDigest(Digest, schema=HighlightSchema):
                 gnext = grouped_next.get_group(k)
             except KeyError:
                 continue
+            if gprev.index[0] < gnext.index[0]:
+                gprev = gprev.iloc[1:]
             group = gprev.merge(gnext, 'outer')
             groups.append(group)
         return [self.sub(g) for g in groups]
 
     def plot(self, y0, y1, ax='new', **kwargs):
-        return plot_highlights(self, y0, y1, ax, **kwargs)
+        ax = plot_highlights(self, y0, y1, ax, **kwargs)
+        pd.Series(y0, index=self.index).plot(ax=ax, alpha=0)
 
 # =============================================================================
 # Concrete Digest classes
@@ -375,7 +362,8 @@ class FloatMarkDigest(MarkDigest, schema=FloatMarkSchema):
 class FloatHighlightDigest(HighlightDigest, schema=FloatHighlightSchema):
     domain = 'float'
 
-    def __new__(cls, dataobject, highlighter_type, data=None):
+    def __new__(cls, dataobject, highlighter_type, data=None,
+                normalize=True):
         return NxObject.__new__(cls)
 
     def to_frame(self):
@@ -404,7 +392,8 @@ class TimeMarkDigest(MarkDigest, schema=TimeMarkSchema):
 class TimeHighlightDigest(HighlightDigest, schema=TimeHighlightSchema):
     domain = 'time'
 
-    def __new__(cls, dataobject, highlighter_type, data=None):
+    def __new__(cls, dataobject, highlighter_type, data=None,
+                normalize=True):
         return NxObject.__new__(cls)
 
     def to_frame(self):
@@ -416,6 +405,62 @@ class TimeHighlightDigest(HighlightDigest, schema=TimeHighlightSchema):
         return cls(data, context=self.context)
 
 
+class PhaseTransitions(NxDataSequence):
+    """Specialized NxDataSequence for phase transitions."""
+    schema = PhaseLogSchema
+
+    @xprops.cachedproperty
+    def highlighter_type(self):
+        """A Highligther set for plotting."""
+        return None
+
+    @highlighter_type.setter
+    def highlighter_type(self, val):
+        if not issubclass(val, Highlighter):
+            raise TypeError()
+        self._highlighter_type = val
+
+    def as_digest(self):
+        if self.highlighter_type is None:
+            msg = "Cannot convert / plot a PhaseTransitions frame without " + \
+                "assigning a highlighter type."
+            raise DigestError(msg)
+        df = pd.DataFrame(self._data)
+        df['prev_highlighter'] = df['prev_state']
+        df['next_highlighter'] = df['next_state']
+        df = df[['timestamp', 'prev_highlighter', 'next_highlighter']]
+        df = df.replace('N/A', 'blank')
+        return TimeHighlightDigest(self, self.highlighter_type, df,
+                                   normalize=False)
+
+    def plot(self, series=None, *, y0=None, y1=None, ax='new', **kwargs):
+        """Plots phase transitions as highlights, against optional series.
+
+        Params:
+            series: an optional series aginst which to plot the transitions.
+            y0, y1: y-axis levels at which to plot the transitions. If series
+            is not None, it will be used by default to establish y-axis
+            levels, but y0, y1 will override those defaults. If series is None,
+            y0 and y1 default to 0 and 1, respectively.
+            ax: optional matplotlib ax object.
+            **kwargs: optional arguments passed on to the plot method (still
+            undefined).
+        Returns:
+            Matplotlib ax object.
+        """
+        if series is not None and len(series) > 1:
+            mean = series.data.mean()
+            std = series.data.std()
+            y0 = fun.get(y0, mean - 0.5 * std) 
+            y1 = fun.get(y1, mean + 0.5 * std)
+        else:
+            y0 = fun.get(y0, 0)
+            y1 = fun.get(y1, 1)
+        ax = self.as_digest().plot(y0=y0, y1=y1, ax=ax, **kwargs)
+        if series is not None:
+            series.plot(ax=ax)
+
+
 class EmptyMarkDigest(MarkDigest, schema=MarkSchema, overwrite=True):
 
     def __new__(cls, dataobject, marker_type, data=None):
@@ -425,7 +470,7 @@ class EmptyMarkDigest(MarkDigest, schema=MarkSchema, overwrite=True):
 class EmptyHighlightDigest(HighlightDigest, schema=HighlightSchema,
                            overwrite=True):
 
-    def __new__(cls, dataobject, marker_type, data=None):
+    def __new__(cls, dataobject, marker_type, data=None, normalize=True):
         return NxObject.__new__(cls)
 
 # =============================================================================

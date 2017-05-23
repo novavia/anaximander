@@ -280,6 +280,9 @@ class Pen(NxObject):
         except KeyError:
             pass
 
+    def __repr__(self):
+        return type(self).__name__ + '({0})'.format(self.shade)
+
     @typeinitmethod
     def _set_shades(cls):
         """Creates the __shades__ attribute."""

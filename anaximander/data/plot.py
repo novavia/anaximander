@@ -108,6 +108,9 @@ def plot_highlights(digest, y0=None, y1=None, ax='new', **kwargs):
     """
     if ax == 'new':
         fig, ax = plt.subplots()
+    if digest.empty:
+        return
+    pd.Series()
     for i, dg in enumerate(digest.shadegroups()):
         if dg.empty:
             continue

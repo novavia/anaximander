@@ -126,7 +126,7 @@ def proto_clade():
 
 def test_baptism(proto_clade):
     *_, Random = proto_clade
-    assert Random.__name__ == 'Object_random'
+    assert Random.__name__ == "Object_random"
 
 
 def test_archetype_inheritance(proto_clade):
@@ -248,4 +248,4 @@ def test_directory():
     assert C2['a'] is c2
 
 if __name__ == '__main__':
-    pytest.main([__file__])
+    pytest.main([__file__, '-x', '--pdb'])

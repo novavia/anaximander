@@ -73,3 +73,7 @@ from .record import *
 from .series import *
 from .frame import *
 from .tract import *
+from .annotations import *
+from .digest import *
+from .gcbigquery import *
+from .gcbigtable import *

@@ -240,7 +240,9 @@ class DataQuery(NxObject):
             except KeyError:
                 msg = "All query arguments must match a schema field name."
                 raise DataQueryException(msg)                
-            if isinstance(v, tuple):
+            if isinstance(v, nxrange.Range):
+                query_args.append((k, v))
+            elif isinstance(v, tuple):
                 query_args.append((k, interval(*v, ref=field)))
             else:
                 query_args.append((k, nxrange.levels(v)))
