@@ -296,8 +296,8 @@ class BigTableQuery(DataQuery):
                       for s, e in rowkeypairs]
         row_count = 0
         for g in row_groups:
-            g._rows = OrderedDict()
             while row_count < maxrows:
+                g._rows = OrderedDict()
                 try:
                     g.consume_next()
                 except StopIteration:
