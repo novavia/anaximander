@@ -339,6 +339,7 @@ class HighlightDigest(Digest, schema=HighlightSchema):
     def plot(self, y0, y1, ax='new', **kwargs):
         ax = plot_highlights(self, y0, y1, ax, **kwargs)
         pd.Series(y0, index=self.index).plot(ax=ax, alpha=0)
+        return ax
 
 # =============================================================================
 # Concrete Digest classes
@@ -459,6 +460,7 @@ class PhaseTransitions(NxDataSequence):
         ax = self.as_digest().plot(y0=y0, y1=y1, ax=ax, **kwargs)
         if series is not None:
             series.plot(ax=ax)
+        return ax
 
 
 class EmptyMarkDigest(MarkDigest, schema=MarkSchema, overwrite=True):
