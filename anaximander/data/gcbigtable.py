@@ -15,6 +15,7 @@ from collections import defaultdict, OrderedDict, ChainMap
 from concurrent.futures import ThreadPoolExecutor
 from itertools import product
 
+from grpc._channel import _Rendezvous
 from google.cloud.bigtable.client import Client
 from google.cloud.bigtable.instance import Instance
 from google.cloud.happybase.pool import ConnectionPool
@@ -28,10 +29,11 @@ from ..meta import prototype, metacharacter
 from .schema import Schema
 from .annotations import interval
 from .data import NxData
-from .table import DataTable, DataQuery, DataQueryException
+from .table import DataTable, DataQuery, DataQueryException, \
+    DataTableWriteException
 
 __all__ = ['BigTableDataTable', 'BigTableQuery', 'BigTableQueryException',
-           'Client', 'Instance']
+           'BigTableInsertException', 'Client', 'Instance']
 
 # =============================================================================
 # Schema specification and table creation
@@ -94,6 +96,10 @@ def keymaker(schema):
 # =============================================================================
 # Table implementation
 # =============================================================================
+
+
+class BigTableInsertException(DataTableWriteException):
+    pass
 
 
 @prototype
@@ -170,7 +176,10 @@ class BigTableDataTable(DataTable):
                 row.set_cell(family,
                              col.encode('utf-8'),
                              value.encode('utf-8'))
-        row.commit()
+        try:
+            row.commit()
+        except _Rendezvous:
+            raise BigTableInsertException()
 
     def __append__(self, frame, **kwargs):
         records = frame.to_records()
@@ -301,7 +310,9 @@ class BigTableQuery(DataQuery):
                 try:
                     g.consume_next()
                 except StopIteration:
-                    break                
+                    break
+                except _Rendezvous:
+                    raise BigTableQueryException()
                 for row in g.rows.values():
                     yield self.read_row(row)
                     row_count += 1

@@ -21,7 +21,31 @@ LOCAL = boolean(os.environ.setdefault('LOCAL', str(IS_LOCAL)))
 # Interactive and Offline flags to manage imports
 # The default values can get overriden by a caller script.
 INTERACTIVE = boolean(os.environ.setdefault('INTERACTIVE', 'True'))
-OFFLINE = boolean(os.environ.setdefault('OFFLINE', str(not is_online())))
+
+
+def offline(assertion=None):
+    """Returns application status, or sets it if assertion is passed.
+
+    Asserting offline is False is subject to verifying that the application
+    truly is online.
+    """
+    if assertion is not None:
+        if assertion is False:
+            try:
+                assert is_online()
+            except AssertionError:
+                pass
+            else:
+                os.environ['OFFLINE'] = 'False'
+                return False 
+        os.environ['OFFLINE'] = 'True'
+        return True
+    try:
+        return boolean(os.environ['OFFLINE'])
+    except KeyError:
+        which = not is_online()
+        os.environ['OFFLINE'] = str(which)
+        return which
 
 
 from . import utilities

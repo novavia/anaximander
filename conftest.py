@@ -22,7 +22,7 @@ from oauth2client.client import GoogleCredentials, \
 # but I'm no longer sure. At any rate it is not harmful.
 ANAXIMANDER = os.path.dirname(__file__)
 sys.path.append(ANAXIMANDER)
-from anaximander.utilities.functions import is_online
+import anaximander as nx
 
 # =============================================================================
 # Configuration
@@ -39,13 +39,16 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     """Sets configuration variables as environment variables."""
-    global ONLINE
+    global OFFLINE
     try:
         offline_option = config.option.offline
     except AttributeError:
         offline_option = False
-    ONLINE = not offline_option and is_online()
-    os.environ['ONLINE'] = str(ONLINE)
+    if offline_option:
+        OFFLINE = nx.offline(True)
+    else:
+        OFFLINE = nx.offline()
+    
 
     global GOOGLE_CREDENTIALS
     try:
@@ -70,7 +73,7 @@ def pytest_configure(config):
 
 def pytest_runtest_setup(item):
     if 'online' in item.keywords:
-        if not ONLINE:
+        if OFFLINE:
             pytest.skip("Tests are run offline.")
     if 'gcloud' in item.keywords:
         if not GOOGLE_CREDENTIALS:
