@@ -16,6 +16,8 @@ import functools
 import itertools
 import socket
 import sys
+import os
+import subprocess
 
 # =============================================================================
 # Attributes handling
@@ -246,3 +248,29 @@ def is_online():
         return False
     else:
         return True
+
+def get_gcloud_config(attr):
+    """Get gcloud configuration value.
+
+    This function wraps a subprocess call to "$gcloud config get-value".
+    
+    :param attr: a string, the name of the configuration attribute to retrieve.
+                 For a complete list of valid input, refer to 
+                 $gcloud config get-value --help
+    :return:     a string, the configuration parameter value
+    """
+    if not os.getenv("LOCAL", False):
+        msg = "gcloud config is only available on a local environment"
+        raise Exception(msg)
+    output = subprocess.check_output(["gcloud", "config", "get-value", attr])
+    if not output:
+        return ""
+    return output.decode().replace("\n", "")
+
+def get_gcloud_project_id():
+    """Get Google Cloud current project id."""
+    is_local = (os.getenv("LOCAL", True) == "True")
+    if is_local:
+        return get_gcloud_config("project")
+    else:
+        return os.getenv("GCLOUD_PROJECT", "")

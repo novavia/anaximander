@@ -18,12 +18,12 @@ import pytz
 from google.cloud import bigtable
 from grpc import RpcError
 
-from anaximander.utilities.functions import get
+from anaximander.utilities.functions import get, get_gcloud_project_id
 from anaximander.data import fields, schema as sch, data
 from anaximander.data.tract import tract, DataDomain, domain
 
 
-PROJECT_ID = 'infinite-uptime-1232'
+PROJECT_ID = get_gcloud_project_id()
 
 SCRIPT_DIR = os.path.dirname(__file__)
 DATA_DIR = SCRIPT_DIR

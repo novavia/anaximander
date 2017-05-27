@@ -17,9 +17,10 @@ import pandas as pd
 from anaximander.data import fields, schema as sch, data
 from anaximander.data.tract import tract
 from anaximander.data import gcbigquery as gbq
+from anaximander.utilities.functions import get_gcloud_project_id
 
 
-PROJECT_ID = 'infinite-uptime-1232'
+PROJECT_ID = get_gcloud_project_id()
 DATASET_ID = 'KTFL'
 TBNAME = "IU_device_data"
 
