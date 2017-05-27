@@ -409,17 +409,7 @@ class TimeHighlightDigest(HighlightDigest, schema=TimeHighlightSchema):
 class PhaseTransitions(NxDataSequence):
     """Specialized NxDataSequence for phase transitions."""
     schema = PhaseLogSchema
-
-    @xprops.cachedproperty
-    def highlighter_type(self):
-        """A Highligther set for plotting."""
-        return None
-
-    @highlighter_type.setter
-    def highlighter_type(self, val):
-        if not issubclass(val, Highlighter):
-            raise TypeError()
-        self._highlighter_type = val
+    highligther_type = None
 
     def as_digest(self):
         if self.highlighter_type is None:

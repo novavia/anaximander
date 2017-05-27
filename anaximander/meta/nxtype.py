@@ -31,7 +31,7 @@ import sys
 import types
 
 from .metadescriptors import MetaDeclaration, TypeAttribute, MetaMethod, \
-    MetaInstance
+    MetaInstance, TypeDescriptor, TypeDescriptorRegistry
 from .nxmeta import NxMeta, archmeta, protometa, MetaError, ProtoType
 from ..utilities import functions as fun
 from ..registries import registries as reg
@@ -134,6 +134,16 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
         for name, md in metadeclarations.items():
             md.cls = cls
             md.name = name
+
+        # Resets TypeDescriptorRegistries
+        tdregistries = TypeDescriptorRegistry.registries(cls)
+        for k, v in tdregistries.items():
+            v.reset(cls, k)
+
+        # Binds new TypeDescriptors
+        for td in filter(fun.typecheck(TypeDescriptor),
+                         metadeclarations.values()):
+            td.bind()
 
         # Increment type counter
         cls.__type_id__ = mcl.__type_id__

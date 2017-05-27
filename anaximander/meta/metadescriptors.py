@@ -19,7 +19,7 @@ from ..utilities import xprops, nxattr
 __all__ = ['typeattribute', 'metacharacter', 'typeproperty',
            'cachedtypeproperty', 'typemethod', 'classtypemethod',
            'newtypemethod', 'typeinitmethod', 'metamethod', 'metainstance',
-           'ValidationError']
+           'ValidationError', 'TypeDescriptor']
 
 # =============================================================================
 # Utilities
@@ -608,3 +608,93 @@ class MetaInstance(MetaDeclaration):
 def metainstance(*args, inherit=False, **kwargs):
     """Helper function for class declarations."""
     return MetaInstance(*args, inherit=inherit, **kwargs)
+
+# =============================================================================
+# TypeDescriptor
+# =============================================================================
+
+
+class TypeDescriptorRegistry(OrderedDict):
+    """A container for registering TypeDescriptors at the class level.
+
+    These are copied through class inheritance chains to provide independence.
+    """
+
+    @classmethod
+    def registries(cls, type_):
+        """Returns all TypeDescriptorRegistries in type_'s attributes."""
+        return {k: v for k, v in type_.__dict__.items() if isinstance(v, cls)}
+
+    def reset(self, type_, name):
+        """Binds an existing instance to a type by creating a copy."""
+        setattr(type_, name, self.copy())
+
+
+class TypeDescriptor(MetaDeclaration):
+    """A general-purpose, type-level descriptors.
+
+    This class is intended to create descriptors on individual types. Hence
+    a subtype of an archetype may declare TypeDescriptors, and unlike
+    MetaDescriptors, these will not be registered in the metaclass.
+    Obviously, it's a bit of a misnomer to include TypeDescriptors in the
+    the metadescriptors module. This will probably call for some refactoring
+    at some point.
+    
+    TypeDescriptors can optionally be registered in an OrderedDict at the
+    type level by specifying a property name. This sets
+    a property such that type instances can return an ordered dictionary
+    of their TypeDescriptor belonging to the same registry. For instance,
+    if prop is set to typedescriptors, then a class C that uses such
+    descriptors has a registry __typedesriptors__ and an instance c of
+    class C has a property typedescriptors that enumerates its values.
+    Double underscores are automatically added.
+    """
+    prop = None  # An optional property name to which a class belongs.
+
+    @classmethod
+    def _registry_name(cls):
+        if cls.prop is None:
+            return None
+        else:
+            return '__' + cls.prop.strip('_') + '__'
+
+    @classmethod
+    def _property(cls):
+        """Makes collecting property for types that implement descriptors."""
+        if cls.prop is None:
+            return None
+        rgname = cls._registry_name()
+        def fget(inst):
+            registry = getattr(type(inst), rgname)
+            return OrderedDict([(k, getattr(inst, k)) for k in registry])
+        return property(fget)
+
+    def register(self):
+        """Registers a new TypeDescriptor instance."""
+        if self.prop is not None:
+            rgname = self._registry_name()
+            try:
+                registry = getattr(self.cls, rgname)
+            except AttributeError:
+                registry = TypeDescriptorRegistry()
+                setattr(self.cls, rgname, registry)
+                setattr(self.cls, self.prop, self._property())
+            registry[self.name] = self
+
+    def bind(self):
+        """Binds self to its declaring class."""
+        setattr(self.cls, self.name, self)
+        self.register()
+
+    # Base methods
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        return None
+
+    def __set__(self, obj, value):
+        raise AttributeError("Can't set attribute.")
+
+    def __delete__(self, obj):
+        raise AttributeError("Can't delete attribute.")

@@ -11,6 +11,8 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+from collections import OrderedDict
+
 import pytest
 
 import anaximander.utilities.functions as fun
@@ -146,6 +148,34 @@ def test_metainstance():
     with pytest.raises(TypeError):
         class C(NxObject):
             c = mtd.metainstance(0)
+
+
+class MyDescriptor(mtd.TypeDescriptor):
+    prop= 'mydescriptors'
+    
+    def __init__(self, val):
+        self.val = val
+
+    def __get__(self, obj, objtype):
+        if obj is None:
+            return self
+        return self.val
+
+def mydescriptor(val):
+    return MyDescriptor(val)
+
+
+def test_typedescriptor():
+
+    class C(NxObject):
+        x = mydescriptor(0)
+
+    assert isinstance(C.__mydescriptors__['x'], MyDescriptor)
+    c = C()
+    assert c.x == 0
+    assert c.mydescriptors == OrderedDict([('x', 0)])
+    with pytest.raises(AttributeError):
+        c.x = 1
 
 
 if __name__ == '__main__':
