@@ -264,6 +264,20 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         data = pd.DataFrame(highsdata, columns=schema.fieldnames)
         return cls(dataobject, highlighter_type, data)
 
+    @classmethod
+    def singleshade(cls, dataobject, highlighter_type, shade, start, end):
+        """Returns a digest made of a single shade from start to end.
+
+        Params:
+            dataobject: the surveyed dataobject
+            highlighter_type: a highlighter type.
+            shade: admissible shade for the supplied highlighter type.
+            start: a start coordinate or timestamp.
+            end: end coordinate or timestamp.
+        """
+        highlight = Highlight(dataobject, highlighter_type(shade), start, end)
+        return cls.from_highlights(dataobject, highlighter_type, [highlight])
+
     def highlights(self, *shades):
         """Returns the list of highlights, with optional filter.
 
@@ -338,7 +352,8 @@ class HighlightDigest(Digest, schema=HighlightSchema):
 
     def plot(self, y0, y1, ax='new', **kwargs):
         ax = plot_highlights(self, y0, y1, ax, **kwargs)
-        pd.Series(y0, index=self.index).plot(ax=ax, alpha=0)
+        if not self.empty:
+            pd.Series(y0, index=self.index).plot(ax=ax, alpha=0)
         return ax
 
 # =============================================================================
@@ -409,20 +424,47 @@ class TimeHighlightDigest(HighlightDigest, schema=TimeHighlightSchema):
 class PhaseTransitions(NxDataSequence):
     """Specialized NxDataSequence for phase transitions."""
     schema = PhaseLogSchema
-    highligther_type = None
+
+    @xprops.settablecachedproperty
+    def highlighter_type(self):
+        try:
+            return self.schema.highlighter_type
+        except AttributeError:
+            return None
 
     def as_digest(self):
         if self.highlighter_type is None:
             msg = "Cannot convert / plot a PhaseTransitions frame without " + \
                 "assigning a highlighter type."
             raise DigestError(msg)
-        df = pd.DataFrame(self._data)
+        df = self.data
         df['prev_highlighter'] = df['prev_state']
         df['next_highlighter'] = df['next_state']
         df = df[['timestamp', 'prev_highlighter', 'next_highlighter']]
         df = df.replace('N/A', 'blank')
         return TimeHighlightDigest(self, self.highlighter_type, df,
                                    normalize=False)
+
+    def crop(self, start=None, end=None):
+        """Returns a new instance that has been cropped by start and end."""
+        if self.empty:
+            return self
+        df = self.data
+        if start is not None:
+            if df.index[0] < start:
+                record = df.loc[:start].iloc[-1]
+                record['timestamp'] = start
+                df = df.loc[start:]
+                df.loc[start] = record
+                df.sort_index(inplace=True)
+        if end is not None:
+            if df.index[-1] > end:
+                record = self.data.loc[end:].iloc[0]
+                record['timestamp'] = end
+                df = df.loc[:end]
+                df.loc[end] = record
+                df.sort_index(inplace=True)
+        return type(self)(df, context=self.context)
 
     def plot(self, series=None, *, y0=None, y1=None, ax='new', **kwargs):
         """Plots phase transitions as highlights, against optional series.

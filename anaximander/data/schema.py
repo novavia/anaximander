@@ -54,6 +54,7 @@ from collections import OrderedDict
 
 import marshmallow as msh
 from marshmallow.schema import SchemaMeta
+import pandas as pd
 
 from ..utilities.functions import monkeypatch
 from ..utilities.xprops import weakproperty, cachedproperty

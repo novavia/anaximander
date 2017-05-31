@@ -364,6 +364,18 @@ class NxDataFrame(IndexedDataObject):
 
     # Extension / Contraction methods
 
+    def crop(self, start=None, end=None):
+        """Returns a new instance that has been cropped by start and end."""
+        if start is not None and end is not None:
+            df = pd.DataFrame(self.data.loc[start:end])
+        elif end is not None:
+            df = pd.DataFrame(self.data.loc[:end])
+        elif start is not None:
+            df = pd.DataFrame(self.data.loc[start:])
+        else:
+            return self
+        return type(self)(df, context=self.context)
+
     @classmethod
     def from_records(cls, records, context=None):
         """Instantiates an NxDataFrame from an iterable of records.
