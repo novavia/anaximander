@@ -24,7 +24,7 @@ from .annotations import interval
 
 __all__ = ['DataTableException', 'DataTableAdminException',
            'DataTableReadException', 'DataTableWriteException',
-           'DataTable', 'DataQuery']
+           'EmptyQueryException', 'DataTable', 'DataQuery']
 
 # =============================================================================
 # Custom exceptions
@@ -180,6 +180,11 @@ class DataQueryException(DataTableReadException):
     pass    
 
 
+class EmptyQueryException(DataQueryException):
+    """Signals an error due to an empty query."""
+    pass
+
+
 @archetype
 class DataQuery(NxObject):
     """Abstract base class for data queries.
@@ -270,7 +275,7 @@ class DataQuery(NxObject):
             row = dict(zip(self.fields, next(self.fetch(**kwargs))))
         except StopIteration:
             msg = "Query returns no results."
-            raise DataTableReadException(msg)
+            raise EmptyQueryException(msg)
         schema = self.table.schema()
         return schema.load(row).data
 

@@ -23,7 +23,7 @@ from ..meta import NxObject, prototype, archetype, typeattribute, \
 from .exceptions import DataError
 from .fields import Str
 from .schema import Schema, LinearSchema, TimeSchema, PostChartSchema, \
-    SectionChartSchema, EventLogSchema, PhaseLogSchema
+    SectionChartSchema, EventLogSchema, PhaseLogSchema, ClipLogSchema
 from .base import DataObject
 from .series import NxSeries
 from .frame import NxDataSequence
@@ -367,8 +367,7 @@ class FloatMarkDigest(MarkDigest, schema=FloatMarkSchema):
     def __new__(cls, dataobject, marker_type, data=None):
         return NxObject.__new__(cls)
 
-    def to_frame(self):
-        schema = PostChartSchema
+    def to_frame(self, schema=PostChartSchema):
         cls = NxDataSequence[schema]
         data = self.data
         data['post_type'] = data['marker']
@@ -382,8 +381,7 @@ class FloatHighlightDigest(HighlightDigest, schema=FloatHighlightSchema):
                 normalize=True):
         return NxObject.__new__(cls)
 
-    def to_frame(self):
-        schema = SectionChartSchema
+    def to_frame(self, schema=SectionChartSchema):
         cls = NxDataSequence[schema]
         data = self.data
         data['prev_type'] = data['prev_highlighter']
@@ -397,8 +395,7 @@ class TimeMarkDigest(MarkDigest, schema=TimeMarkSchema):
     def __new__(cls, dataobject, marker_type, data=None):
         return NxObject.__new__(cls)
 
-    def to_frame(self):
-        schema = EventLogSchema
+    def to_frame(self, schema=EventLogSchema):
         cls = NxDataSequence[schema]
         data = self.data
         data['event_type'] = data['marker']
@@ -412,8 +409,7 @@ class TimeHighlightDigest(HighlightDigest, schema=TimeHighlightSchema):
                 normalize=True):
         return NxObject.__new__(cls)
 
-    def to_frame(self):
-        schema = PhaseLogSchema
+    def to_frame(self, schema=PhaseLogSchema):
         cls = NxDataSequence[schema]
         data = self.data
         data['prev_state'] = data['prev_highlighter']
@@ -448,20 +444,55 @@ class PhaseTransitions(NxDataSequence):
     def crop(self, start=None, end=None):
         """Returns a new instance that has been cropped by start and end."""
         if self.empty:
-            return self
+            return type(self)(self.data, context=self.context)
         df = self.data
         if start is not None:
             if df.index[0] < start:
-                record = df.loc[:start].iloc[-1]
+                record = df.loc[:start].iloc[-1].copy()
                 record['timestamp'] = start
+                record['prev_state'] = 'N/A'
                 df = df.loc[start:]
                 df.loc[start] = record
                 df.sort_index(inplace=True)
         if end is not None:
             if df.index[-1] > end:
-                record = self.data.loc[end:].iloc[0]
+                record = df.loc[end:].iloc[0].copy()
                 record['timestamp'] = end
+                record['next_state'] = 'N/A'
                 df = df.loc[:end]
+                df.loc[end] = record
+                df.sort_index(inplace=True)
+        return type(self)(df, context=self.context)
+
+    def fill(self, state, start=None, end=None):
+        """Fills self with supplied state between start and end.
+
+        If self's index extends beyond start and end, this method does
+        nothing. Otherwise it inserts additional transitions at start and / or
+        end to ensure complete coverage.
+        """
+        if self.empty:
+            msg = "Cannot fill an empty PhaseTransitions sequence."
+            raise DataError(msg)
+        df = self.data
+        if start is not None:
+            if df.index[0] > start:
+                first_ix = df.loc[start:].index[0]
+                record = df.loc[first_ix].copy()
+                record['timestamp'] = start
+                record['prev_state'] = 'N/A'
+                record['next_state'] = state
+                df.loc[first_ix, 'prev_state'] = state
+                df.loc[start] = record
+                df.sort_index(inplace=True)
+        if end is not None:
+            if df.index[-1] < end:
+                last_ix = df.loc[:end].index[-1]
+                record = df.loc[last_ix].copy()
+                record['timestamp'] = end
+                record['prev_state'] = state
+                record['next_state'] = 'N/A'
+                df.loc[last_ix, 'next_state'] = state
                 df.loc[end] = record
                 df.sort_index(inplace=True)
         return type(self)(df, context=self.context)
@@ -493,6 +524,53 @@ class PhaseTransitions(NxDataSequence):
         if series is not None:
             series.plot(ax=ax)
         return ax
+
+
+class ClipExcerpt(NxDataSequence):
+    """Specialized NxDataSequence for regularly sampled clips."""
+    schema = ClipLogSchema
+
+    @property
+    def freq(self):
+        return self.schema().freq
+
+    def fill(self, state, start=None, end=None):
+        """Fills self with supplied state between start and end.
+
+        If self's index extends beyond start and end, this method does
+        nothing. Otherwise it inserts additional clips at regular interval
+        (per the schema's sampling frequency) to fill the gaps.
+        """
+        if self.empty:
+            msg = "Cannot fill an empty ClipExcerpt sequence."
+            raise DataError(msg)
+        df = self.data
+        if start is not None:
+            if df.index[0] > start:
+                ix_range = pd.date_range(start, df.index[0], freq=self.freq,
+                                         closed='left')
+                first_ix = df.loc[start:].index[0]
+                record = df.loc[first_ix].copy()
+                record[self.schema.__clip__] = state
+                for ix in ix_range:
+                    r = record.copy()
+                    r['timestamp'] = ix
+                    df.loc[ix] = r
+                df.sort_index(inplace=True)
+                df.sort_index(inplace=True)
+        if end is not None:
+            if df.index[-1] < end:
+                ix_range = pd.date_range(df.index[-1], end, freq=self.freq,
+                                         closed='right')
+                last_ix = df.loc[:end].index[-1]
+                record = df.loc[last_ix].copy()
+                record[self.schema.__clip__] = state
+                for ix in ix_range:
+                    r = record.copy()
+                    r['timestamp'] = ix
+                    df.loc[ix] = r
+                df.sort_index(inplace=True)
+        return type(self)(df, context=self.context)
 
 
 class EmptyMarkDigest(MarkDigest, schema=MarkSchema, overwrite=True):

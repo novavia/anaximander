@@ -54,7 +54,6 @@ from collections import OrderedDict
 
 import marshmallow as msh
 from marshmallow.schema import SchemaMeta
-import pandas as pd
 
 from ..utilities.functions import monkeypatch
 from ..utilities.xprops import weakproperty, cachedproperty
@@ -316,7 +315,7 @@ class SampleLogSchema(TimeSchema):
     Sample logs have a primary function to list sampled values along
     a time axis.
     """
-    pass
+    __sample__ = None  # placeholder for declaring the name of the sample field
 
 
 class EventLogSchema(TimeSchema):
@@ -347,6 +346,7 @@ class ClipLogSchema(TimeSchema):
     in the timestamp field (of type Period). It defaults to hourly.
     """
     timestamp = fields.Period(freq='H', key=True, sequential=True)
+    __clip__ = None  # placeholder for declaring the name of the summary field
 
     @property
     def freq(self):

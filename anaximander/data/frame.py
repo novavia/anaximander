@@ -373,7 +373,7 @@ class NxDataFrame(IndexedDataObject):
         elif start is not None:
             df = pd.DataFrame(self.data.loc[start:])
         else:
-            return self
+            df = self.data
         return type(self)(df, context=self.context)
 
     @classmethod
