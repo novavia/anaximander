@@ -14,7 +14,6 @@ Copyright (C) Novavia Solutions, LLC.
 from collections import OrderedDict, Mapping
 import datetime as dt
 
-import pandas as pd
 import pytest
 
 from anaximander.utilities.nxtime import datetime, UTC
@@ -143,6 +142,13 @@ def test_unique_sequential_key():
         class MySchema(sch.Schema):
             a = fields.Int(key=True, sequential=True)
             b = fields.Int(key=True, sequential=True)
+
+def test_row_count():
+    t0 = datetime('2017-02-17 15:00:00')
+    t1 = datetime('2017-02-17 15:00:10')
+    t2 = datetime('2017-02-17 16:00:00')
+    assert sch.ClipLogSchema.rowcount(t0, t1, 10) == 10
+    assert sch.ClipLogSchema.rowcount(t1, t2, 10) == 600
 
 
 if __name__ == '__main__':

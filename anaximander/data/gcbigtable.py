@@ -103,11 +103,15 @@ class BigTableInsertException(DataTableWriteException):
 
 
 @prototype
-@nxattr.s
+@nxattr.s(hash=False)
 class BigTableDataTable(DataTable):
     schema = metacharacter(validate=fun.subcheck(Schema))
     instance = nxattr.ib(validator=nxattr.validators.instance_of(Instance))
     name = nxattr.ib(validator=nxattr.validators.instance_of(str))
+    # An optional maxrate to limit query size automatically
+    # This functionality requires a rowcount method to be implemented on
+    # the table's Schema
+    maxrate = nxattr.ib(None)
     threadpoolsize = 250  # size of thread pool for inserts
 
     @xprops.cachedproperty
@@ -214,12 +218,27 @@ class BigTableDataTable(DataTable):
                 batch.put(rowkey, rowdata)
             batch.send()
 
+    def maxrows(self, start, end):
+        """Estimates max. number of rows for single non-sequential key.
+
+        This requires the schema to implement a rowcount function.
+        """
+        if self.maxrate is None:
+            return NotImplemented
+        return self.schema.rowcount(start, end, self.maxrate)
+
 
 class BigTableQueryException(DataQueryException):
     pass
 
 
+class BigTableMaxRowsException(BigTableQueryException):
+    """Raised when queries reach specified maxrows."""
+    pass
+
+
 class BigTableQuery(DataQuery):
+    __maxrows__ = 1e5  # Default limit for all queries
     
     def __init__(self, *fields, **quargs):
         super().__init__(*fields, **quargs)
@@ -273,36 +292,65 @@ class BigTableQuery(DataQuery):
         endkeys.insert(ix, seqkeyrange.upper)
         return tuple(sorted((rowkey(*startkeys), rowkey(*endkeys))))
 
-    def _make_rowkeypairs(self):
-        """Returns an iterable of rowkey pairs to slice the table."""
+    @xprops.cachedproperty
+    def nskeygroups(self):
+        """The combinations of non-sequential key groups."""
         nskeys = self.table.schema.nskeys
-        seqkey = self.table.schema.seqkey
-        seqkeyfield = self.table.schema.keys.get(seqkey, None)
         nskeyquargs = OrderedDict(((k, self.quargs[k]) for k in nskeys))
         if nskeys:
-            groups = product(*nskeyquargs.values())
+            return list(product(*nskeyquargs.values()))
         else:
-            groups = [tuple()]
+            return [tuple()]
+
+    @xprops.cachedproperty
+    def seqkeyrange(self):
+        """The range for the sequential key, if applicable."""
+        seqkey = self.table.schema.seqkey
+        seqkeyfield = self.table.schema.keys.get(seqkey, None)        
         if seqkeyfield is not None:
             try:
-                seqkeyrange = self.quargs[seqkey]
+                return self.quargs[seqkey]
             except KeyError:
-                seqkeyrange = interval(ref=seqkeyfield)
+                return interval(ref=seqkeyfield)
         else:
-            seqkeyrange = None
-        return (self._rowkeypair(*g, seqkeyrange=seqkeyrange) for g in groups)
+            return None
+
+    def _make_rowkeypairs(self):
+        """Returns an iterable of rowkey pairs to slice the table."""
+        return (self._rowkeypair(*g, seqkeyrange=self.seqkeyrange)
+                for g in self.nskeygroups)
 
     def read_row(self, row):
         attrs = ChainMap(*[{k.decode('utf-8'): v[0].value.decode('utf-8')
                             for k, v in row.cells[family].items()}
                            for family in self.columns])
         return tuple(attrs[k] for k in self.fields)
+
+    @property
+    def _maxrows(self):
+        """A default value for maxrows."""
+        if self.seqkeyrange is None:
+            return self.__maxrows__
+        max_per_group = self.table.maxrows(*self.seqkeyrange)
+        if max_per_group is NotImplemented:
+            return self.__maxrows__
+        maxrows = max_per_group * len(self.nskeygroups)
+        return min((maxrows, self.__maxrows__))        
     
-    def __fetch__(self, maxrows=1e6):
-        """Fetch primitive."""
+    def __fetch__(self, maxrows=None, maxraise=False):
+        """Fetch primitive.
+        
+        Params:
+            maxrows: limits the number of rows. If None and the table has
+                a specified maxrate and sequential key, maxrows is computed
+                automatically. An absolute limit of __maxrows__ is set by
+                default.
+            maxraise: raises if maxrows is exceeded.
+        """
         rowkeypairs = self._make_rowkeypairs()
         row_groups = [self.table.table.read_rows(s, e, filter_=self.rowfilter)
                       for s, e in rowkeypairs]
+        maxrows = fun.get(maxrows, self._maxrows)
         row_count = 0
         for g in row_groups:
             while row_count < maxrows:
@@ -317,4 +365,7 @@ class BigTableQuery(DataQuery):
                     yield self.read_row(row)
                     row_count += 1
                     if row_count >= maxrows:
+                        if maxraise:
+                            msg = "Query exceeds maxrows {}".format(maxrows)
+                            raise BigTableMaxRowsException(msg)
                         break

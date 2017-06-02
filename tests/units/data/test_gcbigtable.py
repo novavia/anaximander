@@ -44,7 +44,14 @@ DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
 
 
 @dat.tract
-class DeviceData(sch.Schema):
+class DumbDeviceData(sch.Schema):
+    mac = fld.ReStr(key='reverse', pattern=MAC_PATTERN)
+    timestamp = fld.Timestamp(key='timestamp', sequential=True)
+    accel_x = fld.Scalar(dat.NxFloat, family='features')
+
+
+@dat.tract
+class DeviceData(sch.TimeSchema):
     mac = fld.ReStr(key='reverse', pattern=MAC_PATTERN)
     timestamp = fld.Timestamp(key='timestamp', sequential=True)
     accel_x = fld.Scalar(dat.NxFloat, family='features')
@@ -84,7 +91,7 @@ def instance():
 @pytest.fixture(scope="module")
 def ghost_table(instance):
     """Yields uncreated table instance."""
-    return gbt.BigTableDataTable[DeviceData.Schema](instance, 'ghost')
+    return gbt.BigTableDataTable[DumbDeviceData.Schema](instance, 'ghost')
 
 
 @pytest.fixture(scope="module")
@@ -98,7 +105,7 @@ def empty_table(instance):
 @pytest.fixture(scope="module")
 def full_table(instance, frame):
     """Yields a populated table to test queries."""
-    table = gbt.BigTableDataTable[DeviceData.Schema](instance, 'full')
+    table = gbt.BigTableDataTable[DeviceData.Schema](instance, 'full', 150)
     table.create(warn=False, remove=True)
     # Populates the table with some data
     table.append(frame)
@@ -166,6 +173,21 @@ def test_first(full_table):
                              timestamp=(None, '2016-09-14 10:03:00'))
     record = query.first()
     assert record.timestamp == pd.Timestamp('2016-09-14 10:02:27.800000+00:00')
+
+
+def test_maxrows(ghost_table, full_table):
+    query = full_table.query(mac=DEVICES)
+    assert query._maxrows == 1e5
+    with pytest.raises(gbt.DataQueryException):
+        query.frame(maxrows=5, maxraise=True)
+    query = full_table.query(mac='88:4A:EA:69:DF:A2',
+                             timestamp=('2016-09-14 10:00:00',
+                                        '2016-09-14 10:03:00'))
+    assert query._maxrows == 450
+    query = ghost_table.query(mac='88:4A:EA:69:DF:A2',
+                              timestamp=('2016-09-14 10:00:00',
+                                         '2016-09-14 10:03:00'))
+    assert query._maxrows == 1e5
 
 
 def test_frame(full_table):

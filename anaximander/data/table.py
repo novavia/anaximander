@@ -19,7 +19,7 @@ import pandas as pd
 
 from ..utilities import xprops, nxrange
 from ..meta import NxObject, typeinitmethod, archetype, typeattribute
-from .frame import NxDataFrame, NxDataCollection
+from .frame import NxDataFrame, NxDataCollection, NxDataSequence
 from .annotations import interval
 
 __all__ = ['DataTableException', 'DataTableAdminException',
@@ -67,6 +67,9 @@ class DataTable(NxObject):
     database APIs to unify basic commands.
     """
     schema = None  # placeholder, a metacharacter in derived prototypes
+
+    def __hash__(self):
+        return id(self)
 
     @abc.abstractmethod
     def __create__(self, **kwargs):
@@ -283,6 +286,10 @@ class DataQuery(NxObject):
     def frametype(self):
         return NxDataCollection[self.table.schema].frametype
 
+    @property
+    def sequencetype(self):
+        return NxDataSequence[self.table.schema]
+
     def data(self, **kwargs):
         """Returns a pandas DataFrame with the results."""
         return pd.DataFrame(self.__fetch__(**kwargs), columns=self.fields)
@@ -290,6 +297,14 @@ class DataQuery(NxObject):
     def frame(self, context=None, **kwargs):
         """Returns query results as a data frame."""
         return self.frametype(self.data(**kwargs), context=context)
+
+    def sequence(self, context=None, **kwargs):
+        """Returns query results as a data frame.
+        
+        Note: this requires that the data contains a single non-sequential
+        key, which is not enforced by the method.
+        """
+        return self.sequencetype(self.data(**kwargs), context=context)
 
     def records(self, **kwargs):
         """Returns results as a list of records."""

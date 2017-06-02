@@ -146,11 +146,13 @@ def bqschema(schema):
 
 
 @prototype
-@nxattr.s
+@nxattr.s(hash=False)
 class BigQueryDataTable(DataTable):
     schema = metacharacter(validate=fun.subcheck(Schema))
     dataset = nxattr.ib(validator=nxattr.validators.instance_of(Dataset))
     name = nxattr.ib(validator=nxattr.validators.instance_of(str))
+    # An optional maxrate to limit query size automatically
+    maxrate = nxattr.ib(None)
 
     @xprops.cachedproperty
     def table(self):

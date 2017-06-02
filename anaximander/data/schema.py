@@ -51,12 +51,14 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import OrderedDict
+import math
 
 import marshmallow as msh
 from marshmallow.schema import SchemaMeta
 
 from ..utilities.functions import monkeypatch
 from ..utilities.xprops import weakproperty, cachedproperty
+from ..utilities import nxtime
 from .exceptions import DataError
 from . import fields
 from .data import NxFloat
@@ -294,6 +296,11 @@ class _SchemaPatch:
         else:
             return tuple(collector)
 
+    @classmethod
+    def rowcount(cls, start, end, rate):
+        """An optional method to enable row count calculations."""
+        return NotImplemented
+
 monkeypatch(Schema, _SchemaPatch)
 
 
@@ -307,6 +314,14 @@ SchemaMeta._reserved_names = set(dir(SchemaMeta) + dir(Schema()))
 class TimeSchema(Schema):
     """Base class for schemas indexed with timestamps."""
     timestamp = fields.Timestamp(key=True, sequential=True)
+
+    @classmethod
+    def rowcount(cls, start, end, rate):
+        """Returns a number of expected rows given rate of rows per minute."""
+        start = nxtime.datetime(start)
+        end = nxtime.datetime(end)
+        minutes = math.ceil((end - start).value / 60e9)
+        return math.ceil(rate * minutes)
 
 
 class SampleLogSchema(TimeSchema):
