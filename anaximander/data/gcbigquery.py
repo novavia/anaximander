@@ -152,7 +152,12 @@ class BigQueryDataTable(DataTable):
     dataset = nxattr.ib(validator=nxattr.validators.instance_of(Dataset))
     name = nxattr.ib(validator=nxattr.validators.instance_of(str))
     # An optional maxrate to limit query size automatically
-    maxrate = nxattr.ib(None)
+    maxrate = nxattr.ib(None, repr=False)
+
+    def __attrs_post_init__(self):
+        tract = self.schema.tract
+        if tract is not None:
+            tract._bigquery = self
 
     @xprops.cachedproperty
     def table(self):

@@ -88,6 +88,9 @@ class DataTract:
         self.Collection
         self.Sequence
         self.Mapping
+        # Creates cache for storage tables
+        self._bigtable = None
+        self._bigquery = None
 
     @property
     def name(self):
@@ -157,6 +160,25 @@ class DataTract:
         Otherwise it is a Collection.
         """
         return self.Collection.frametype
+
+    @property
+    def bigtable(self):
+        if not self._bigtable:
+            msg = "No bigtable table associated with {0}. " + \
+                "This may be because the system operates offline, in " + \
+                "which case a restart could fix the problem."
+            raise TractError(msg.format(self.name))
+        return self._bigtable
+
+    @property
+    def bigquery(self):
+        if not self._bigquery:
+            msg = "No bigquery table associated with {0}. " + \
+                "This may be because the system operates offline, in " + \
+                "which case a restart could fix the problem."
+            raise TractError(msg.format(self.name))
+        return self._bigquery
+
 
 
 def tract(cls=None, *, tbname=None):

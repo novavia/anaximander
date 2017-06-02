@@ -111,8 +111,13 @@ class BigTableDataTable(DataTable):
     # An optional maxrate to limit query size automatically
     # This functionality requires a rowcount method to be implemented on
     # the table's Schema
-    maxrate = nxattr.ib(None)
+    maxrate = nxattr.ib(None, repr=False)
     threadpoolsize = 250  # size of thread pool for inserts
+
+    def __attrs_post_init__(self):
+        tract = self.schema.tract
+        if tract is not None:
+            tract._bigtable = self
 
     @xprops.cachedproperty
     def table(self):
