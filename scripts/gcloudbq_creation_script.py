@@ -19,11 +19,12 @@ import numpy as np
 import pandas as pd
 
 import anaximander as nx
+from anaximander.utilities.functions import get_gcloud_project_id
 from anaximander.data import data as dat, fields as fld, schema as sch, \
     tract as trc, gcbigquery as gbq
 
 
-PROJECT_ID = 'infinite-uptime-1232'
+PROJECT_ID = get_gcloud_project_id()
 BQ = bq.Client(PROJECT_ID)
 DATASET_ID = 'InterfaceTesting'
 
