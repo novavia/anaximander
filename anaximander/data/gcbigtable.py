@@ -63,7 +63,7 @@ def keymaker(schema):
     """
     strategies = {'hash': lambda x: str(hash(x)),
                   'reverse': lambda x: str(x)[::-1],
-                  'timestamp': lambda x: str(int(1e6 * (MAX_TIMESTAMP - \
+                  'timestamp': lambda x: str(int(1e6 * (MAX_TIMESTAMP -
                                                         x.timestamp()))),
                   'pmatsemit': lambda x: str(int(1e6 * x.timestamp()))[::-1]}
     keyfuncs = [strategies.get(f.key, lambda x: str(x))
@@ -90,7 +90,7 @@ def keymaker(schema):
         sequence of key fields in the table's schema.
         """
         return '#'.join(sequencer(*[f(a) for f, a in zip(keyfuncs, keys)]))
-   
+
     return rowkey
 
 # =============================================================================
@@ -144,6 +144,10 @@ class BigTableDataTable(DataTable):
     def client(self):
         return self.instance._client
 
+    @property
+    def project(self):
+        return self.client.project
+
     @xprops.cachedproperty
     def pool(self):
         """A connection pool from the happybase API."""
@@ -157,7 +161,7 @@ class BigTableDataTable(DataTable):
     @xprops.cachedproperty
     def rowkey(self):
         """Function that turns a record's key attributes into a row key."""
-        return keymaker(self.schema)        
+        return keymaker(self.schema)
 
     def __create__(self):
         rval = self.table.create()
@@ -205,7 +209,7 @@ class BigTableDataTable(DataTable):
 
     def _hbase_append__(self, frame, **kwargs):
         """Not in use because the connection pool is an illusion.
-        
+
         In actuality this code makes individual inserts with the same
         row.commit programmed in __insert__. This is very slow because
         every commit is a blocking I/O operation.
@@ -244,7 +248,7 @@ class BigTableMaxRowsException(BigTableQueryException):
 
 class BigTableQuery(DataQuery):
     __maxrows__ = 1e5  # Default limit for all queries
-    
+
     def __init__(self, *fields, **quargs):
         super().__init__(*fields, **quargs)
         if not all(nskey in self.quargs for nskey in self.table.schema.nskeys):
@@ -256,7 +260,7 @@ class BigTableQuery(DataQuery):
     def columns(self):
         """Returns self.fields organized by column family."""
         fields = (self.table.schema.fields[f] for f in self.fields)
-        return btcolumns(*fields)      
+        return btcolumns(*fields)
 
     @xprops.cachedproperty
     def rowfilter(self):
@@ -311,7 +315,7 @@ class BigTableQuery(DataQuery):
     def seqkeyrange(self):
         """The range for the sequential key, if applicable."""
         seqkey = self.table.schema.seqkey
-        seqkeyfield = self.table.schema.keys.get(seqkey, None)        
+        seqkeyfield = self.table.schema.keys.get(seqkey, None)
         if seqkeyfield is not None:
             try:
                 return self.quargs[seqkey]
@@ -340,11 +344,11 @@ class BigTableQuery(DataQuery):
         if max_per_group is NotImplemented:
             return self.__maxrows__
         maxrows = max_per_group * len(self.nskeygroups)
-        return min((maxrows, self.__maxrows__))        
-    
+        return min((maxrows, self.__maxrows__))
+
     def __fetch__(self, maxrows=None, maxraise=False):
         """Fetch primitive.
-        
+
         Params:
             maxrows: limits the number of rows. If None and the table has
                 a specified maxrate and sequential key, maxrows is computed

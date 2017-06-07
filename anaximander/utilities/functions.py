@@ -249,6 +249,7 @@ def is_online():
     else:
         return True
 
+
 def get_gcloud_config(attr):
     """Get gcloud configuration value.
 
@@ -266,6 +267,7 @@ def get_gcloud_config(attr):
     if not output:
         return ""
     return output.decode().replace("\n", "")
+
 
 def get_gcloud_project_id():
     """Get Google Cloud current project id."""

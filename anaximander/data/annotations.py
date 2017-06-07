@@ -128,7 +128,7 @@ def _indextype_to_domain(index_type):
             return _index_domain[it]
         except KeyError:
             pass
-    return None    
+    return None
 
 
 def domain(ref):
@@ -221,7 +221,7 @@ def location(loc, *, ref):
     if func is NotImplemented:
         msg = "No location function is provided for {0}"
         raise ValueError(msg.format(ref))
-    return func(loc)        
+    return func(loc)
 
 # =============================================================================
 # Pen base class for Marker and Highlighter

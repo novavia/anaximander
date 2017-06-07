@@ -56,13 +56,17 @@ class Interval(ContinuousRange, Iterable):
     """For now intervals are closed."""
     __lower_convert__ = None
     __upper_convert__ = None
-    
+
     def __init__(self, lower=None, upper=None):
         self._lower_input = lower
         self._lower = self.__lower_convert__(lower)
         self._upper_input = upper
         self._upper = self.__upper_convert__(upper)
-    
+        if self.lower > self.upper:
+            msg = "Cannot set interval with lower bound greater " + \
+                "than upper bound."
+            raise ValueError(msg)
+
     @xprops.cachedproperty
     def lower(self):
         return None
@@ -189,7 +193,7 @@ class StringInterval(Interval):
 
 class Levels(DiscreteRange, Set):
     """Holds a set of discrete levels."""
-    
+
     def __init__(self, levels):
         self._levels = set(levels)
 

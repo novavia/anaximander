@@ -285,6 +285,7 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         """
         dataobject = self.dataobject
         highlighter_type = self.highlighter_type
+
         def highlight(pair):
             """Returns a highlight from a successive record pair."""
             left, right = pair
@@ -292,6 +293,7 @@ class HighlightDigest(Digest, schema=HighlightSchema):
             upper, *_ = right.as_tuple()
             return Highlight(dataobject, highlighter_type(shade), lower, upper)
         highlights = [highlight(pair) for pair in fun.pairwise(self)]
+
         def filter_(highlight):
             if not shades:
                 return highlight.shade != 'blank'
@@ -512,10 +514,11 @@ class PhaseTransitions(NxDataSequence):
         Returns:
             Matplotlib ax object.
         """
+#        import pdb; pdb.set_trace()
         if series is not None and len(series) > 1:
             mean = series.data.mean()
             std = series.data.std()
-            y0 = fun.get(y0, mean - 0.5 * std) 
+            y0 = fun.get(y0, mean - 0.5 * std)
             y1 = fun.get(y1, mean + 0.5 * std)
         else:
             y0 = fun.get(y0, 0)
