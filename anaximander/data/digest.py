@@ -514,7 +514,6 @@ class PhaseTransitions(NxDataSequence):
         Returns:
             Matplotlib ax object.
         """
-#        import pdb; pdb.set_trace()
         if series is not None and len(series) > 1:
             mean = series.data.mean()
             std = series.data.std()

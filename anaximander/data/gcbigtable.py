@@ -368,8 +368,8 @@ class BigTableQuery(DataQuery):
                     g.consume_next()
                 except StopIteration:
                     break
-                except _Rendezvous:
-                    raise BigTableQueryException()
+#                except _Rendezvous:
+#                    raise BigTableQueryException()
                 for row in g.rows.values():
                     yield self.read_row(row)
                     row_count += 1

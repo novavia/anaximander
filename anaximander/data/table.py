@@ -113,8 +113,8 @@ class DataTable(NxObject):
                 mistakes.
         """
         if confirm:
-            msg = "This operation will delete {0} and all its data. \
-                   Type 'YES' if you wish to proceed."
+            msg = "This operation will delete {0} and all its data. " + \
+                  "Type 'YES' if you wish to proceed."
             confirmation = input(msg.format(self))
             if not confirmation == 'YES':
                 print("Table remove operation aborted.")
