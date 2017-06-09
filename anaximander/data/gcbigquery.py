@@ -154,11 +154,6 @@ class BigQueryDataTable(DataTable):
     # An optional maxrate to limit query size automatically
     maxrate = nxattr.ib(None, repr=False)
 
-    def __attrs_post_init__(self):
-        tract = self.schema.tract
-        if tract is not None:
-            tract._bigquery = self
-
     @xprops.cachedproperty
     def table(self):
         """Caches an instance of table in the bigquery API."""
