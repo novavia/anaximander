@@ -18,7 +18,7 @@ import pandas as pd
 from ..utilities import nxattr
 from ..meta import prototype, metacharacter, newtypemethod, typeinitmethod
 from .base import DataObject
-from .fields import Scalar
+from .fields import NxField
 from .schema import Schema, SampleLogSchema, EventLogSchema, \
     PhaseLogSchema, ClipLogSchema, FixChartSchema, PostChartSchema, \
     SectionChartSchema, SpanChartSchema
@@ -48,6 +48,15 @@ class NxRecord(DataObject):
     def dump(self):
         """Serializes a record."""
         return self.schema().dump(self).data
+
+    @classmethod
+    def loads(cls, data):
+        """Loads a record from a json-serialized data map."""
+        return cls.schema().loads(data).data
+
+    def dumps(self):
+        """Serializes a record to json."""
+        return self.schema().dumps(self).data
 
     @property
     def keys(self):
@@ -108,16 +117,20 @@ class NxRecord(DataObject):
     def _make_attributes(schema):
         """Creates attributes from schema."""
         attrs = {}
-        for k, v in schema.fields.items():
-            if isinstance(v, Scalar):
-                convert = v.datatype
+
+        def converter(field):
+            """Returns a conversion function."""
+            if isinstance(field, NxField):
+                return lambda x: field._depythonize(x)
             else:
-                convert = None
+                return None
+
+        for k, v in schema.fields.items():
             if v.required:
-                attrs[k] = nxattr.ib(convert=convert)
+                attrs[k] = nxattr.ib(convert=converter(v))
             else:
                 attrs[k] = nxattr.ib(default=v._attribute_default,
-                                     convert=convert)
+                                     convert=converter(v))
         return attrs
 
     @staticmethod

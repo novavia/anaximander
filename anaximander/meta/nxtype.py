@@ -136,7 +136,7 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
             md.name = name
 
         # Resets TypeDescriptorRegistries
-        tdregistries = TypeDescriptorRegistry.registries(cls)
+        tdregistries = TypeDescriptorRegistry.registries(bases[0])
         for k, v in tdregistries.items():
             v.reset(cls, k)
 
@@ -191,7 +191,6 @@ class NxType(abc.ABCMeta, RegistrableType, metaclass=NxMeta, basename=''):
             cls.__metainstances__[mi.name] = instance
             if not mi.inherit:
                 del cls.__metadeclarations__[mi.name]
-        
 
     def subtype(cls, *traits, name=None, **kwargs):
         """Returns a subtype, equivalent to nxtype."""

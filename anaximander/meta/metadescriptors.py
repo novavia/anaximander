@@ -639,7 +639,7 @@ class TypeDescriptor(MetaDeclaration):
     Obviously, it's a bit of a misnomer to include TypeDescriptors in the
     the metadescriptors module. This will probably call for some refactoring
     at some point.
-    
+
     TypeDescriptors can optionally be registered in an OrderedDict at the
     type level by specifying a property name. This sets
     a property such that type instances can return an ordered dictionary
@@ -664,6 +664,7 @@ class TypeDescriptor(MetaDeclaration):
         if cls.prop is None:
             return None
         rgname = cls._registry_name()
+
         def fget(inst):
             registry = getattr(type(inst), rgname)
             return OrderedDict([(k, getattr(inst, k)) for k in registry])

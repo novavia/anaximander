@@ -89,7 +89,12 @@ class TestRecord(ut.TestCase):
     def test_validate(self):
         record = self.schema.load(self.data).data
         record.validate()
-        record = self.Record(title='ping', date='pong')
+
+        class Schema(sch.Schema):
+            email = fields.Email()
+        Record = NxRecord[Schema]
+
+        record = Record(email='ping')
         with pytest.raises(sch.ValidationError):
             record.validate()
 

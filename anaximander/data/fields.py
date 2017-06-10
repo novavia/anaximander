@@ -15,6 +15,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import Iterable
+import math
 import re
 
 import attr
@@ -273,7 +274,12 @@ class ReString(String):
 ReStr = ReString
 
 
-class NxDataField(Field):
+class NxField(Field):
+    """Base class for custom Anaximander fields."""
+    pass
+
+
+class NxDataField(NxField):
     """Base class for Scalar and Vector fields."""
     pass
 
@@ -298,6 +304,8 @@ class Scalar(NxDataField):
 
     def _serialize(self, value, attr, obj):
         """Expects value to be of type datatype, returns native python type."""
+        if value is None:
+            return msh.missing
         if not isinstance(value, self.datatype):
             self.fail('type')
         return value.data.item()
@@ -310,16 +318,22 @@ class Scalar(NxDataField):
             self.fail('validator_failed')
 
     def _pythonize(self, val):
-        return self.datatype.number(val)
+        if val is not None:
+            rval = self.datatype.number(val)
+            if not math.isnan(rval):
+                return rval
 
     def _depythonize(self, val):
-        return self.datatype(val)
+        if val is not None:
+            return self.datatype(val)
 
 
-class Timestamp(Field):
+class Timestamp(NxField):
     """A field that deserializes to a pandas Timestamp."""
 
     def _serialize(self, value, attr, obj):
+        if value is None:
+            return msh.missing
         if not isinstance(value, pd.Timestamp):
             self.fail('type')
         return str(value)
@@ -331,16 +345,20 @@ class Timestamp(Field):
             self.fail('validator_failed')
 
     def _pythonize(self, val):
-        return val.to_pydatetime(warn=False)
+        if val is not None:
+            return val.to_pydatetime(warn=False)
 
     def _depythonize(self, val):
-        return datetime(val)
+        if val is not None:
+            return datetime(val)
 
 
-class Duration(Field):
+class Duration(NxField):
     """A field that deserializes to a pandas Timedelta."""
 
     def _serialize(self, value, attr, obj):
+        if value is None:
+            return msh.missing
         if not isinstance(value, pd.Timedelta):
             self.fail('type')
         return str(value)
@@ -352,13 +370,15 @@ class Duration(Field):
             self.fail('validator_failed')
 
     def _pythonize(self, val):
-        return val.to_pytimedelta()
+        if val is not None:
+            return val.to_pytimedelta()
 
     def _depythonize(self, val):
-        return pd.Timedelta(val)
+        if val is not None:
+            return pd.Timedelta(val)
 
 
-class Period(Field):
+class Period(NxField):
     """A field that deserializes to a pandas Period of a set frequency."""
 
     def __init__(self, freq=None, default=msh.missing, attribute=None,
@@ -389,6 +409,8 @@ class Period(Field):
         return self._freqstr
 
     def _serialize(self, value, attr, obj):
+        if value is None:
+            return msh.missing
         if not isinstance(value, pd.Period):
             self.fail('type')
         return str(value)
@@ -400,7 +422,9 @@ class Period(Field):
             self.fail('validator_failed')
 
     def _pythonize(self, val):
-        return val.to_timestamp().to_pydatetime(warn=False)
+        if val is not None:
+            return val.to_timestamp().to_pydatetime(warn=False)
 
     def _depythonize(self, val):
-        return pd.Period(val, freq=self._freq)
+        if val is not None:
+            return pd.Period(val, freq=self._freq)
