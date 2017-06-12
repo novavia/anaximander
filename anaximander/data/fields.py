@@ -15,7 +15,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import Iterable
-import math
+from math import isnan
 import re
 
 import attr
@@ -27,7 +27,8 @@ from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Str, Bool, Int, Constant
 import pandas as pd
 
-from ..utilities.functions import monkeypatch
+from ..utilities import xprops
+from ..utilities.functions import monkeypatch, get
 from ..utilities.nxtime import datetime
 from .exceptions import DataError, ValidationError as DataValidationError
 from .data import NxScalar
@@ -83,7 +84,7 @@ def supported(field_type):
     """
     if issubclass(field_type, Field):
         return _field_check.get(field_type, True)
-    raise TypeError("Non Field subclass supplied to supported.")   
+    raise TypeError("Non Field subclass supplied to supported.")
 
 # =============================================================================
 # Field patching
@@ -286,45 +287,65 @@ class NxDataField(NxField):
 
 class Scalar(NxDataField):
     """A field that expects NxScalar values, whose type is specified."""
+    __defaults__ = {'f': float('nan'),
+                    'i': -1,
+                    'u': -1,
+                    'b': False,
+                    'U': '',
+                    'S': ''
+                    }
 
-    def __init__(self, datatype=NxScalar, default=msh.missing,
+    def __init__(self, datatype=NxScalar, default=None,
                  attribute=None, load_from=None, dump_to=None, error=None,
-                 validate=None, required=False, allow_none=None,
-                 load_only=False, dump_only=False, missing=msh.missing,
-                 error_messages=None, **metadata):
+                 validate=None, required=False, allow_none=True,
+                 load_only=False, dump_only=False, error_messages=None,
+                 **metadata):
         if not issubclass(datatype, NxScalar):
             raise FieldError("Non NxDataType passed to DataField.")
         self.datatype = datatype
+        if default is None:
+            default = get(default, self.__defaults__[self.kind])
+            if metadata.get('key', False):
+                required = True
         super().__init__(default=default, attribute=attribute,
                          load_from=load_from, dump_to=dump_to, error=error,
                          validate=validate, required=required,
                          allow_none=allow_none, load_only=load_only,
-                         dump_only=dump_only, missing=missing,
-                         error_messages=error_messages, **metadata)
+                         dump_only=dump_only, error_messages=error_messages,
+                         **metadata)
+
+    @xprops.cachedproperty
+    def kind(self):
+        return self.datatype.dtype.kind
 
     def _serialize(self, value, attr, obj):
         """Expects value to be of type datatype, returns native python type."""
         if value is None:
-            return msh.missing
+            return self._attribute_default
         if not isinstance(value, self.datatype):
             self.fail('type')
         return value.data.item()
 
     def _deserialize(self, value, attr, data_):
         """Marshals value to a datatype."""
+        if value is 'None':
+            return self._attribute_default
         try:
             return self.datatype(value)
         except DataValidationError:
             self.fail('validator_failed')
 
     def _pythonize(self, val):
-        if val is not None:
-            rval = self.datatype.number(val)
-            if not math.isnan(rval):
-                return rval
+        rval = self.datatype.number(val)
+        if isnan(rval):
+            return None
+        else:
+            return rval
 
     def _depythonize(self, val):
-        if val is not None:
+        if val is None:
+            return self._attribute_default
+        else:
             return self.datatype(val)
 
 

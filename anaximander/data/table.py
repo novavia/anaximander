@@ -300,7 +300,7 @@ class DataQuery(NxObject):
 
     def sequence(self, context=None, **kwargs):
         """Returns query results as a data frame.
-        
+
         Note: this requires that the data contains a single non-sequential
         key, which is not enforced by the method.
         """

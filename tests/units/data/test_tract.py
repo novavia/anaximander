@@ -80,7 +80,7 @@ class TestDomain(TestCase):
         decorator = domain(dom)
         UserSchema = decorator(self.UserSchema)
         assert UserSchema in dom
-   
+
 
 def test_tract_decorator(schemas):
     UserSchema, PurchaseSchema = schemas
