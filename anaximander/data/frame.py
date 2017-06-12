@@ -409,7 +409,6 @@ class NxDataCollection(NxDataFrame):
     schema = metacharacter(validate=lambda s: issubclass(s, Schema))
 
 
-
 @prototype
 class NxDataMapping(NxDataFrame, traits=(Mapping,)):
     """An NxDataFrame indexed by non-sequential key fields in the schema."""

@@ -133,10 +133,10 @@ class MarkDigest(Digest, schema=MarkSchema):
             schema = _domain_to_mark_schema[domain]
         except KeyError:
             msg = "Unrecognized survey domain for {0}"
-            raise DigestError(msg.format(dataobject))           
+            raise DigestError(msg.format(dataobject))
         concrete_type = Digest[schema]
         return concrete_type(dataobject, marker_type, data)
-    
+
     def __init__(self, dataobject, marker_type, data=None):
         super().__init__(dataobject, data)
         self.marker_type = marker_type
@@ -158,10 +158,12 @@ class MarkDigest(Digest, schema=MarkSchema):
         """
         dataobject = self.dataobject
         marker_type = self.marker_type
+
         def mark(record):
             loc, shade = record.as_tuple()
             return Mark(dataobject, marker_type(shade), loc)
         marks = [mark(r) for r in self]
+
         def filter_(mark):
             if not shades:
                 return mark.shade != 'blank'
@@ -217,7 +219,7 @@ class HighlightDigest(Digest, schema=HighlightSchema):
             schema = _domain_to_high_schema[domain]
         except KeyError:
             msg = "Unrecognized survey domain for {0}"
-            raise DigestError(msg.format(dataobject))           
+            raise DigestError(msg.format(dataobject))
         concrete_type = Digest[schema]
         return concrete_type(dataobject, highlighter_type, data)
 
@@ -599,8 +601,8 @@ class SurveyError(DataError):
 
 class Survey(NxObject):
     """Wraps a function to produce a Digest."""
-    survey_empty = False  # Indicates whether __highlights__ supports empty
-                          # series.
+    # Indicates whether __highlights__ supports empty series.
+    survey_empty = False
 
     def __init__(self, dataobject, *columns, **params):
         """Instantiates a survey object.
@@ -685,6 +687,7 @@ class MarkSurvey(Survey):
             marks = []
         else:
             marks = self.__marks__(*series, **self.params)
+
         def filter_(mark):
             if not shades:
                 return True
@@ -737,6 +740,7 @@ class HighlightSurvey(Survey):
             highlights = []
         else:
             highlights = self.__highlights__(*series, **self.params)
+
         def filter_(highlight):
             if not shades:
                 return True
