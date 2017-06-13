@@ -13,7 +13,6 @@ Copyright (C) Novavia Solutions, LLC.
 
 from collections import defaultdict, OrderedDict, ChainMap
 from concurrent.futures import ThreadPoolExecutor
-from itertools import product
 
 from grpc._channel import _Rendezvous
 from google.cloud.bigtable.client import Client
@@ -27,7 +26,6 @@ from ..utilities import functions as fun, nxattr, xprops
 from ..utilities.nxtime import MAX_TIMESTAMP
 from ..meta import prototype, metacharacter
 from .schema import Schema
-from .annotations import interval
 from .data import NxData
 from .table import DataTable, DataQuery, DataQueryException, \
     DataTableWriteException
@@ -300,29 +298,6 @@ class BigTableQuery(DataQuery):
         startkeys.insert(ix, seqkeyrange.lower)
         endkeys.insert(ix, seqkeyrange.upper)
         return tuple(sorted((rowkey(*startkeys), rowkey(*endkeys))))
-
-    @xprops.cachedproperty
-    def nskeygroups(self):
-        """The combinations of non-sequential key groups."""
-        nskeys = self.table.schema.nskeys
-        nskeyquargs = OrderedDict(((k, self.quargs[k]) for k in nskeys))
-        if nskeys:
-            return list(product(*nskeyquargs.values()))
-        else:
-            return [tuple()]
-
-    @xprops.cachedproperty
-    def seqkeyrange(self):
-        """The range for the sequential key, if applicable."""
-        seqkey = self.table.schema.seqkey
-        seqkeyfield = self.table.schema.keys.get(seqkey, None)
-        if seqkeyfield is not None:
-            try:
-                return self.quargs[seqkey]
-            except KeyError:
-                return interval(ref=seqkeyfield)
-        else:
-            return None
 
     def _make_rowkeypairs(self):
         """Returns an iterable of rowkey pairs to slice the table."""

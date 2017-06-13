@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import OrderedDict
+from itertools import product
 import warnings
 
 import pandas as pd
@@ -180,7 +181,7 @@ class DataTable(NxObject):
 
 class DataQueryException(DataTableReadException):
     """Specialized exception type for queries."""
-    pass    
+    pass
 
 
 class EmptyQueryException(DataQueryException):
@@ -220,6 +221,7 @@ class DataQuery(NxObject):
     def __init__(self, table, *fields, sql=None, **quargs):
         self.table = table
         schemafields = self.table.schema.fields
+
         def fieldsortkey(name):
             return schemafields[name]._creation_index
         if not all(f in table.schema.fieldnames for f in fields):
@@ -239,7 +241,7 @@ class DataQuery(NxObject):
                     self.sql = sql
                 except AttributeError:
                     msg = "{0} table type does not support SQL statements."
-                    raise DataQueryException(msg.format(type(self.table)))                    
+                    raise DataQueryException(msg.format(type(self.table)))
         query_args = []
 
         for k, v in quargs.items():
@@ -247,7 +249,7 @@ class DataQuery(NxObject):
                 field = schemafields[k]
             except KeyError:
                 msg = "All query arguments must match a schema field name."
-                raise DataQueryException(msg)                
+                raise DataQueryException(msg)
             if isinstance(v, nxrange.Range):
                 query_args.append((k, v))
             elif isinstance(v, tuple):
@@ -263,6 +265,29 @@ class DataQuery(NxObject):
 
     def _sql_generator(self):
         raise NotImplementedError
+
+    @xprops.cachedproperty
+    def nskeygroups(self):
+        """The combinations of non-sequential key groups."""
+        nskeys = self.table.schema.nskeys
+        nskeyquargs = OrderedDict(((k, self.quargs[k]) for k in nskeys))
+        if nskeys:
+            return list(product(*nskeyquargs.values()))
+        else:
+            return [tuple()]
+
+    @xprops.cachedproperty
+    def seqkeyrange(self):
+        """The range for the sequential key, if applicable."""
+        seqkey = self.table.schema.seqkey
+        seqkeyfield = self.table.schema.keys.get(seqkey, None)
+        if seqkeyfield is not None:
+            try:
+                return self.quargs[seqkey]
+            except KeyError:
+                return interval(ref=seqkeyfield)
+        else:
+            return None
 
     @abc.abstractmethod
     def __fetch__(self, **kwargs):
@@ -304,7 +329,11 @@ class DataQuery(NxObject):
         Note: this requires that the data contains a single non-sequential
         key, which is not enforced by the method.
         """
-        return self.sequencetype(self.data(**kwargs), context=context)
+        rgargs = {self.table.schema.seqkey: self.seqkeyrange}
+        for k, v in zip(self.table.schema.nskeys, self.nskeygroups[0]):
+            rgargs[k] = v
+        return self.sequencetype(self.data(**kwargs), context=context,
+                                 **rgargs)
 
     def records(self, **kwargs):
         """Returns results as a list of records."""
@@ -316,4 +345,3 @@ class DataQuery(NxObject):
             cls.sql = xprops.singlesetproperty(lambda s: s._sql_generator())
         else:
             cls.sql = property(lambda s: NotImplemented)
-        

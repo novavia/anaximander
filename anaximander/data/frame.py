@@ -189,9 +189,9 @@ class NxDataFrame(IndexedDataObject):
                 raise ValueError(msg)
             else:
                 rgargs[self.sqcol] = ix_range
-        data = self.subset(data, **rgargs)
+        data = self.cast(data)
         self.keyrange = rgargs
-        self._data = self.cast(data)
+        self._data = self.subset(data, **rgargs)
         if validate:
             self.validate()
         self.context = context
@@ -390,7 +390,10 @@ class NxDataFrame(IndexedDataObject):
         """Extends self with another NxDataFrame or pandas.DataFrame."""
         if isinstance(data, NxDataFrame):
             data = data.data
-        xdata = self._data.append(data)
+        if self.empty:
+            xdata = data
+        else:
+            xdata = self._data.append(data)
         self._data = self.cast(xdata)
 
     def append(self, *records):
@@ -499,6 +502,22 @@ class NxDataSequence(NxDataFrame, traits=(Sequence,)):
         if len(self.distinct) > 1:
             msg = "DataSequence {0} features distinct values in key fields."
             raise ConformityError(msg.format(self))
+
+    @property
+    def lower(self):
+        """Start metadata."""
+        try:
+            return self.keyrange[self.sqcol].lower
+        except (KeyError, IndexError):
+            return None
+
+    @property
+    def upper(self):
+        """End metadata."""
+        try:
+            return self.keyrange[self.sqcol].upper
+        except (KeyError, IndexError):
+            return None
 
 # =============================================================================
 # Column Proxy class
