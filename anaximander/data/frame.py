@@ -189,9 +189,8 @@ class NxDataFrame(IndexedDataObject):
                 raise ValueError(msg)
             else:
                 rgargs[self.sqcol] = ix_range
-        data = self.cast(data)
-        self.keyrange = rgargs
-        self._data = self.subset(data, **rgargs)
+        self._data = self.cast(data)
+        self._subset(**rgargs)
         if validate:
             self.validate()
         self.context = context
@@ -247,12 +246,9 @@ class NxDataFrame(IndexedDataObject):
         return dataframe.sort_index()
 
     @classmethod
-    def subset(cls, data, **rgargs):
-        """Subsets a valid dataframe with supplied range arguments."""
-        if data is None:
-            return None
-        elif data.empty:
-            return data
+    def _keyrange(cls, **rgargs):
+        """Validates and converts range arguments as appropriate."""
+        result = {}
         for key, value in rgargs.items():
             is_key_field = False
             try:
@@ -264,7 +260,30 @@ class NxDataFrame(IndexedDataObject):
                 msg = "Improper argument {0} passed to {1}"
                 raise FrameError(msg.format(key, cls))
             if field.sequential:
-                lower, upper = interval(*value, ref=field).bounds
+                result[key] = interval(*value, ref=field)
+            else:
+                result[key] = value
+        return result
+
+    def _subset(self, **rgargs):
+        """Subsets a valid dataframe with supplied range arguments.
+
+        Note that the method is not exposed as it is technically weak:
+        it updates the keyrange and hence does not robustly support
+        iterative calls -it would need to update the keyrange based on the
+        existing keyrange and the new supplied arguments.
+        """
+        keyrange = self._keyrange(**rgargs)
+        self.keyrange = keyrange
+        data = self.data
+        if data is None:
+            return None
+        elif data.empty:
+            return data
+        for key, value in keyrange.items():
+            field = getattr(self.schema, key)
+            if field.sequential:
+                lower, upper = value.bounds
                 data = data[(data[key] >= lower) & (data[key] <= upper)]
             else:
                 target = levels(value)
@@ -272,7 +291,7 @@ class NxDataFrame(IndexedDataObject):
                     data = data[target == data[key]]
                 elif isinstance(target, Levels):
                     data = data[data[key].isin(target)]
-        return data
+        self._data = data
 
     def validate(self):
         """Validates all records in a frame against the schema."""
@@ -366,7 +385,11 @@ class NxDataFrame(IndexedDataObject):
 
     def crop(self, start=None, end=None):
         """Returns a new instance that has been cropped by start and end."""
-        if start is not None and end is not None:
+        sqrange = interval(start, end, ref=self.domain)
+        start, end = sqrange
+        if self.empty:
+            df = self.data
+        elif start is not None and end is not None:
             df = pd.DataFrame(self.data.loc[start:end])
         elif end is not None:
             df = pd.DataFrame(self.data.loc[:end])
@@ -374,20 +397,34 @@ class NxDataFrame(IndexedDataObject):
             df = pd.DataFrame(self.data.loc[start:])
         else:
             df = self.data
-        return type(self)(df, context=self.context)
+        result = type(self)(df, context=self.context)
+        if self.lower is not None:
+            lower = max((self.lower, start))
+        else:
+            lower = start
+        if self.upper is not None:
+            upper = min((self.upper, end))
+        else:
+            upper = end
+        result.keyrange[self.sqcol] = interval(lower, upper, ref=self.domain)
+        return result
 
     @classmethod
-    def from_records(cls, records, context=None):
+    def from_records(cls, records, context=None, **rgargs):
         """Instantiates an NxDataFrame from an iterable of records.
 
         Records must be instances of NxRecord[self.schema].
         """
         rows = [r.as_dict() for r in records]
         data = pd.DataFrame.from_records(rows)
-        return cls(data, context=context)
+        return cls(data, context=context, **rgargs)
 
     def extend(self, data):
-        """Extends self with another NxDataFrame or pandas.DataFrame."""
+        """Extends self with another NxDataFrame or pandas.DataFrame.
+
+        One side effect is the elimination of range metadata, as it becomes
+        undefined.
+        """
         if isinstance(data, NxDataFrame):
             data = data.data
         if self.empty:
@@ -395,6 +432,7 @@ class NxDataFrame(IndexedDataObject):
         else:
             xdata = self._data.append(data)
         self._data = self.cast(xdata)
+        self.keyrange = {}
 
     def append(self, *records):
         """Appends one or more records to self.

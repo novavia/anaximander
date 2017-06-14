@@ -12,9 +12,11 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
+from collections import OrderedDict
 from collections.abc import Mapping
 from itertools import chain
 
+import numpy as np
 import pandas as pd
 
 from ..utilities import xprops, functions as fun
@@ -241,21 +243,19 @@ class HighlightDigest(Digest, schema=HighlightSchema):
             msg = "Cannot instantiate HighlightDigest from overlapping \
                    highlights."
             raise DigestError(msg)
-        # Eliminates zero-length highlights that provide no information
-        keepers = diffs > cls.schema._zero
-        keepers.iloc[0] = True
-        data = pd.DataFrame(data[keepers])
-        # The elimination of rows require resetting the transitions
-        # We shift the prev_highlighter to populate next_highlighter
-        next_highlights = data.prev_highlighter.shift(-1)
-        next_highlights.iloc[-1] = 'blank'
-        data['next_highlighter'] = next_highlights
         # Eliminates useless transitions where prev == next
         return data[data.prev_highlighter != data.next_highlighter]
 
     @classmethod
     def from_highlights(cls, dataobject, highlighter_type, highlights):
-        highlights = list(highlights)
+        domain = dataobject.domain
+        try:
+            schema = _domain_to_high_schema[domain]
+        except KeyError:
+            msg = "Unrecognized survey domain for {0}"
+            raise DigestError(msg.format(dataobject))
+        # Eliminates zero-length highlights that provide no information
+        highlights = [h for h in highlights if h.length > schema._zero]
         highlights.sort(key=lambda h: h.lower)
         if not highlights:
             return EmptyHighlightDigest(dataobject, highlighter_type)
@@ -264,6 +264,17 @@ class HighlightDigest(Digest, schema=HighlightSchema):
         # Make an underlying pandas dataframe from the transitions
         schema = _domain_to_high_schema[highlights[0].domain]
         data = pd.DataFrame(highsdata, columns=schema.fieldnames)
+        # Eliminates meaningless transitions due to consecutive highlights
+        # that share a common boundary
+        diffs = data.iloc[:, 0].diff()
+        keepers = diffs > schema._zero
+        keepers.iloc[0] = True
+        data = pd.DataFrame(data[keepers])
+        # The elimination of rows require resetting the transitions
+        # We shift the prev_highlighter to populate next_highlighter
+        next_highlights = data.prev_highlighter.shift(-1)
+        next_highlights.iloc[-1] = 'blank'
+        data['next_highlighter'] = next_highlights
         return cls(dataobject, highlighter_type, data)
 
     @classmethod
@@ -425,12 +436,53 @@ class PhaseTransitions(NxDataSequence):
     """Specialized NxDataSequence for phase transitions."""
     schema = PhaseLogSchema
 
+    @classmethod
+    def monophase(cls, tract, start, end, state, context=None):
+        """Makes an empty log and sets the unique state."""
+        result = tract.Sequence(context=context, timestamp=(start, end))
+        result.unique = state
+        return result
+
     @xprops.settablecachedproperty
     def highlighter_type(self):
         try:
             return self.schema.highlighter_type
         except AttributeError:
             return None
+
+    @property
+    def unique(self):
+        """A unique state throughout the sequential range, or None."""
+        if self.empty:
+            return getattr(self, '_unique', None)
+        values = self.data[['prev_state', 'next_state']].values
+        states = np.unique(values)
+        if len(states) == 1:
+            return states[0]
+        else:
+            return None
+
+    @unique.setter
+    def unique(self, value):
+        self._unique = value
+
+    def state(self, timestamp):
+        """Returns the state at timestamp."""
+        if self.lower is not None:
+            if timestamp < self.lower:
+                msg = "Cannot determine state prior to the logs' lower bound."
+                raise IndexError(msg)
+        if self.upper is not None:
+            if timestamp > self.upper:
+                msg = "Cannot determine state after the log's upper bound."
+        if self.empty:
+            return self.unique
+        prev_data = self.data.loc[:timestamp]
+        next_data = self.data.loc[timestamp:]
+        try:
+            return prev_data.iloc[-1].next_state
+        except IndexError:
+            return next_data.iloc[0].prev_state
 
     def as_digest(self):
         if self.highlighter_type is None:
@@ -442,64 +494,50 @@ class PhaseTransitions(NxDataSequence):
         df['next_highlighter'] = df['next_state']
         df = df[['timestamp', 'prev_highlighter', 'next_highlighter']]
         df = df.replace('N/A', 'blank')
+        if self.lower is not None:
+            transition = OrderedDict([('timestamp', self.lower),
+                                      ('prev_highlighter', 'blank'),
+                                      ('next_highlighter',
+                                       self.state(self.lower))])
+            if df.empty:
+                df = pd.DataFrame(transition, index=[self.lower])
+            elif self.lower not in df.index:
+                df.loc[self.lower] = list(transition.values())
+        if self.upper is not None:
+            transition = OrderedDict([('timestamp', self.upper),
+                                      ('prev_highlighter',
+                                       self.state(self.upper)),
+                                      ('next_highlighter', 'blank')])
+            if df.empty:
+                df = pd.DataFrame(transition, index=[self.upper])
+            elif self.upper not in df.index:
+                df.loc[self.upper] = list(transition.values())
+        df.sort_index(inplace=True)
         return TimeHighlightDigest(self, self.highlighter_type, df,
                                    normalize=False)
 
     def crop(self, start=None, end=None):
-        """Returns a new instance that has been cropped by start and end."""
-        if self.empty:
-            return type(self)(self.data, context=self.context)
-        df = self.data
-        if start is not None:
-            if df.index[0] < start:
-                record = df.loc[:start].iloc[-1].copy()
-                record['timestamp'] = start
-                record['prev_state'] = 'N/A'
-                df = df.loc[start:]
-                df.loc[start] = record
-                df.sort_index(inplace=True)
-        if end is not None:
-            if df.index[-1] > end:
-                record = df.loc[end:].iloc[0].copy()
-                record['timestamp'] = end
-                record['next_state'] = 'N/A'
-                df = df.loc[:end]
-                df.loc[end] = record
-                df.sort_index(inplace=True)
-        return type(self)(df, context=self.context)
+        """Crops the transition logs.
 
-    def fill(self, state, start=None, end=None):
-        """Fills self with supplied state between start and end.
-
-        If self's index extends beyond start and end, this method does
-        nothing. Otherwise it inserts additional transitions at start and / or
-        end to ensure complete coverage.
+        Identical to the generic method, except that a state metadata
+        may be added if the dataframe ends up empty.
         """
-        if self.empty:
-            msg = "Cannot fill an empty PhaseTransitions sequence."
-            raise DataError(msg)
-        df = self.data
-        if start is not None:
-            if df.index[0] > start:
-                first_ix = df.loc[start:].index[0]
-                record = df.loc[first_ix].copy()
-                record['timestamp'] = start
-                record['prev_state'] = 'N/A'
-                record['next_state'] = state
-                df.loc[first_ix, 'prev_state'] = state
-                df.loc[start] = record
-                df.sort_index(inplace=True)
-        if end is not None:
-            if df.index[-1] < end:
-                last_ix = df.loc[:end].index[-1]
-                record = df.loc[last_ix].copy()
-                record['timestamp'] = end
-                record['prev_state'] = state
-                record['next_state'] = 'N/A'
-                df.loc[last_ix, 'next_state'] = state
-                df.loc[end] = record
-                df.sort_index(inplace=True)
-        return type(self)(df, context=self.context)
+        result = NxDataSequence.crop(self, start, end)
+        if not result.empty:
+            if result.index[0] == result.lower:
+                result._data = result.data.iloc[1:]
+        if not result.empty:
+            if result.index[-1] == result.upper:
+                result._data = result.data.iloc[:-1]
+        if not self.empty and result.empty:
+            prev_data = self.data.loc[:start]
+            next_data = self.data.loc[end:]
+            try:
+                state = prev_data.iloc[-1].next_state
+            except IndexError:
+                state = next_data.iloc[0].prev_state
+            result.unique = state
+        return result
 
     def plot(self, series=None, *, y0=None, y1=None, ax='new', **kwargs):
         """Plots phase transitions as highlights, against optional series.

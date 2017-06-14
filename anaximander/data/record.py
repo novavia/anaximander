@@ -77,6 +77,9 @@ class NxRecord(DataObject):
         """
         return nxattr.astuple(self, **kwargs)
 
+    def copy(self):
+        return type(self)(context=self.context, **self.as_dict())
+
     def as_pydict(self, **kwargs):
         """Returns fields in dict form, converted to native Python."""
         return self.schema.pythonize(self.as_dict(**kwargs))
