@@ -142,3 +142,15 @@ def tz_naive(data):
     elif isinstance(data, pd.Index):
         return tz_naive(pd.Series(index=data)).index
     return data
+
+
+def dates(data, tz='utc'):
+    """Returns a set of local dates from a tz-aware time-indexed data."""
+    if isinstance(data, pd.Index):
+        index = data
+    else:
+        index = data.index
+    if index.tz is None:
+        msg = "The dates function requires a tz-aware index, not {0}."
+        raise ValueError(msg.format(index))
+    return set(index.tz_convert(tz).date)

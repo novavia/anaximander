@@ -47,7 +47,7 @@ class TestTimeInterval(TestCase):
         i0 = rge.time_interval('2017-3-20 12:00', '2017-3-20 13:00')
         assert i0 in interval
         i1 = rge.time_interval('2017-3-20 12:00', None)
-        assert not i1 in interval        
+        assert i1 not in interval
 
     def test_sql(self):
         lower = '2017-3-20'
@@ -67,13 +67,14 @@ class TestTimeInterval(TestCase):
         sql = "x >= 0.0 AND x <= 1.0"
         assert interval.sql('x') == sql
 
+
 class TestDiscreteRange(TestCase):
 
     def test_helper(self):
         item, items = 'item', ['i0', 'i1', 'i2']
         assert isinstance(rge.levels(item), rge.Level)
         assert isinstance(rge.levels(items), rge.Levels)
-        
+
     def test_level(self):
         level = rge.Level('item')
         assert repr(level) == "Level('item')"
@@ -94,5 +95,63 @@ class TestDiscreteRange(TestCase):
         sql = "x = 'item'"
         assert level.sql('x') == sql
 
+
+class TestMultiInterval(TestCase):
+
+    def test_normalize(self):
+        i0 = rge.FloatInterval(0, 1)
+        i1 = rge.FloatInterval(0.5, 1.5)
+        i2 = rge.FloatInterval(2, 3)
+        i3 = rge.FloatInterval(0.25, 2.5)
+        i4 = rge.FloatInterval(2.5, 3.5)
+        i5 = rge.FloatInterval(0, 4)
+        r0 = rge.FloatInterval(0, 1.5)
+        r1 = rge.FloatInterval(0, 3)
+        r2 = rge.FloatInterval(0, 3.5)
+        assert rge.MultiInterval.normalize(i0) == [i0]
+        assert rge.MultiInterval.normalize(i0, i1) == [r0]
+        assert rge.MultiInterval.normalize(i0, i1, i2) == [r0, i2]
+        assert rge.MultiInterval.normalize(i0, i1, i2, i3) == [r1]
+        assert rge.MultiInterval.normalize(i0, i1, i2, i3, i4) == [r2]
+        assert rge.MultiInterval.normalize(i5, i0, i1, i2, i3, i4) == [i5]
+
+    def test_intersection(self):
+        i0 = rge.FloatInterval(0, 1)
+        i1 = rge.FloatInterval(0.5, 1.5)
+        i2 = rge.FloatInterval(2, 3)
+        i3 = rge.FloatInterval(0.25, 4)
+        i4 = rge.FloatInterval(3.5, 5)
+        r0 = rge.FloatInterval(0.5, 1)
+        r1 = rge.FloatInterval(0.25, 1)
+        r2 = rge.FloatInterval(3.5, 4)
+        m1 = rge.MultiInterval([i0, i4])
+        m2 = rge.MultiInterval([i2])
+        assert rge.MultiInterval.intersection(m1, m2) == rge.MultiInterval()
+        m2 = rge.MultiInterval([i1])
+        assert rge.MultiInterval.intersection(m1, m2) == \
+            rge.MultiInterval([r0])
+        m2 = rge.MultiInterval([i3])
+        assert rge.MultiInterval.intersection(m1, m2) == \
+            rge.MultiInterval([r1, r2])
+
+    def test_difference(self):
+        i0 = rge.FloatInterval(0, 1)
+        i1 = rge.FloatInterval(0.5, 1.5)
+        i2 = rge.FloatInterval(2, 3)
+        i3 = rge.FloatInterval(0.25, 5)
+        i4 = rge.FloatInterval(3.5, 5)
+        r0 = rge.FloatInterval(0, 0.5)
+        r1 = rge.FloatInterval(0, 0.25)
+        m1 = rge.MultiInterval([i0, i4])
+        m2 = rge.MultiInterval([i2])
+        assert rge.MultiInterval.difference(m1, m2) == m1
+        m2 = rge.MultiInterval([i1])
+        assert rge.MultiInterval.difference(m1, m2) == \
+            rge.MultiInterval([r0, i4])
+        m2 = rge.MultiInterval([i3])
+        assert rge.MultiInterval.difference(m1, m2) == \
+            rge.MultiInterval([r1])
+
+
 if __name__ == '__main__':
-    pytest.main([__file__])
+    pytest.main([__file__, '-x', '--pdb'])

@@ -174,16 +174,31 @@ class BigTableDataTable(DataTable):
     def __query__(self, *fields, **kwargs):
         return BigTableQuery(self, *fields, **kwargs)
 
+#    def __insert__(self, record, **kwargs):
+#        rowkey = self.rowkey(*record.keys)
+#        row = self.table.row(rowkey)
+#        for family, columns in self.columns.items():
+#            for col in columns:
+#                value = getattr(record, col, '')
+#                if isinstance(value, NxData):
+#                    value = str(value.data)
+#                else:
+#                    value = str(value)
+#                row.set_cell(family,
+#                             col.encode('utf-8'),
+#                             value.encode('utf-8'))
+#        try:
+#            row.commit()
+#        except _Rendezvous:
+#            raise BigTableInsertException()
+
     def __insert__(self, record, **kwargs):
         rowkey = self.rowkey(*record.keys)
         row = self.table.row(rowkey)
+        dump = record.dump()
         for family, columns in self.columns.items():
             for col in columns:
-                value = getattr(record, col, '')
-                if isinstance(value, NxData):
-                    value = str(value.data)
-                else:
-                    value = str(value)
+                value = str(dump.get(col, ''))
                 row.set_cell(family,
                              col.encode('utf-8'),
                              value.encode('utf-8'))

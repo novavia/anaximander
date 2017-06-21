@@ -382,7 +382,7 @@ class Duration(NxField):
             return msh.missing
         if not isinstance(value, pd.Timedelta):
             self.fail('type')
-        return str(value)
+        return value.value
 
     def _deserialize(self, value, attr, data_):
         try:
@@ -390,9 +390,16 @@ class Duration(NxField):
         except ValueError:
             self.fail('validator_failed')
 
+    # XXX: this is not technically correct. In practice, the only application
+    # of pythonize is conversion of records for BigQuery inserts. Duration
+    # requires a conversion to an integer and that is what this function
+    # returns, even though a more rigorous definition would have it return
+    # a python time delta object.
     def _pythonize(self, val):
+        # if val is not None:
+        # return val.to_pytimedelta()
         if val is not None:
-            return val.to_pytimedelta()
+            return val.value
 
     def _depythonize(self, val):
         if val is not None:
