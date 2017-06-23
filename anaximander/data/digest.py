@@ -516,6 +516,25 @@ class PhaseTransitions(NxDataSequence):
         return TimeHighlightDigest(self, self.highlighter_type, df,
                                    normalize=False)
 
+    def to_series(self):
+        """Returns a timeseries of next states from lower to upper."""
+        i0, s0 = self.lower, self.state(self.lower)
+        i1, s1 = self.upper, self.state(self.upper)
+        if self.empty:
+            index = [i0, i1]
+            states = [s0, s1]
+        else:
+            index, states = list(self.index), list(self.next_state())
+            if self.lower < self.index[0]:
+                i0, s0 = self.lower, self.iloc[0].prev_state
+                index = [i0] + index
+                states = [s0] + states
+            if self.upper > self.index[-1]:
+                i1, s1 = self.upper, 'N/A'
+                index = index + [i1]
+                states = states + [s1]
+        return pd.Series(states, index=index)
+
     def crop(self, start=None, end=None):
         """Crops the transition logs.
 

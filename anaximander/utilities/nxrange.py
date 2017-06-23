@@ -190,6 +190,10 @@ class TimeInterval(Interval):
     __lower_convert__ = staticmethod(_lower_time_convert)
     __upper_convert__ = staticmethod(_upper_time_convert)
 
+    def tz_convert(self, tzinfo):
+        return type(self)(self.lower.tz_convert(tzinfo),
+                          self.upper.tz_convert(tzinfo))
+
 
 def _lower_string_convert(value):
     if value is None:
@@ -320,6 +324,7 @@ def bounds(interval):
 
 class MultiInterval(MultiRange, Sequence):
     """An object representing a union of intervals."""
+    tolerance = None  # Optional tolerance for interval overlap
 
     def __init__(self, intervals=None):
         intervals = get(intervals, [])
@@ -344,6 +349,12 @@ class MultiInterval(MultiRange, Sequence):
         uppers = signature.index[is_upper]
         is_lower = is_upper.shift().fillna(True)
         lowers = signature.index[is_lower]
+        if cls.tolerance is not None:
+            lowest, uppest = lowers[0], uppers[-1]
+            interior = lowers[1:] - uppers[:-1]
+            keepers = interior > cls.tolerance
+            lowers = [lowest] + list(lowers[1:][keepers])
+            uppers = list(uppers[:-1][keepers]) + [uppest]
         return [itype(lower, upper) for lower, upper in zip(lowers, uppers)]
 
     @classmethod
@@ -395,6 +406,12 @@ class MultiInterval(MultiRange, Sequence):
         uppers = signature.index[is_lower.shift().fillna(False)]
         return cls([itype(l, u) for l, u in zip(lowers, uppers)])
 
+    @classmethod
+    def union(cls, *instances):
+        """Returns the union of MultiIntervals, as a MultiInterval."""
+        intervals = chain(*(i._intervals for i in instances))
+        return cls(intervals)
+
     def __getitem__(self, ix):
         return self._intervals.__getitem__(ix)
 
@@ -410,5 +427,19 @@ class MultiInterval(MultiRange, Sequence):
     def __sub__(self, other):
         return self.difference(self, other)
 
+    def __or__(self, other):
+        return self.union(self, other)
+
     def __repr__(self):
         return "{0}({1})".format(type(self).__name__, self._intervals)
+
+
+class MultiTimeInterval(MultiInterval):
+    tolerance = pd.Timedelta(microseconds=1)
+
+    @property
+    def duration(self):
+        if not self:
+            return pd.Timedelta(0)
+        durations = pd.Series(i.length for i in self)
+        return durations.sum()
