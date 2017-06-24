@@ -18,7 +18,6 @@ import pandas as pd
 import pytest
 
 from anaximander.utilities.nxtime import datetime, UTC
-from anaximander.utilities import nxrange as rge
 from anaximander.data import fields, schema as sch, quantities as qnt, NxScalar
 
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
@@ -94,9 +93,10 @@ def test_duration():
     data = {'duration': dstring}
     obj = MySchema().load(data).data
     assert obj['duration'] == pd.Timedelta(dstring)
-    assert MySchema.duration.pygetattr(obj) == ('duration', timedelta)
+    assert MySchema.duration.pygetattr(obj) == ('duration',
+                                                timedelta.seconds * 1e9)
     dump = MySchema().dump(obj).data
-    assert dump['duration'] == '0 days 00:05:00'
+    assert dump['duration'] == 300e9
 
 
 def test_period():
