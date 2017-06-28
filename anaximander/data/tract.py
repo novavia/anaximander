@@ -180,7 +180,6 @@ class DataTract:
         return self._bigquery
 
 
-
 def tract(cls=None, *, tbname=None):
     """The tract decorator, which creates a DataTract from a Schema class.
 

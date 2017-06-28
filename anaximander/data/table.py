@@ -16,6 +16,7 @@ from collections import OrderedDict
 from itertools import product
 import warnings
 
+from grpc._channel import _Rendezvous
 import pandas as pd
 
 from ..utilities import xprops, nxrange
@@ -296,7 +297,11 @@ class DataQuery(NxObject):
 
     def fetch(self, **kwargs):
         """Returns an iterator of query results, as rows."""
-        return self.__fetch__(**kwargs)
+        try:
+            return self.__fetch__(**kwargs)
+        # Single retry, which seems to eliminate most problems.
+        except _Rendezvous:
+            return self.__fetch__(**kwargs)
 
     def first(self, **kwargs):
         try:

@@ -26,7 +26,6 @@ from ..utilities import functions as fun, nxattr, xprops
 from ..utilities.nxtime import MAX_TIMESTAMP
 from ..meta import prototype, metacharacter
 from .schema import Schema
-from .data import NxData
 from .table import DataTable, DataQuery, DataQueryException, \
     DataTableWriteException
 
@@ -174,24 +173,6 @@ class BigTableDataTable(DataTable):
     def __query__(self, *fields, **kwargs):
         return BigTableQuery(self, *fields, **kwargs)
 
-#    def __insert__(self, record, **kwargs):
-#        rowkey = self.rowkey(*record.keys)
-#        row = self.table.row(rowkey)
-#        for family, columns in self.columns.items():
-#            for col in columns:
-#                value = getattr(record, col, '')
-#                if isinstance(value, NxData):
-#                    value = str(value.data)
-#                else:
-#                    value = str(value)
-#                row.set_cell(family,
-#                             col.encode('utf-8'),
-#                             value.encode('utf-8'))
-#        try:
-#            row.commit()
-#        except _Rendezvous:
-#            raise BigTableInsertException()
-
     def __insert__(self, record, **kwargs):
         rowkey = self.rowkey(*record.keys)
         row = self.table.row(rowkey)
@@ -204,8 +185,9 @@ class BigTableDataTable(DataTable):
                              value.encode('utf-8'))
         try:
             row.commit()
+        # Single retry
         except _Rendezvous:
-            raise BigTableInsertException()
+            self.__insert__(record, **kwargs)
 
     def __append__(self, frame, **kwargs):
         records = frame.to_records()
@@ -358,8 +340,6 @@ class BigTableQuery(DataQuery):
                     g.consume_next()
                 except StopIteration:
                     break
-#                except _Rendezvous:
-#                    raise BigTableQueryException()
                 for row in g.rows.values():
                     yield self.read_row(row)
                     row_count += 1
