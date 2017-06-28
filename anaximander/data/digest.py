@@ -27,6 +27,7 @@ from .fields import Str
 from .schema import Schema, LinearSchema, TimeSchema, PostChartSchema, \
     SectionChartSchema, EventLogSchema, PhaseLogSchema, ClipLogSchema
 from .base import DataObject
+from .record import NxRecord
 from .series import NxSeries
 from .frame import NxDataSequence
 from .annotations import Marker, Highlighter, Mark, Highlight
@@ -72,6 +73,14 @@ class TimeMarkSchema(MarkSchema, TimeSchema):
 class TimeHighlightSchema(HighlightSchema, TimeSchema):
     """Schema for TimeHighlightDigest."""
     _zero = pd.Timedelta(microseconds=1)
+
+
+MarkRecord = NxRecord[MarkSchema]
+HighlightRecord = NxRecord[HighlightSchema]
+FloatMarkRecord = NxRecord[FloatMarkSchema]
+FloatHighlightRecord = NxRecord[FloatHighlightSchema]
+TimeMarkRecord = NxRecord[TimeMarkSchema]
+TimeHighlightRecord = NxRecord[TimeHighlightSchema]
 
 
 _domain_to_mark_schema = {None: MarkSchema,
@@ -585,6 +594,8 @@ class PhaseTransitions(NxDataSequence):
         if series is not None:
             series.plot(ax=ax)
         return ax
+
+PhaseTransitionRecord = NxRecord[PhaseLogSchema]
 
 
 class ClipExcerpt(NxDataSequence):
