@@ -322,7 +322,7 @@ class DataQuery(NxObject):
 
     def data(self, **kwargs):
         """Returns a pandas DataFrame with the results."""
-        return pd.DataFrame(self.__fetch__(**kwargs), columns=self.fields)
+        return pd.DataFrame(self.fetch(**kwargs), columns=self.fields)
 
     def frame(self, context=None, **kwargs):
         """Returns query results as a data frame."""
