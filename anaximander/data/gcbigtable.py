@@ -14,8 +14,13 @@ Copyright (C) Novavia Solutions, LLC.
 from collections import defaultdict, OrderedDict, ChainMap
 from concurrent.futures import ThreadPoolExecutor
 
+from google.cloud._helpers import _to_bytes
+from google.cloud.bigtable._generated import (
+    bigtable_pb2 as data_messages_v2_pb2)
 from grpc._channel import _Rendezvous
 from google.cloud.bigtable.client import Client
+import google.cloud.bigtable.table as gc_big_table
+from google.cloud.bigtable.row_data import PartialRowsData
 from google.cloud.bigtable.instance import Instance
 from google.cloud.happybase.pool import ConnectionPool
 from google.cloud.happybase.table import Table as HbTable
@@ -31,6 +36,128 @@ from .table import DataTable, DataQuery, DataQueryException, \
 
 __all__ = ['BigTableDataTable', 'BigTableQuery', 'BigTableQueryException',
            'BigTableInsertException', 'Client', 'Instance']
+
+# =============================================================================
+# Monkeypatching of Table
+# =============================================================================
+
+
+def _create_row_request(table_name, row_key=None, start_key=None, end_key=None,
+                        filter_=None, limit=None, reverse=False):
+    """Creates a request to read rows in a table.
+
+    :type table_name: str
+    :param table_name: The name of the table to read from.
+
+    :type row_key: bytes
+    :param row_key: (Optional) The key of a specific row to read from.
+
+    :type start_key: bytes
+    :param start_key: (Optional) The beginning of a range of row keys to
+                      read from. The range will include ``start_key``. If
+                      left empty, will be interpreted as the empty string.
+
+    :type end_key: bytes
+    :param end_key: (Optional) The end of a range of row keys to read from.
+                    The range will not include ``end_key``. If left empty,
+                    will be interpreted as an infinite string.
+
+    :type filter_: :class:`.RowFilter`
+    :param filter_: (Optional) The filter to apply to the contents of the
+                    specified row(s). If unset, reads the entire table.
+
+    :type limit: int
+    :param limit: (Optional) The read will terminate after committing to N
+                  rows' worth of results. The default (zero) is to return
+                  all results.
+
+    :type reverse: bool
+    :param reverse: if True, then the request is closed wrt. end key and
+        open wrt. to the start key.
+
+    :rtype: :class:`data_messages_v2_pb2.ReadRowsRequest`
+    :returns: The ``ReadRowsRequest`` protobuf corresponding to the inputs.
+    :raises: :class:`ValueError <exceptions.ValueError>` if both
+             ``row_key`` and one of ``start_key`` and ``end_key`` are set
+    """
+    request_kwargs = {'table_name': table_name}
+    if (row_key is not None and
+            (start_key is not None or end_key is not None)):
+        raise ValueError('Row key and row range cannot be '
+                         'set simultaneously')
+    range_kwargs = {}
+    if start_key is not None or end_key is not None:
+        if start_key is not None:
+            if reverse is True:
+                range_kwargs['start_key_open'] = _to_bytes(start_key)
+            else:
+                range_kwargs['start_key_closed'] = _to_bytes(start_key)
+        if end_key is not None:
+            if reverse is True:
+                range_kwargs['end_key_closed'] = _to_bytes(end_key)
+            else:
+                range_kwargs['end_key_open'] = _to_bytes(end_key)
+    if filter_ is not None:
+        request_kwargs['filter'] = filter_.to_pb()
+    if limit is not None:
+        request_kwargs['rows_limit'] = limit
+
+    message = data_messages_v2_pb2.ReadRowsRequest(**request_kwargs)
+
+    if row_key is not None:
+        message.rows.row_keys.append(_to_bytes(row_key))
+
+    if range_kwargs:
+        message.rows.row_ranges.add(**range_kwargs)
+
+    return message
+
+
+gc_big_table._create_row_request = _create_row_request
+
+
+def read_rows(self, start_key=None, end_key=None, limit=None,
+              filter_=None, reverse=False):
+    """Read rows from this table.
+
+    :type start_key: bytes
+    :param start_key: (Optional) The beginning of a range of row keys to
+                      read from. The range will include ``start_key``. If
+                      left empty, will be interpreted as the empty string.
+
+    :type end_key: bytes
+    :param end_key: (Optional) The end of a range of row keys to read from.
+                    The range will not include ``end_key``. If left empty,
+                    will be interpreted as an infinite string.
+
+    :type limit: int
+    :param limit: (Optional) The read will terminate after committing to N
+                  rows' worth of results. The default (zero) is to return
+                  all results.
+
+    :type filter_: :class:`.RowFilter`
+    :param filter_: (Optional) The filter to apply to the contents of the
+                    specified row(s). If unset, reads every column in
+                    each row.
+
+    :type reverse: bool
+    :param reverse: if True, then the request is closed wrt. end key and
+        open wrt. to the start key.
+
+    :rtype: :class:`.PartialRowsData`
+    :returns: A :class:`.PartialRowsData` convenience wrapper for consuming
+              the streamed results.
+    """
+    request_pb = _create_row_request(
+        self.name, start_key=start_key, end_key=end_key, filter_=filter_,
+        limit=limit, reverse=reverse)
+    client = self._instance._client
+    response_iterator = client._data_stub.ReadRows(request_pb)
+    # We expect an iterator of `data_messages_v2_pb2.ReadRowsResponse`
+    return PartialRowsData(response_iterator)
+
+
+gc_big_table.Table.read_rows = read_rows
 
 # =============================================================================
 # Schema specification and table creation
@@ -159,6 +286,19 @@ class BigTableDataTable(DataTable):
     def rowkey(self):
         """Function that turns a record's key attributes into a row key."""
         return keymaker(self.schema)
+
+    @xprops.cachedproperty
+    def reverse(self):
+        """If True, then keys are accumulated in reverse order.
+
+        This influences how queries are processed.
+        """
+        try:
+            assert self.schema.timestamp.key == 'timestamp'
+        except (AttributeError, AssertionError):
+            return False
+        else:
+            return True
 
     def __create__(self):
         rval = self.table.create()
@@ -329,7 +469,9 @@ class BigTableQuery(DataQuery):
             maxraise: raises if maxrows is exceeded.
         """
         rowkeypairs = self._make_rowkeypairs()
-        row_groups = [self.table.table.read_rows(s, e, filter_=self.rowfilter)
+        row_groups = [self.table.table.read_rows(s, e,
+                                                 filter_=self.rowfilter,
+                                                 reverse=self.table.reverse)
                       for s, e in rowkeypairs]
         maxrows = fun.get(maxrows, self._maxrows)
         row_count = 0

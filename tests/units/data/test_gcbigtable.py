@@ -80,7 +80,7 @@ def instance():
     instance = btclient.instance(INSTANCE_ID, INSTANCE_LOC)
     instance.display_name = INSTANCE_ID
     try:
-        instance.create()     
+        instance.create()
     except _Rendezvous:
         pass
     time.sleep(10)
@@ -127,6 +127,7 @@ def test_btcolumns():
 
 def test_table_instantiation(ghost_table):
     assert ghost_table.table_id == 'ghost'
+    assert ghost_table.reverse
 
 
 def test_keymaker(frame):

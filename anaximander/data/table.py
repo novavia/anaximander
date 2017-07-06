@@ -298,10 +298,12 @@ class DataQuery(NxObject):
     def fetch(self, **kwargs):
         """Returns an iterator of query results, as rows."""
         try:
-            return self.__fetch__(**kwargs)
+            for record in self.__fetch__(**kwargs):
+                yield record
         # Single retry, which seems to eliminate most problems.
         except _Rendezvous:
-            return self.__fetch__(**kwargs)
+            for record in self.__fetch__(**kwargs):
+                yield record
 
     def first(self, **kwargs):
         try:
