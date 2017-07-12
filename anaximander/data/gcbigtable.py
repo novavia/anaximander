@@ -445,7 +445,8 @@ class BigTableQuery(DataQuery):
         attrs = ChainMap(*[{k.decode('utf-8'): v[0].value.decode('utf-8')
                             for k, v in row.cells[family].items()}
                            for family in self.columns])
-        return tuple(attrs[k] for k in self.fields)
+        return tuple(attrs[k] if k in attrs else
+                     self.table.schema.fields[k].default for k in self.fields)
 
     @property
     def _maxrows(self):
