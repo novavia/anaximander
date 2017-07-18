@@ -103,7 +103,7 @@ def test_instantiation(featurelog, turefealog):
     h = dig.HighlightDigest(turefealog, MyHighlighter)
     assert type(h) == dig.FloatHighlightDigest
     h = dig.HighlightDigest(Feature.Sequence(), MyHighlighter)
-    assert type(h) == dig.TimeHighlightDigest    
+    assert type(h) == dig.TimeHighlightDigest
 
 
 def test_mark_survey(featurelog, turefealog):

@@ -565,6 +565,8 @@ class PhaseTransitions(NxDataSequence):
             except IndexError:
                 state = next_data.iloc[0].prev_state
             result.unique = state
+        elif self.empty:
+            result.unique = self.unique
         return result
 
     def plot(self, series=None, *, y0=None, y1=None, ax='new', **kwargs):

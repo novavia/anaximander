@@ -38,7 +38,7 @@ def markertype():
 
     class MyMarker(ant.Marker):
         red = ant.shade(color='red')
-    
+
     return MyMarker
 
 
