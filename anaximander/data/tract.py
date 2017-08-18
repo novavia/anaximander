@@ -91,6 +91,7 @@ class DataTract:
         # Creates cache for storage tables
         self._bigtable = None
         self._bigquery = None
+        self._redis = None
 
     @property
     def name(self):
@@ -178,6 +179,15 @@ class DataTract:
                 "which case a restart could fix the problem."
             raise TractError(msg.format(self.name))
         return self._bigquery
+
+    @property
+    def redis(self):
+        if not self._redis:
+            msg = "No redis table associated with {0}. " + \
+                "This may be because the system operates offline, in " + \
+                "which case a restart could fix the problem."
+            raise TractError(msg.format(self.name))
+        return self._redis
 
 
 def tract(cls=None, *, tbname=None):

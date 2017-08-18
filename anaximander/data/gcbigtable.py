@@ -227,7 +227,7 @@ class BigTableInsertException(DataTableWriteException):
 
 
 @prototype
-@nxattr.s(hash=False)
+@nxattr.s(hash=False, repr=False)
 class BigTableDataTable(DataTable):
     schema = metacharacter(validate=fun.subcheck(Schema))
     instance = nxattr.ib(validator=nxattr.validators.instance_of(Instance))
@@ -370,6 +370,10 @@ class BigTableDataTable(DataTable):
         if self.maxrate is None:
             return NotImplemented
         return self.schema.rowcount(start, end, self.maxrate)
+
+    def __repr__(self):
+        string = 'BigTableTable[name={nm}](instance={ins})'
+        return string.format(ins=self.instance.name, nm=self.name)
 
 
 class BigTableQueryException(DataQueryException):
