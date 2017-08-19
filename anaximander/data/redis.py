@@ -15,21 +15,28 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
-from collections import defaultdict, OrderedDict, ChainMap
 from concurrent.futures import ThreadPoolExecutor
 
 from redis import StrictRedis
 
-from ..utilities import functions as fun, nxattr, xprops, nxtime
-from ..utilities.nxtime import MAX_TIMESTAMP
+from ..utilities import functions as fun, nxattr, nxtime, xprops
 from ..meta import prototype, metacharacter, cachedtypeproperty
 from .schema import Schema
 from .table import DataTable, DataQuery, DataQueryException, \
     DataTableWriteException
 
-__all__ = ['BigTableDataTable', 'BigTableQuery', 'BigTableQueryException',
-           'BigTableInsertException', 'Client', 'Instance']
+__all__ = ['RedisDataTable', 'RedisQuery', 'RedisQueryException',
+           'RedisInsertException', 'client']
 
+
+# =============================================================================
+# Client factory
+# =============================================================================
+
+
+def client(host, port, password, max_connections):
+    return StrictRedis(host=host, port=port, password=password,
+                       max_connections=max_connections)
 
 # =============================================================================
 # Key generation
@@ -45,7 +52,8 @@ def scoremaker(schema):
     definitions. It defaults to identity.
     """
     strategies = {'hash': lambda x: hash(x),
-                  'timestamp': lambda x: int(x.timestamp() * 1e6)}
+                  'timestamp': lambda x: int(1e6 * (nxtime.MAX_TIMESTAMP -
+                                                    x.timestamp()))}
     seqkey_name = schema.seqkey
     if seqkey_name is None:
         return None
@@ -73,7 +81,6 @@ class RedisDataTable(DataTable):
     # This functionality requires a rowcount method to be implemented on
     # the table's Schema
     maxrate = nxattr.ib(None, repr=False)
-    threadpoolsize = 250  # size of thread pool for inserts
 
     @cachedtypeproperty
     def scoring(cls):
@@ -110,8 +117,24 @@ class RedisDataTable(DataTable):
         seqkey = getattr(record, self.schema.seqkey)
         return self.scoring(seqkey)
 
+    @xprops.cachedproperty
+    def reverse(self):
+        """If True, then keys are accumulated in reverse order.
+
+        This influences how queries are processed.
+        """
+        try:
+            assert self.schema.timestamp.key == 'timestamp'
+        except (AttributeError, AssertionError):
+            return False
+        else:
+            return True
+
     def __create__(self):
         pass
+
+    def exists(self):
+        return True
 
     def __remove__(self):
         pass
@@ -125,23 +148,23 @@ class RedisDataTable(DataTable):
         next_key = self.key(record, version + 1)
         score = self.score(record)
         dump = record.dump()
-        val = str([str(dump[f] for f in self.schema.fields)])
-        self.instance.zadd(current_key, val, score)
-        self.instance.zadd(next_key, val, score)
+        val = str([str(dump[f]) for f in self.schema.fields])
+        self.instance.zadd(current_key, score, val)
+        self.instance.zadd(next_key, score, val)
         if self.retention is not None:
             self.instance.expireat(current_key, (version + 1) * self.retention)
             self.instance.expireat(next_key, (version + 2) * self.retention)
 
     def __append__(self, frame, **kwargs):
         records = frame.to_records()
-        n = self.threadpoolsize
+        n = int(self.instance.connection_pool.max_connections / 3)
         with ThreadPoolExecutor(n) as executor:
             executor.map(self.__insert__, records)
 
     # Redefinition of DataTable.insert to gain speed
     def insert(self, *records, **kwargs):
         """Inserts one or more records into table."""
-        n = self.threadpoolsize
+        n = int(self.instance.connection_pool.max_connections / 3)
         with ThreadPoolExecutor(n) as executor:
             executor.map(self.__insert__, records)
 
@@ -156,7 +179,7 @@ class RedisDataTable(DataTable):
 
     def __repr__(self):
         string = 'RedisTable[name={nm}](instance={ins})'
-        return string.format(ins=self.instance.name, nm=self.name)
+        return string.format(ins=self.instance, nm=self.name)
 
 
 class RedisQueryException(DataQueryException):
@@ -206,13 +229,15 @@ class RedisQuery(DataQuery):
             max_score = '+inf'
         else:
             scoring = self.table.scoring
-            min_score, max_score = (scoring(b) for b in self.seqkeyrange)
-        version = self.table.version
+            min_score, max_score = sorted(scoring(b) for b in self.seqkeyrange)
+        version = str(self.table.version)
         for g in self.nskeygroups:
-            while row_count < maxrows:
+            if row_count < maxrows:
                 fields = '#'.join(str(k) for k in g)
                 key = '#'.join((self.table.name, fields, version))
-                results = self.table.instance.zrange(key, min_score, max_score)
+                results = self.table.instance.zrangebyscore(key,
+                                                            min_score,
+                                                            max_score)
                 for r in results:
                     dump = r.decode()
                     values = [s.strip("'") for s in dump[1:-1].split(', ')]
