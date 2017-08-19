@@ -214,7 +214,10 @@ class NxScalar(NxData):
 
     def __str__(self):
         units = '' if self.unit is None else ' ' + self.unit
-        return '{s._data:.{s.precision}}'.format(s=self) + units
+        if self.dtype.kind == 'f':
+            return '{s._data:.{s.precision}}'.format(s=self) + units
+        else:
+            return '{s._data}'.format(s=self) + units
 
 
 NxFloat = NxScalar.subtype(name='NxFloat', dtype=np.dtype('float'))

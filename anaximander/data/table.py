@@ -290,6 +290,11 @@ class DataQuery(NxObject):
         else:
             return None
 
+    @xprops.cachedproperty
+    def fieldmap(self):
+        """Returns a boolean map of the schema's fields to self.fields."""
+        return [f in self.fields for f in self.table.schema.fields]
+
     @abc.abstractmethod
     def __fetch__(self, **kwargs):
         """Returns an iterator of rows as tuples."""

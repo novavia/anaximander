@@ -146,7 +146,7 @@ def bqschema(schema):
 
 
 @prototype
-@nxattr.s(hash=False)
+@nxattr.s(hash=False, repr=False)
 class BigQueryDataTable(DataTable):
     schema = metacharacter(validate=fun.subcheck(Schema))
     dataset = nxattr.ib(validator=nxattr.validators.instance_of(Dataset))
@@ -183,6 +183,11 @@ class BigQueryDataTable(DataTable):
     def __query__(self, *fields, **kwargs):
         return BigQueryQuery(self, *fields, **kwargs)
 
+    def insert(self, *records, **kwargs):
+        """Inserts one or more records into table."""
+        rows = (self.schema.pythonize(r, mapping=False) for r in records)
+        self.table.insert_data(rows, **kwargs)
+
     def __insert__(self, record, **kwargs):
         row = self.schema.pythonize(record, mapping=False)
         self.table.insert_data([row], **kwargs)
@@ -191,6 +196,10 @@ class BigQueryDataTable(DataTable):
         pdrows = frame.data.values
         rows = [self.schema.pythonize(tuple(r), mapping=False) for r in pdrows]
         self.table.insert_data(rows, **kwargs)
+
+    def __repr__(self):
+        string = 'BigQueryTable[name={nm}](dataset={ds})'
+        return string.format(ds=self.dataset.name, nm=self.name)
 
 
 class BigQueryQuery(DataQuery):
