@@ -215,6 +215,8 @@ class RedisQuery(DataQuery):
     def __fetch__(self, maxrows=None, maxraise=False):
         """Fetch primitive.
 
+        Note that queries on sequential keys are closed on the left side
+        and open on the right side.
         Params:
             maxrows: limits the number of rows. If None and the table has
                 a specified maxrate and sequential key, maxrows is computed
@@ -230,6 +232,10 @@ class RedisQuery(DataQuery):
         else:
             scoring = self.table.scoring
             min_score, max_score = sorted(scoring(b) for b in self.seqkeyrange)
+            if self.table.reverse:
+                excluded = min_score
+            else:
+                excluded = max_score
         version = str(self.table.version)
         for g in self.nskeygroups:
             if row_count < maxrows:
@@ -237,8 +243,11 @@ class RedisQuery(DataQuery):
                 key = '#'.join((self.table.name, fields, version))
                 results = self.table.instance.zrangebyscore(key,
                                                             min_score,
-                                                            max_score)
-                for r in results:
+                                                            max_score,
+                                                            withscores=True)
+                for r, score in results:
+                    if score == excluded:
+                        continue
                     dump = r.decode()
                     values = [s.strip("'") for s in dump[1:-1].split(', ')]
                     yield tuple(v for i, v in zip(self.fieldmap, values) if i)
