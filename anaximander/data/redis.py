@@ -212,7 +212,11 @@ class RedisQuery(DataQuery):
         maxrows = max_per_group * len(self.nskeygroups)
         return min((maxrows, self.__maxrows__))
 
-    def __fetch__(self, maxrows=None, maxraise=False):
+    def first(self, **kwargs):
+        kwargs['rdlimit'] = 1
+        return super().first(**kwargs)
+
+    def __fetch__(self, maxrows=None, maxraise=False, rdlimit=None):
         """Fetch primitive.
 
         Note that queries on sequential keys are closed on the left side
@@ -237,6 +241,10 @@ class RedisQuery(DataQuery):
             else:
                 excluded = max_score
         version = str(self.table.version)
+        if rdlimit is None:
+            rd_start, rd_num = None, None
+        else:
+            rd_start, rd_num = 0, rdlimit
         for g in self.nskeygroups:
             if row_count < maxrows:
                 fields = '#'.join(str(k) for k in g)
@@ -244,6 +252,8 @@ class RedisQuery(DataQuery):
                 results = self.table.instance.zrangebyscore(key,
                                                             min_score,
                                                             max_score,
+                                                            rd_start,
+                                                            rd_num,
                                                             withscores=True)
                 for r, score in results:
                     if score == excluded:
