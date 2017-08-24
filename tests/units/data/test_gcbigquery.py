@@ -111,7 +111,7 @@ def test_sql_generator(storage):
     assert query.sql == "SELECT mac, timestamp, accel_x FROM " + \
         "[anaximander-tests:InterfaceTesting.DeviceData] " + \
         "WHERE mac = '68:9E:19:07:DE:C3' AND " + \
-        "timestamp >= '2016-09-14 10:04:00+00:00' ORDER BY timestamp" 
+        "timestamp >= '2016-09-14 10:04:00+00:00' ORDER BY timestamp"
 
 
 def test_append(storage):
@@ -167,4 +167,4 @@ def test_raw_query(storage):
 
 
 if __name__ == '__main__':
-    pytest.main([__file__])
+    pytest.main([__file__, '-x', '--pdb'])

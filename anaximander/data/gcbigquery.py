@@ -117,7 +117,7 @@ def bqfield(field):
         # Serializes a nested field
         fields = bqschema(field.nested)
     except AttributeError:
-        fields = None
+        fields = ()
     return bq.SchemaField(name, field_type, mode,
                           description=description, fields=fields)
 
@@ -238,12 +238,13 @@ class BigQueryQuery(DataQuery):
         pg_token = None
         counter = 0
         while True:
-            rows, _, pg_token = results.fetch_data(page_token=pg_token)
-            for row in rows:
+            data = results.fetch_data(page_token=pg_token)
+            for row in data:
                 yield row
                 counter += 1
                 if counter >= limit:
                     break
             print("Downloaded {} rows out of {}.".format(counter, rowcount))
+            pg_token = data.next_page_token
             if not pg_token:
                 break
