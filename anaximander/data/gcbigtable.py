@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 from collections import defaultdict, OrderedDict, ChainMap
 from concurrent.futures import ThreadPoolExecutor
+import datetime as dt
 
 from google.cloud._helpers import _to_bytes
 from google.cloud.bigtable._generated import (
@@ -20,6 +21,7 @@ from google.cloud.bigtable._generated import (
 from grpc._channel import _Rendezvous
 from google.cloud.bigtable.client import Client
 import google.cloud.bigtable.table as gc_big_table
+from google.cloud.bigtable.column_family import MaxAgeGCRule
 from google.cloud.bigtable.row_data import PartialRowsData
 from google.cloud.bigtable.instance import Instance
 from google.cloud.happybase.pool import ConnectionPool
@@ -32,7 +34,7 @@ from ..utilities.nxtime import MAX_TIMESTAMP
 from ..meta import prototype, metacharacter
 from .schema import Schema
 from .table import DataTable, DataQuery, DataQueryException, \
-    DataTableWriteException
+    DataTableWriteException, DataTableAdminException
 
 __all__ = ['BigTableDataTable', 'BigTableQuery', 'BigTableQueryException',
            'BigTableInsertException', 'Client', 'Instance']
@@ -222,6 +224,10 @@ def keymaker(schema):
 # =============================================================================
 
 
+class BigTableAdminException(DataTableAdminException):
+    pass
+
+
 class BigTableInsertException(DataTableWriteException):
     pass
 
@@ -232,6 +238,8 @@ class BigTableDataTable(DataTable):
     schema = metacharacter(validate=fun.subcheck(Schema))
     instance = nxattr.ib(validator=nxattr.validators.instance_of(Instance))
     name = nxattr.ib(validator=nxattr.validators.instance_of(str))
+    # Data retention time, in days, defaulting to None (indefinite retention)
+    retention = nxattr.ib(None, repr=False)
     # An optional maxrate to limit query size automatically
     # This functionality requires a rowcount method to be implemented on
     # the table's Schema
@@ -272,6 +280,12 @@ class BigTableDataTable(DataTable):
     def project(self):
         return self.client.project
 
+    @property
+    def gc_rule(self):
+        """Garbage collection rule, implementing retention policy."""
+        if self.retention is not None:
+            return MaxAgeGCRule(dt.timedelta(self.retention))
+
     @xprops.cachedproperty
     def pool(self):
         """A connection pool from the happybase API."""
@@ -302,10 +316,20 @@ class BigTableDataTable(DataTable):
 
     def __create__(self):
         rval = self.table.create()
+        gc_rule = self.gc_rule
         for family in self.columns:
-            column_family = self.table.column_family(family)
+            column_family = self.table.column_family(family, gc_rule=gc_rule)
             column_family.create()
         return rval
+
+    def __reset_retention__(self):
+        if not self.exists:
+            msg = "Cannot run function on non-existing table {0}."
+            raise BigTableAdminException(msg.format(self))
+        gc_rule = self.gc_rule
+        for f in self.table.list_column_families().values():
+            f.gc_rule = gc_rule
+            f.update()
 
     def __remove__(self):
         return self.table.delete()

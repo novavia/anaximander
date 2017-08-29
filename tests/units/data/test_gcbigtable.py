@@ -105,7 +105,8 @@ def empty_table(instance):
 @pytest.fixture(scope="module")
 def full_table(instance, frame):
     """Yields a populated table to test queries."""
-    table = gbt.BigTableDataTable[DeviceData.Schema](instance, 'full', 150)
+    table = gbt.BigTableDataTable[DeviceData.Schema](instance, 'full',
+                                                     maxrate=150)
     table.create(warn=False, remove=True)
     # Populates the table with some data
     table.append(frame)
