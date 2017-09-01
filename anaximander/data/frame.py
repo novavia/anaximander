@@ -214,8 +214,7 @@ class NxDataFrame(IndexedDataObject):
         if df.empty:
             dtypes_ = rqdtypes(cls.schema)
             columns = list(dtypes_)
-            dtype_ = pd.Series(dtypes_)
-            dataframe = pd.DataFrame(columns=columns, dtype=dtype_)
+            dataframe = pd.DataFrame(columns=columns)
         else:
             df_dtypes = OrderedDict(df.dtypes)
             sc_fields = cls.schema.fields.items()
