@@ -488,10 +488,10 @@ class BigTableQuery(DataQuery):
         return min((maxrows, self.__maxrows__))
 
     def first(self, **kwargs):
-        kwargs['btlimit'] = 1
+        kwargs['limit'] = 1
         return super().first(**kwargs)
 
-    def __fetch__(self, maxrows=None, maxraise=False, btlimit=None):
+    def __fetch__(self, maxrows=None, maxraise=False, limit=None):
         """Fetch primitive.
 
         Params:
@@ -500,14 +500,14 @@ class BigTableQuery(DataQuery):
                 automatically. An absolute limit of __maxrows__ is set by
                 default.
             maxraise: raises if maxrows is exceeded.
-            btlimit (int): limits the number of rows scanned by Bigtable on
+            limit (int): limits the number of rows scanned by Bigtable on
                 a per-non-sequential key basis. The default reads all rows.
         """
         rowkeypairs = self._make_rowkeypairs()
         row_groups = [self.table.table.read_rows(s, e,
                                                  filter_=self.rowfilter,
                                                  reverse=self.table.reverse,
-                                                 limit=btlimit)
+                                                 limit=limit)
                       for s, e in rowkeypairs]
         maxrows = fun.get(maxrows, self._maxrows)
         row_count = 0

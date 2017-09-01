@@ -213,10 +213,10 @@ class RedisQuery(DataQuery):
         return min((maxrows, self.__maxrows__))
 
     def first(self, **kwargs):
-        kwargs['rdlimit'] = 1
+        kwargs['limit'] = 1
         return super().first(**kwargs)
 
-    def __fetch__(self, maxrows=None, maxraise=False, rdlimit=None):
+    def __fetch__(self, maxrows=None, maxraise=False, limit=None):
         """Fetch primitive.
 
         Note that queries on sequential keys are closed on the left side
@@ -241,10 +241,10 @@ class RedisQuery(DataQuery):
             else:
                 excluded = max_score
         version = str(self.table.version)
-        if rdlimit is None:
+        if limit is None:
             rd_start, rd_num = None, None
         else:
-            rd_start, rd_num = 0, rdlimit
+            rd_start, rd_num = 0, limit
         for g in self.nskeygroups:
             if row_count < maxrows:
                 fields = '#'.join(str(k) for k in g)
