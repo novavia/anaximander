@@ -14,10 +14,14 @@ Copyright (C) Novavia Solutions, LLC.
 import pytz
 import pandas as pd
 
-__all__ = ['datetime', 'pydatetime', 'timestamp', 'timezone', 'UTC']
+__all__ = ['datetime', 'pydatetime', 'timestamp', 'timezone', 'UTC',
+           'throwback']
 
 timezone = pytz.timezone
 UTC = pytz.UTC
+
+# Governs the 'current' time by applying a constant offset
+THROWBACK = pd.Timedelta(0)
 
 # =============================================================================
 # Basic functionalities
@@ -49,7 +53,25 @@ datetime.max = MAX
 
 
 def now():
-    return pd.Timestamp.utcnow()
+    return pd.Timestamp.utcnow() - THROWBACK
+
+
+def throwback(delta=None):
+    """Changes the THROWBACK variable.
+
+    params: any value that can be interpreted by pd.Timdelta. If None,
+        resets THROWBACK to its default value.
+    """
+    global THROWBACK
+    if delta is None:
+        THROWBACK = pd.Timedelta(0)
+    else:
+        THROWBACK = pd.Timedelta(delta)
+
+
+def tripping():
+    """True if THROWBACK is non-zero."""
+    return THROWBACK != pd.Timedelta(0)
 
 
 def naify(dt):

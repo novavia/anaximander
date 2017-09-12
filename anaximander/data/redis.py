@@ -34,9 +34,17 @@ __all__ = ['RedisDataTable', 'RedisQuery', 'RedisQueryException',
 # =============================================================================
 
 
-def client(host, port, password, max_connections):
-    return StrictRedis(host=host, port=port, password=password,
-                       max_connections=max_connections)
+def client(host, port, password, max_connections, rolling=True):
+    """Instantiates a Redis client.
+
+    Params:
+        rolling: if True, tables are versioned to enable rolling flushes.
+            This should be set to False when Redis is used on a session-basis.
+    """
+    redis_client = StrictRedis(host=host, port=port, password=password,
+                               max_connections=max_connections)
+    redis_client.rolling = rolling
+    return redis_client
 
 # =============================================================================
 # Key generation
@@ -76,7 +84,7 @@ class RedisDataTable(DataTable):
     instance = nxattr.ib(validator=nxattr.validators.instance_of(StrictRedis))
     name = nxattr.ib(validator=nxattr.validators.instance_of(str))
     # Data retention time, in seconds, defaulting to 1 hour, optionally None
-    retention = nxattr.ib(3600, repr=False)
+    retention = nxattr.ib(21600, repr=False)
     # An optional maxrate to limit query size automatically
     # This functionality requires a rowcount method to be implemented on
     # the table's Schema
@@ -99,8 +107,11 @@ class RedisDataTable(DataTable):
     @property
     def version(self):
         """The current version, which is time-dependent based on retention."""
-        if self.retention is None:
-            return 0
+        try:
+            if self.retention is None or not self.instance.rolling:
+                return 0
+        except AttributeError:
+            pass
         now = int(nxtime.now().timestamp())
         return now // self.retention
 
@@ -150,8 +161,8 @@ class RedisDataTable(DataTable):
         dump = record.dump()
         val = str([str(dump[f]) for f in self.schema.fields])
         self.instance.zadd(current_key, score, val)
-        self.instance.zadd(next_key, score, val)
-        if self.retention is not None:
+        if self.retention is not None and self.instance.rolling:
+            self.instance.zadd(next_key, score, val)
             self.instance.expireat(current_key, (version + 1) * self.retention)
             self.instance.expireat(next_key, (version + 2) * self.retention)
 
