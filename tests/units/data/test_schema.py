@@ -120,7 +120,7 @@ def test_pythonize():
 def test_reserved_names():
     with pytest.raises(sch.SchemaError):
         class MySchema(sch.Schema):
-            extra = fields.Int()
+            many = fields.Int()
 
 
 def test_field_missing():

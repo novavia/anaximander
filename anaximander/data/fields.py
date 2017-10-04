@@ -20,7 +20,7 @@ import re
 
 import attr
 import marshmallow as msh
-from marshmallow.utils import get_value
+from marshmallow.utils import get_value as msh_get_value
 from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
     Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
@@ -32,6 +32,14 @@ from ..utilities.functions import monkeypatch, get
 from ..utilities.nxtime import datetime
 from .exceptions import DataError, ValidationError as DataValidationError
 from .data import NxScalar
+
+MARSHMALLOW_VERSION = int(msh.__version__[0])
+
+if MARSHMALLOW_VERSION == 2:
+    get_value = msh_get_value
+elif MARSHMALLOW_VERSION == 3:
+    def get_value(key, obj, default=msh.missing):
+        return msh_get_value(obj, key, default=default)
 
 __all__ = ['Field', 'Nested', 'String', 'UUID', 'Number', 'Integer',
            'Decimal', 'Boolean', 'FormattedString', 'Float', 'DateTime',

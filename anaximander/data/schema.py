@@ -63,6 +63,9 @@ from .exceptions import DataError
 from . import fields
 from .data import NxFloat
 
+MARSHMALLOW_VERSION = int(msh.__version__[0])
+
+
 __all__ = ['Schema', 'SchemaError', 'TimeSchema', 'SampleLogSchema',
            'EventLogSchema', 'PhaseLogSchema', 'ClipLogSchema',
            'LinearSchema', 'FixChartSchema', 'PostChartSchema',
@@ -81,17 +84,34 @@ class SchemaError(DataError):
 ValidationError = msh.exceptions.ValidationError
 
 
-class SchemaOpts(msh.SchemaOpts):
-    """Sets default options for anaximander schemas.
+if MARSHMALLOW_VERSION == 2:
 
-    These options include:
-    * strict is set to True, irrespective or settings in Meta
-    * ordered is set to True
-    """
-    def __init__(self, meta):
-        super().__init__(meta)
-        self.strict = True
-        self.ordered = True
+    class SchemaOpts(msh.SchemaOpts):
+        """Sets default options for anaximander schemas.
+
+        These options include:
+        * strict is set to True, irrespective or settings in Meta
+        * ordered is set to True
+        """
+
+        def __init__(self, meta):
+            super().__init__(meta)
+            self.strict = True
+            self.ordered = True
+
+elif MARSHMALLOW_VERSION == 3:
+
+    class SchemaOpts(msh.SchemaOpts):
+        """Sets default options for anaximander schemas.
+
+        These options include:
+        * strict is set to True, irrespective or settings in Meta
+        * ordered is set to True
+        """
+
+        def __init__(self, meta, ordered=False):
+            super().__init__(meta, True)
+            self.strict = True
 
 
 class Schema(msh.Schema):
