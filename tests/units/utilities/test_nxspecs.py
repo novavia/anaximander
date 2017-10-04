@@ -24,7 +24,7 @@ from anaximander.utilities import nxspecs as nxs
 
 def test_spec():
     with pytest.raises(TypeError):
-        nxs.Spec()
+        nxs.SpecContainer()
 
 
 def test_spec_from_list():
@@ -33,12 +33,16 @@ def test_spec_from_list():
                 - Mike
                 - Greg
              """
-    jrdreads = nxs.Spec.load(string)
+    jrdreads = nxs.SpecContainer.load(string)
     assert isinstance(jrdreads, nxs.SpecList)
     assert jrdreads[0] == "JD"
+    jrdreads[0] = "Jr Dreads"
     output = io.StringIO()
     jrdreads.dump(output)
-    assert output.getvalue().startswith("# Jr")
+    printout = output.getvalue()
+    assert printout.startswith("# Jr")
+    i0 = printout.find('- ') + 2
+    assert printout[i0:i0 + 2] == "Jr"
 
 
 def test_spec_from_dict():
@@ -47,12 +51,16 @@ def test_spec_from_dict():
                 Drums: Mike
                 Bass: Greg
              """
-    jrdreads = nxs.Spec.load(string)
+    jrdreads = nxs.SpecContainer.load(string)
     assert isinstance(jrdreads, nxs.SpecDict)
     assert jrdreads["Guitar"] == "JD"
+    jrdreads["Guitar"] = "Jr Dreads"
     output = io.StringIO()
     jrdreads.dump(output)
-    assert output.getvalue().startswith("# Jr")
+    printout = output.getvalue()
+    assert printout.startswith("# Jr")
+    ig = printout.find('Guitar: ') + len('Guitar: ')
+    assert printout[ig:ig + 2] == "Jr"
 
 
 def test_nested_list():
@@ -64,7 +72,7 @@ def test_nested_list():
                   - 1
                   - 2
              """
-    spec = nxs.Spec.load(string)
+    spec = nxs.SpecContainer.load(string)
     assert isinstance(spec[0], nxs.SpecList)
     assert spec[0][0] == 4
     output = io.StringIO()
@@ -83,7 +91,7 @@ def test_nested_map():
                 Greg:
                   - Bass
              """
-    spec = nxs.Spec.load(string)
+    spec = nxs.SpecContainer.load(string)
     assert isinstance(spec['JD'], nxs.SpecList)
     assert spec['JD'][0] == 'Guitar'
     output = io.StringIO()
@@ -110,11 +118,11 @@ def test_dict_instance():
 def test_keys():
 
     class BandSpec(nxs.SpecDict):
-        keys = {'Guitar': nxs.SpecKey(stype=str),
-                'Drums': nxs.SpecKey(stype=str),
-                'Bass': nxs.SpecKey(stype=str),
-                'Keyboards': nxs.SpecKey(stype=str)}
-    assert len(BandSpec.__keys__) == 4
+        keyspecs = {'Guitar': nxs.KeyedSpec(nxs.Spec(str)),
+                    'Drums': nxs.KeyedSpec(nxs.Spec(str)),
+                    'Bass': nxs.KeyedSpec(nxs.Spec(str)),
+                    'Keys': nxs.KeyedSpec(nxs.Spec(str))}
+    assert len(BandSpec.__keyspecs__) == 4
     string = """# Jr Dreads 2017
                 Guitar: JD  # Goes by Jr Dreads
                 Drums: Mike
@@ -122,17 +130,19 @@ def test_keys():
              """
     jrdreads = BandSpec.load(string)
     assert jrdreads['Guitar'] == 'JD'
-    assert jrdreads['Keyboards'] is None
+    assert jrdreads['Keys'] is None
+    with pytest.raises(TypeError):
+        jrdreads['Keys'] = 0
 
 
 def test_descriptors():
 
     class BandSpec(nxs.SpecDict):
-        guitar = nxs.spec(key="Guitar")
-        drums = nxs.spec(key="Drums")
-        bass = nxs.spec(key="Bass")
-        keyboards = nxs.spec(key="Keyboards")
-    assert len(BandSpec.__keys__) == 4
+        guitar = nxs.spec(str, key="Guitar")
+        drums = nxs.spec(str, key="Drums")
+        bass = nxs.spec(str, key="Bass")
+        keys = nxs.spec(str, key="Keys")
+    assert len(BandSpec.__keyspecs__) == 4
     string = """# Jr Dreads 2017
                 Guitar: JD  # Goes by Jr Dreads
                 Drums: Mike
@@ -142,10 +152,45 @@ def test_descriptors():
     assert jrdreads['Guitar'] == 'JD'
     assert jrdreads.guitar == 'JD'
     # Checks that the empty key is merely an interface.
-    assert jrdreads.keyboards is None
-    assert jrdreads['Keyboards'] is None
+    assert jrdreads.keys is None
+    assert jrdreads['Keys'] is None
     assert len(jrdreads._data) == 3
     assert len(jrdreads) == 4
+    with pytest.raises(TypeError):
+        jrdreads['Keys'] = 0
+
+
+def test_full_spec():
+
+    instrument_spec = nxs.EnumerationSpec('Guitar',
+                                          'Lead Singing',
+                                          'Backup Singing',
+                                          'Drums',
+                                          'Bass',
+                                          'Keys')
+
+    class InstrumentList(nxs.SpecList, spec=instrument_spec):
+        pass
+
+    class BandSpec(nxs.SpecDict, spec='InstrumentList'):
+        pass
+
+    string = """# Jr Dreads 2017
+                JD:
+                  - Guitar
+                  - Lead Singing
+                Mike:
+                  - Drums
+                  - Backup Singing
+                Greg:
+                  - Bass
+             """
+    jrdreads = BandSpec.load(string)
+    assert jrdreads['JD'][0] == 'Guitar'
+    with pytest.raises(ValueError):
+        jrdreads['JD'].append('Kazoo')
+    with pytest.raises(TypeError):
+        jrdreads['Paul'] = 0
 
 
 if __name__ == '__main__':

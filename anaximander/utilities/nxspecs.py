@@ -24,120 +24,164 @@ from anaximander.utilities import nxattr, xprops
 from ruamel.yaml import YAML
 
 # =============================================================================
-# Specifcation descriptor class
+# Specifcation item classes
 # =============================================================================
 
 
-def stype_converter(stype):
-    """The converter function for the stype attribute of SpecDescriptor."""
+def stype_processor(stype):
+    """Converts a type or string to the relevant specification type."""
     if isinstance(stype, type):
         return stype
     try:
-        return SpecType.__registry__[stype]
+        return SpecContainerType.__registry__[stype]
     except KeyError:
         if isinstance(stype, str):
-            msg = "Unknown specification type registration key {0}"
+            msg = "Unknown specification container type registration key {0}"
             raise KeyError(msg.format(stype))
         else:
             raise TypeError
 
 
+def _validate_validator(inst, attr, value):
+    if not(value is None or callable(value)):
+        msg = "Improper validation function {0}"
+        raise ValueError(msg.format(value))
+
+
 @nxattr.s
-class SpecKey:
+class Spec:
     """Container for metadata regarding a specification item."""
-    name = nxattr.ib(validator=nxattr.validators.optional(
+    stype = nxattr.ib(default=None)
+    default = nxattr.ib(default=None)
+    validate = nxattr.ib(validator=_validate_validator, default=None)
+
+    @xprops.cachedproperty
+    def container(self):
+        return isinstance(self.spec_type, SpecContainerType)
+
+    @xprops.cachedproperty
+    def spec_type(self):
+        """The actual spec type, inferred from stype at runtime."""
+        stype = self.stype
+        if stype is None:
+            return None
+        if isinstance(stype, type):
+            return stype
+        try:
+            return SpecContainerType.__registry__[stype]
+        except KeyError:
+            if isinstance(stype, str):
+                msg = "Unknown specification container type name {0}"
+                raise KeyError(msg.format(stype))
+            else:
+                raise TypeError
+
+    def _validate(self, val):
+        if self.spec_type is not None:
+            if not isinstance(val, self.spec_type):
+                msg = "Incorrect type {0} supplied to {1}."
+                raise TypeError(msg.format(type(val), self))
+        if self.validate is not None:
+            try:
+                assert self.validate(val)
+            except AssertionError:
+                msg = "Invalid value {0} supplied to {1}."
+                raise ValueError(msg.format(val, self))
+
+    def load(self, val):
+        """Loads data from a yaml collection."""
+        if val is None:
+            if self.default is not None:
+                return self.default
+        if self.container:
+            val = self.spec_type.from_rtype(val)
+        self._validate(val)
+        return val
+
+    def dump(self, val):
+        """Passes data to a yaml collection."""
+        if val is None:
+            return
+        self._validate(val)
+        if isinstance(val, SpecContainer):
+            return val._data
+        return val
+
+
+class EnumerationSpec(Spec):
+
+    def __init__(self, *enumeration, default=None):
+        super().__init__(validate=lambda x: x in enumeration, default=default)
+
+
+@nxattr.s
+class KeyedSpec:
+    """Container for metadata regarding a keyed specification item."""
+    spec = nxattr.ib(validator=nxattr.validators.instance_of(Spec))
+    key = nxattr.ib(validator=nxattr.validators.optional(
                         nxattr.validators.instance_of(str)),
-                     default=None)
-    stype = nxattr.ib(convert=nxattr.converters.optional(stype_converter),
-                      default=None)
+                    default=None)
     required = nxattr.ib(validator=nxattr.validators.instance_of(bool),
                          default=False)
-    default = nxattr.ib(default=None)
-    validate = nxattr.ib(validator=nxattr.validators.optional(callable),
-                         default=None)
 
-    @xprops.weakproperty
-    def descriptor(self):
-        return None
-
-    def getter(self, spec):
-        """The getter method for a spec type that declares the key."""
+    def getter(self, container):
+        """The getter method for a container that declares the key."""
         try:
-            return spec._pull(spec._data[self.name])
+            val = container._data[self.key]
         except KeyError:
-            if self.default is not None:
-                return self.setter(spec, self.default)
+            if self.spec.default is not None:
+                return self.setter(container, self.spec.default)
+        else:
+            return self.spec.load(val)
 
-    def setter(self, spec, val):
-        """The setter method for a spec type that declares the key."""
+    def setter(self, container, val):
+        """The setter method for a container that declares the key."""
         if val is None:
             if self.required:
                 msg = "Cannot set None value on required key {0}."
-                raise TypeError(msg.format(self.name))
+                raise TypeError(msg.format(self.key))
         else:
-            if self.stype is not None:
-                if not isinstance(val, self.stype):
-                    msg = "Incorrect type {0} supplied to key {1}."
-                    raise TypeError(msg.format(type(val), self.name))
-            if self.validate is not None:
-                try:
-                    assert self.validate(val)
-                except AssertionError:
-                    msg = "Invalid value {0} supplied to key {1}."
-                    raise ValueError(msg.format(val, self.name))
-        if isinstance(val, Spec):
-            spec._data.__setitem__(self.name, val._data)
-        elif val is not None:
-            spec._data.__setitem__(self.name, val)
+            val = self.spec.dump(val)
+        if val is not None:
+            container._data.__setitem__(self.key, val)
         else:
-            spec._data.__delitem__(self.name)
-        if self.descriptor is not None:
-            setattr(spec, self.descriptor.cache, val)
-        return val
+            container._data.__delitem__(self.key)
+        if isinstance(self, SpecDescriptor):
+            setattr(container, self.cache, val)
 
-    def deleter(self, spec):
-        """The deleter method for a spec type that declares the key."""
+    def deleter(self, container):
+        """The deleter method for a container that declares the key."""
         if self.required:
             msg = "Cannot delete required key {0}."
-            raise AttributeError(msg.format(self.name))
+            raise AttributeError(msg.format(self.key))
         try:
-            del spec._data[self.name]
+            del container._data[self.key]
         except KeyError:
             pass
-        if self.descriptor is not None:
+        if isinstance(self, SpecDescriptor):
             try:
-                delattr(spec, self.descriptor.cache)
+                del self.cache
             except AttributeError:
                 pass
 
 
-class SpecDescriptor:
+class SpecDescriptor(KeyedSpec):
     """The descriptor type used in mapped specifications."""
-
-    def __init__(self, key, name=None):
-        self.key = key
-        if name is not None:
-            self.name = name
-        else:
-            self.name = key.name
-        self.key.descriptor = self
 
     @xprops.settablecachedproperty
     def cache(self):
-        return '_' + self.name
+        return '_' + self.attr
 
     @xprops.settablecachedproperty
-    def name(self):
-        return None
+    def attr(self):
+        """Attribute name."""
+        return self.key
 
-    @name.setter
+    @attr.setter
     def name(self, val):
-        if val == 'name':
-            msg = "A spec descriptor cannot be named 'name'."
-            raise ValueError(msg)
-        setattr(self, '_name', val)
-        if self.key.name is None:
-            self.key.name = val
+        setattr(self, '_attr', val)
+        if self.key is None:
+            self.key = val
 
     def __get__(self, obj, objtype=None):
         if obj is None:
@@ -145,25 +189,40 @@ class SpecDescriptor:
         try:
             return getattr(obj, self.cache)
         except AttributeError:
-            val = self.key.getter(obj)
+            val = self.getter(obj)
             setattr(obj, self.cache, val)
             return val
 
     def __set__(self, obj, value):
-        self.key.setter(obj, value)
+        self.setter(obj, value)
 
     def __delete__(self, obj):
-        self.key.deleter(obj)
+        self.deleter(obj)
 
 
 def spec(type=None, required=False, default=None, validate=None, key=None):
     """Declares a specification key and descriptor in a SpecDict.
 
     Params:
-        type: either a string pointing to a registered SpecType, or a Python
-            type. Defaults to None, which means that yaml's built-in type
-            conversion applies, and eiter SpecList or SpecDict are instantiated
-            recursively in case the nested contents are collections.
+        type: one of the following object types:
+            * None is valid
+            * A type, including in particular a SpecContainerType
+            * A Spec instance
+            * A string that registers a SpecContainerType
+            If None, any type will be admitted -though this could be overriden
+            by the validate argument. Note that yaml's built-in type
+            conversion applies, such that collection will be automatically
+            and recursively turned into either SpecList or SpecDict.
+            If a type, then type validation is applied, irrespective of
+            what is passed to validate.
+            In the case of SpecContainerType, a string can be supplied, which
+            be looked up in the SpecContainerType registry.
+            If a Spec instance, then the descriptor will expect values to
+            conform to the Spec. Note that this is basically a different
+            way to pass the specification arguments that are included in the
+            function call, since in every other case a Spec instance is
+            created. If other arguments normally used to generate a Spec
+            are passed an error is raised.
         required: boolean. If True, specification maps must always provide
             a value for the corresponding key.
         default: a default value that is used if no value is provided for
@@ -182,78 +241,81 @@ def spec(type=None, required=False, default=None, validate=None, key=None):
         a SpecDescriptor object, which is interpreted by the metaclass -in
         particular, the metaclass provides name assignment.
     """
-    spec_key = SpecKey(key, type, required, default, validate)
-    return SpecDescriptor(spec_key)
+    if isinstance(type, Spec):
+        spec_instance = type
+        if any([default, validate]):
+            raise TypeError()
+    else:
+        spec_instance = Spec(type, default, validate)
+    return SpecDescriptor(spec_instance, key, required)
 
 # =============================================================================
-# Specifcation metaclass
+# Specification container classes
 # =============================================================================
 
 
-class SpecType(abc.ABCMeta):
-    """The Specification metaclass."""
+class SpecContainerType(abc.ABCMeta):
+    """The Specification container metaclass.
+
+    The metaclass takes two original inputs:
+        * spec: Either a Spec instance, or a container type or string
+            argument that can readily be supplied to Spec. This sets the
+            default container item type, and can be left to None.
+        * **yaml: arguments to pass to the creation of a YAML object used
+            for serialization / deserialization.
+    """
     __registry__ = WeakValueDictionary()
 
-    def __new__(mcl, name, bases, namespace, etype=None, **yaml):
+    def __new__(mcl, name, bases, namespace, spec=None, **yaml):
         cls = super().__new__(mcl, name, bases, namespace)
         mcl.__registry__[name] = cls
         return cls
 
-    def __init__(cls, name, bases, namespace, etype=None, **yaml):
+    def __init__(cls, name, bases, namespace, spec=None, **yaml):
         cls._yaml = YAML(**yaml)
-        if etype is not None:
-            if not isinstance(etype, SpecType):
-                msg = "The element type for a Spec type must be another " + \
-                      "Spec type."
-                raise TypeError(msg)
-            cls.__etype__ = etype
+        if spec is not None:
+            if not isinstance(spec, Spec):
+                spec = Spec(spec)
+            cls.__spec__ = spec
 
-    def __getitem__(cls, etype):
-        """Returns a subclass with overwritten etype."""
-        if not isinstance(etype, SpecType):
-            msg = "The element type for a Spec type must be another " + \
-                  "Spec type."
-            raise TypeError(msg)
-        name = etype.__name__ + cls.__name__
-        bases = (cls,)
-        namespace = {}
-        return SpecType(name, bases, namespace, etype)
+    def __getitem__(cls, spec):
+        """Returns a subclass with overwritten spec."""
+        return SpecContainerType(cls.__name__, (cls,), {}, spec=spec)
 
 
-class SpecDictType(SpecType):
+class SpecDictType(SpecContainerType):
     """Specialized metaclass for mapped specifications."""
 
-    def __init__(cls, name, bases, namespace, etype=None, **yaml):
-        base_keys = [b.__keys__ for b in bases if isinstance(b, SpecDictType)]
-        new_keys = OrderedDict()
-        if 'keys' in namespace:
-            for k, v in namespace['keys'].items():
-                if isinstance(v, SpecKey):
-                    v.name = k
-                    new_keys[k] = v
+    def __init__(cls, name, bases, namespace, spec=None, **yaml):
+        keyspecs = [b.__keyspecs__ for b in bases
+                    if isinstance(b, SpecDictType)]
+        new_keyspecs = OrderedDict()
+        if 'keyspecs' in namespace:
+            for k, v in namespace['keyspecs'].items():
+                if isinstance(v, KeyedSpec):
+                    v.key = k
+                    new_keyspecs[k] = v
         for k, v in namespace.items():
             if isinstance(v, SpecDescriptor):
-                v.name = k
-                key = v.key
-                new_keys[key.name] = key
-        cls.__keys__ = ChainMap(new_keys, *base_keys)
-        super().__init__(name, bases, namespace, etype=etype)
-
-
-# =============================================================================
-# Base classes
-# =============================================================================
+                v.attr = k
+                new_keyspecs[v.key] = v
+        cls.__keyspecs__ = ChainMap(new_keyspecs, *keyspecs)
+        super().__init__(name, bases, namespace, spec=spec)
 
 
 # Abstract base class for List and Dict
-class Spec(metaclass=SpecType):
-    # Corresponding ruamel commented type
+class SpecContainer(metaclass=SpecContainerType):
+    # Corresponding ruamel commented type(s)
     __rtype__ = (CommentedSeq, CommentedMap)
-    __etype__ = None  # Default element type for items in the Specification
+    __spec__ = None  # Placeholder for specifying default element type
 
     @abc.abstractmethod
     def __init__(self):
         pass
+
+    @property
+    def spec(self):
+        return type(self).__spec__
 
     @classmethod
     def from_rtype(cls, data):
@@ -261,7 +323,7 @@ class Spec(metaclass=SpecType):
         if not isinstance(data, cls.__rtype__):
             msg = "Method call requires a ruamel Commented collection."
             raise TypeError(msg)
-        if cls is Spec:
+        if cls is SpecContainer:
             if isinstance(data, CommentedSeq):
                 cls = SpecList
             elif isinstance(data, CommentedMap):
@@ -270,23 +332,25 @@ class Spec(metaclass=SpecType):
         instance._data = data
         return instance
 
-    def _pull(self, item):
-        """Converts item stored in _data to the appropriate type."""
-        if self.__etype__ is not None:
-            return self.__etype__.from_rtype(item)
-        if isinstance(item, CommentedSeq):
-            return SpecList.from_rtype(item)
-        elif isinstance(item, CommentedMap):
-            return SpecDict.from_rtype(item)
+    def _pull(self, val):
+        """Converts yaml content to suitable type."""
+        if self.spec is not None:
+            return self.spec.load(val)
+        if isinstance(val, CommentedSeq):
+            return SpecList.from_rtype(val)
+        elif isinstance(val, CommentedMap):
+            return SpecDict.from_rtype(val)
         else:
-            return item
+            return val
 
-    def _push(self, item):
+    def _push(self, val):
         """Converts specification item to the suitable type for ruamel."""
-        if isinstance(item, Spec):
-            return item._data
+        if self.spec is not None:
+            return self.spec.dump(val)
+        if isinstance(val, SpecContainer):
+            return val._data
         else:
-            return item
+            return val
 
     @classmethod
     def load(cls, source):
@@ -298,7 +362,7 @@ class Spec(metaclass=SpecType):
         return self._yaml.dump(self._data, sink)
 
 
-class SpecList(Spec, MutableSequence):
+class SpecList(SpecContainer, MutableSequence):
     """An enumerated specification."""
     __rtype__ = CommentedSeq
 
@@ -322,10 +386,10 @@ class SpecList(Spec, MutableSequence):
         self._data.insert(ix, self._push(val))
 
 
-class SpecDict(Spec, MutableMapping, metaclass=SpecDictType):
+class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
     """A keyed specification."""
     __rtype__ = CommentedMap
-    keys = OrderedDict()  # Optional declaration of SpecKeys
+    specs = OrderedDict()  # Optional declaration of SpecKeys
 
     def __init__(self, mapping=(), **kwargs):
         self._data = CommentedMap()
@@ -333,12 +397,12 @@ class SpecDict(Spec, MutableMapping, metaclass=SpecDictType):
 
     def __len__(self):
         stored_keys = set(self._data)
-        declared_keys = set(self.__keys__)
+        declared_keys = set(self.__keyspecs__)
         return len(stored_keys | declared_keys)
 
     def __getitem__(self, key):
         try:
-            return self.__keys__[key].getter(self)
+            return self.__keyspecs__[key].getter(self)
         except KeyError:
             item = self._data[key]
             return self._pull(item)
@@ -347,17 +411,17 @@ class SpecDict(Spec, MutableMapping, metaclass=SpecDictType):
 
     def __setitem__(self, key, val):
         try:
-            self.__keys__[key].setter(self, val)
+            self.__keyspecs__[key].setter(self, val)
         except KeyError:
             self._data.__setitem__(key, self._push(val))
 
     def __delitem__(self, key):
         try:
-            self.__keys__[key].deleter(self)
+            self.__keyspecs__[key].deleter(self)
         except KeyError:
             self._data.__delitem__(key)
 
     def __iter__(self):
         stored_keys = set(self._data)
-        declared_keys = set(self.__keys__)
+        declared_keys = set(self.__keyspecs__)
         return iter(stored_keys | declared_keys)
