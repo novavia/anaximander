@@ -107,8 +107,18 @@ class singlesetproperty(settablecachedproperty):
     and consistency with the base class behavior.
     """
 
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        try:
+            return obj.__dict__[self.cache]
+        except KeyError:
+            if self.fget is None:
+                raise AttributeError("Unreadable attribute.")
+            return self.fget(obj)
+
     def __set__(self, obj, value):
-        if not self.cache in obj.__dict__:
+        if self.cache not in obj.__dict__:
             super().__set__(obj, value)
         else:
             raise AttributeError("Can't set attribute.")

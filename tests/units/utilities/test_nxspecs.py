@@ -11,8 +11,10 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+import datetime as dt
 import io
 
+import pandas as pd
 import pytest
 
 from anaximander.utilities import nxspecs as nxs
@@ -118,10 +120,14 @@ def test_dict_instance():
 def test_keys():
 
     class BandSpec(nxs.SpecDict):
-        keyspecs = {'Guitar': nxs.KeyedSpec(nxs.Spec(str)),
-                    'Drums': nxs.KeyedSpec(nxs.Spec(str)),
-                    'Bass': nxs.KeyedSpec(nxs.Spec(str)),
-                    'Keys': nxs.KeyedSpec(nxs.Spec(str))}
+        keyspecs = {'Guitar': nxs.Spec(str),
+                    'Drums': nxs.Spec(str),
+                    'Bass': nxs.Spec(str),
+                    'Keys': nxs.Spec(str)}
+
+        def __validator__(self):
+            return sum(1 for v in self.values() if v is not None) >= 2
+
     assert len(BandSpec.__keyspecs__) == 4
     string = """# Jr Dreads 2017
                 Guitar: JD  # Goes by Jr Dreads
@@ -133,15 +139,18 @@ def test_keys():
     assert jrdreads['Keys'] is None
     with pytest.raises(TypeError):
         jrdreads['Keys'] = 0
+    del jrdreads['Bass']
+    with pytest.raises(ValueError):
+        del jrdreads['Drums']
 
 
 def test_descriptors():
 
     class BandSpec(nxs.SpecDict):
-        guitar = nxs.spec(str, key="Guitar")
-        drums = nxs.spec(str, key="Drums")
-        bass = nxs.spec(str, key="Bass")
-        keys = nxs.spec(str, key="Keys")
+        guitar = nxs.Str(key="Guitar")
+        drums = nxs.Str(key="Drums")
+        bass = nxs.Str(key="Bass")
+        keys = nxs.Str(key="Keys")
     assert len(BandSpec.__keyspecs__) == 4
     string = """# Jr Dreads 2017
                 Guitar: JD  # Goes by Jr Dreads
@@ -160,37 +169,61 @@ def test_descriptors():
         jrdreads['Keys'] = 0
 
 
-def test_full_spec():
+def test_datetime():
 
-    instrument_spec = nxs.EnumerationSpec('Guitar',
-                                          'Lead Singing',
-                                          'Backup Singing',
-                                          'Drums',
-                                          'Bass',
-                                          'Keys')
-
-    class InstrumentList(nxs.SpecList, spec=instrument_spec):
-        pass
-
-    class BandSpec(nxs.SpecDict, spec='InstrumentList'):
-        pass
+    class BandSpec(nxs.SpecDict):
+        formation = nxs.Spec(dt.date, key='Formation')
+        musicians = nxs.List(key='Musicians')
+        last_show = nxs.DateTime('Last Show')
 
     string = """# Jr Dreads 2017
-                JD:
-                  - Guitar
-                  - Lead Singing
-                Mike:
-                  - Drums
-                  - Backup Singing
-                Greg:
-                  - Bass
+                Formation: 2015-02-17
+                Musicians:
+                  - JD
+                  - Mike
+                  - Greg
+                Last Show: 2017-09-17 14:00:00
              """
     jrdreads = BandSpec.load(string)
-    assert jrdreads['JD'][0] == 'Guitar'
+    assert isinstance(jrdreads.formation, dt.date)
+    assert isinstance(jrdreads['Last Show'], dt.datetime)
+
+
+def test_full_spec():
+
+    instrument_spec = nxs.Selection('Guitar',
+                                    'Lead Singing',
+                                    'Backup Singing',
+                                    'Drums',
+                                    'Bass',
+                                    'Keys')
+
+    class InstrumentList(nxs.SpecList, ispec=instrument_spec):
+        pass
+
+    class BandSpec(nxs.SpecDict):
+        formation = nxs.Timestamp(key='Formation')
+        musicians = nxs.Dict(InstrumentList, key='Musicians')
+
+    string = """# Jr Dreads 2017
+                Formation: 2015-02-17
+                Musicians:
+                    JD:
+                      - Guitar
+                      - Lead Singing
+                    Mike:
+                      - Drums
+                      - Backup Singing
+                    Greg:
+                      - Bass
+             """
+    jrdreads = BandSpec.load(string)
+    assert isinstance(jrdreads.formation, pd.Timestamp)
+    assert jrdreads.musicians['JD'][0] == 'Guitar'
     with pytest.raises(ValueError):
-        jrdreads['JD'].append('Kazoo')
+        jrdreads.musicians['JD'].append('Kazoo')
     with pytest.raises(TypeError):
-        jrdreads['Paul'] = 0
+        jrdreads.musicians['Paul'] = 0
 
 
 if __name__ == '__main__':
