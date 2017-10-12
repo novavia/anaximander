@@ -13,11 +13,15 @@ Copyright (C) Novavia Solutions, LLC.
 
 import datetime as dt
 import io
+import os
 
 import pandas as pd
 import pytest
 
+from anaximander import TESTDIR
 from anaximander.utilities import nxspecs as nxs
+
+STORE_PATH = os.path.join(TESTDIR, 'data/specifications')
 
 # =============================================================================
 # Test Cases
@@ -102,7 +106,7 @@ def test_nested_map():
 
 
 def test_list_instance():
-    jrdreads = nxs.SpecList('JD', 'Mike', 'Greg')
+    jrdreads = nxs.SpecList(['JD', 'Mike', 'Greg'])
     assert jrdreads[0] == 'JD'
     output = io.StringIO()
     jrdreads.dump(output)
@@ -224,6 +228,10 @@ def test_full_spec():
         jrdreads.musicians['JD'].append('Kazoo')
     with pytest.raises(TypeError):
         jrdreads.musicians['Paul'] = 0
+
+
+def test_spec_directory():
+    store = nxs.SpecDirectory(STORE_PATH)
 
 
 if __name__ == '__main__':

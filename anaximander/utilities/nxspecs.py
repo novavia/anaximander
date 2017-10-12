@@ -16,13 +16,20 @@ import abc
 from collections import OrderedDict, ChainMap
 from collections.abc import MutableSequence, MutableMapping
 import datetime as dt
+import io
+import os
+from pathlib import Path
+import shutil
 from weakref import WeakValueDictionary
 
+from google.cloud.storage.client import Client
+from google.cloud.exceptions import Conflict, NotFound
 import pandas as pd
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedSeq, CommentedMap
 
 from anaximander.utilities import xprops
+from anaximander.utilities import datastore as dts
 
 # =============================================================================
 # Specifcation item classes
@@ -300,14 +307,14 @@ class List(ContainerSpec):
 
     @property
     def stype(self):
-        return SpecList[self.ispec]
+        return SpecList.sub(self.ispec)
 
 
 class Dict(ContainerSpec):
 
     @property
     def stype(self):
-        return SpecDict[self.ispec]
+        return SpecDict.sub(self.ispec)
 
 
 class TypedSpec(Spec):
@@ -413,10 +420,15 @@ class SpecContainerType(abc.ABCMeta):
             if not isinstance(ispec, Spec):
                 ispec = Spec(ispec)
             cls.__ispec__ = ispec
+        cls.__cache__ = WeakValueDictionary()
 
-    def __getitem__(cls, ispec):
-        """Returns a subclass with overwritten spec."""
-        return SpecContainerType(cls.__name__, (cls,), {}, ispec=ispec)
+    def __getitem__(cls, identifier):
+        """Cache retrieval mechanism."""
+        return cls.__cache__.__getitem__(identifier)
+
+    def sub(cls, ispec):
+        """Returns a subclass with the supplied ispec."""
+        return type(cls)(cls.__name__, (cls,), {}, ispec)
 
 
 class SpecDictType(SpecContainerType):
@@ -442,13 +454,47 @@ class SpecDictType(SpecContainerType):
 
 # Abstract base class for List and Dict
 class SpecContainer(metaclass=SpecContainerType):
+    """Base class for specification containers.
+
+    SpecContainer gets subclassed into SpecList and SpecDict. The former
+    is a sequence of items, which may be homogeneous or heterogeneous in
+    terms of item types. The latter is expected to be much more common,
+    and in particular, it allows for the use of descriptors in subclasses to
+    outline content.
+    Both types accept an optional ispec parameter from their metaclass, which
+    indicates an expected default type for random items.
+    The __path__ variable is intended to be assigned a string by subclasses,
+    possibly containing slashes, so as to provide a storage path from
+    a given directory root.
+    The storage model is as follows: root/<owner>/<path>/<identifier>.yaml,
+    where owner is an object that must print to a string which can be used
+    in a file path, path is provided by the container type, and identity
+    is an optional string argument. Owner is stored as a weak reference.
+    If any of the three attributes owner, path or identifier evaluates to
+    None, an attempt to store the specification will fail.
+
+    Params:
+        owner: optional owner. Must be an object that accepts weak references,
+            and have a __str__ method that evaluates to a string compatible
+            with a hierarchical file storage structure.
+        identifier: an optional string that uniquely identifies the container
+            within its type.
+        _delay_validation: internal parameter to enable from_rtype
+            instantiation.
+    """
     # Corresponding ruamel commented type(s)
     __rtype__ = (CommentedSeq, CommentedMap)
     __ispec__ = None  # Placeholder for specifying default element type
+    __path__ = None  # An optional storage path into a specification store
 
     @abc.abstractmethod
-    def __init__(self):
-        pass
+    def __init__(self, owner=None, identifier=None, _delay_validation=False):
+        self.owner = owner
+        if identifier is not None:
+            self.identifier = identifier
+        if not _delay_validation:
+            self.initialized = True
+            self.validate()
 
     @property
     def ispec(self):
@@ -458,6 +504,23 @@ class SpecContainer(metaclass=SpecContainerType):
     def initialized(self):
         """Lock used to start validation."""
         return False
+
+    @xprops.weakproperty
+    def owner(self):
+        """Optional owner object for a specification container."""
+        return None
+
+    @xprops.singlesetproperty
+    def identifier(self):
+        """Optional instance identifier, unique to a container type."""
+        return None
+
+    @identifier.setter
+    def identifier(self, idt):
+        if not isinstance(idt, str):
+            raise TypeError()
+        type(self).__cache__[idt] = self
+        self._identifier = idt
 
     @classmethod
     def from_rtype(cls, data):
@@ -470,8 +533,10 @@ class SpecContainer(metaclass=SpecContainerType):
                 cls = SpecList
             elif isinstance(data, CommentedMap):
                 cls = SpecDict
-        instance = cls()
+        instance = cls(_delay_validation=True)
         instance._data = data
+        instance.initialized = True
+        instance.validate()
         return instance
 
     def _pull(self, val):
@@ -522,10 +587,11 @@ class SpecList(SpecContainer, MutableSequence):
     """An enumerated specification."""
     __rtype__ = CommentedSeq
 
-    def __init__(self, *args):
+    def __init__(self, iterable=(), owner=None, identifier=None,
+                 _delay_validation=False):
         self._data = CommentedSeq()
-        self.extend(args)
-        self.initialized = True
+        self.extend(iterable)
+        super().__init__(owner, identifier, _delay_validation)
 
     def __len__(self):
         return self._data.__len__()
@@ -551,10 +617,11 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
     __rtype__ = CommentedMap
     specs = OrderedDict()  # Optional declaration of SpecKeys
 
-    def __init__(self, mapping=(), **kwargs):
+    def __init__(self, mapping=(), owner=None, identifier=None,
+                 _delay_validation=False, **kwargs):
         self._data = CommentedMap()
         self.update(mapping, **kwargs)
-        self.initialized = True
+        super().__init__(owner, identifier, _delay_validation)
 
     def __len__(self):
         stored_keys = set(self._data)
@@ -588,3 +655,124 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
         stored_keys = set(self._data)
         declared_keys = set(self.__keyspecs__)
         return iter(stored_keys | declared_keys)
+
+# =============================================================================
+# Specification storage interface
+# =============================================================================
+
+
+class SpecStore(dts.StorageResource):
+    """Base class for specification stores.
+
+    The storage model is as follows: root/<owner>/<path>/<identifier>.yaml,
+    where owner is an object that must print to a string which can be used
+    in a file path, path is provided by the container type, and identity
+    is an optional string argument.
+    """
+
+    @abc.abstractmethod
+    def __store__(self, ownership, path, identifier, specifications):
+        """The storage method defined by subclasses."""
+        pass
+
+    def store(self, container):
+        """Stores a spec container."""
+        if not isinstance(container, SpecContainer):
+            raise TypeError()
+        try:
+            owner = container.owner
+            ownership = str(owner)
+            path = container.__path__
+            identifier = container.identifier
+            assert all((owner, path, identifier))
+        except (AttributeError, TypeError, AssertionError):
+            msg = "A spec container must have a valid owner, path and " + \
+                  "identifier to be stored."
+            raise ValueError(msg)
+        content = io.StringIO()
+        container.dump(content)
+        self.__store__(ownership, path, identifier, content)
+
+
+class SpecDirectory(SpecStore):
+    """A spec store in a locally accessible file system."""
+
+    def __init__(self, path):
+        self._root = Path(path)
+
+    @property
+    def root(self):
+        return self._root
+
+    def __exists__(self):
+        return self._root.exists()
+
+    def __empty__(self):
+        return not os.listdir()
+
+    def __create__(self):
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def __drop__(self, force=False):
+        if force is True:
+            shutil.rmtree(self._root)
+        else:
+            self._root.rmdir()
+
+    def __store__(self, ownership, path, identifier, specifications):
+        p = self._root / os.join(ownership, path, identifier, '.yaml')
+        p.write_text(specifications)
+
+
+class SpecBucketGCP(SpecStore):
+    """A spec store in a Google Cloud Platform storage bucket.
+
+    Unlike a directory-based specification store, bucket-based stores keep
+    track of versions.
+
+    Params:
+        project: a cloud platform project name.
+        path: a bucket name or path.
+    """
+
+    def __init__(self, project, path):
+        self._client = Client(project)
+        self._bucket = self._client(path)
+
+    @property
+    def client(self):
+        return self._client
+
+    @property
+    def bucket(self):
+        return self._bucket
+
+    def __exists__(self):
+        if not self._bucket.exists():
+            return False
+        if not self._bucket.versioning_enabled:
+            msg = "A bucket-based specification store should enable " + \
+                  "versions, however {0} does not."
+            self.warn(msg.format(self))
+        return True
+
+    def __empty__(self):
+        itr = self._bucket.list_blobs()
+        try:
+            next(itr)
+        except StopIteration:
+            return True
+        else:
+            return False
+
+    def __create__(self):
+        if self.exists():
+            self.__drop__()
+        self._bucket.create()
+        self._bucket.versioning_enabled = True
+        self._bucket.patch()
+
+    def __drop__(self, force=False):
+        if force is True:
+            self._bucket.delete_blobs(list(self._bucket.list_blobs()))
+        self._bucket.delete()
