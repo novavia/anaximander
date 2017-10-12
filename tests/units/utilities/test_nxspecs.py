@@ -14,6 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import datetime as dt
 import io
 import os
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -22,6 +23,57 @@ from anaximander import TESTDIR
 from anaximander.utilities import nxspecs as nxs
 
 STORE_PATH = os.path.join(TESTDIR, 'data/specifications')
+PROJECT = 'anaximander'
+BUCKET = 'specifications'
+
+# =============================================================================
+# Test Constants
+# =============================================================================
+
+instrument_spec = nxs.Selection('Guitar',
+                                'Lead Singing',
+                                'Backup Singing',
+                                'Drums',
+                                'Bass',
+                                'Keys')
+
+
+class InstrumentList(nxs.SpecList, ispec=instrument_spec):
+    pass
+
+
+class BandSpec(nxs.SpecDict):
+    __path__ = 'bands'
+    __identifier__ = 'name'
+    name = nxs.Str(required=True, key='Name')
+    formation = nxs.Timestamp(key='Formation')
+    musicians = nxs.Dict(InstrumentList, key='Musicians')
+
+
+class Owner:
+
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return self.name
+
+
+JRDREADS = """# Jr Dreads 2017
+              Name: Jr Dreads
+              Formation: 2015-02-17
+              Musicians:
+                JD:
+                  - Guitar
+                  - Lead Singing
+                Mike:
+                  - Drums
+                  - Backup Singing
+                Greg:
+                  - Bass
+           """
+
+JD = Owner("JD Margulici")
 
 # =============================================================================
 # Test Cases
@@ -194,34 +246,7 @@ def test_datetime():
 
 
 def test_full_spec():
-
-    instrument_spec = nxs.Selection('Guitar',
-                                    'Lead Singing',
-                                    'Backup Singing',
-                                    'Drums',
-                                    'Bass',
-                                    'Keys')
-
-    class InstrumentList(nxs.SpecList, ispec=instrument_spec):
-        pass
-
-    class BandSpec(nxs.SpecDict):
-        formation = nxs.Timestamp(key='Formation')
-        musicians = nxs.Dict(InstrumentList, key='Musicians')
-
-    string = """# Jr Dreads 2017
-                Formation: 2015-02-17
-                Musicians:
-                    JD:
-                      - Guitar
-                      - Lead Singing
-                    Mike:
-                      - Drums
-                      - Backup Singing
-                    Greg:
-                      - Bass
-             """
-    jrdreads = BandSpec.load(string)
+    jrdreads = BandSpec.load(JRDREADS)
     assert isinstance(jrdreads.formation, pd.Timestamp)
     assert jrdreads.musicians['JD'][0] == 'Guitar'
     with pytest.raises(ValueError):
@@ -232,6 +257,27 @@ def test_full_spec():
 
 def test_spec_directory():
     store = nxs.SpecDirectory(STORE_PATH)
+    jrdreads = BandSpec.load(JRDREADS, owner=JD)
+    store.store(jrdreads)
+    path = Path(STORE_PATH) / 'JD Margulici' / 'bands' / 'Jr Dreads.yaml'
+    assert path.exists()
+    with path.open() as f:
+        assert f.readline()[0:4] == "# Jr"
+    retrieval = store.retrieve(JD, 'bands', 'Jr Dreads')
+    assert str(retrieval) == str(jrdreads)
+    assert store.list(JD, 'bands') == ['Jr Dreads']
+
+
+@pytest.mark.online
+def test_spec_bucket():
+    store = nxs.SpecBucketGCP(PROJECT, BUCKET)
+    jrdreads = BandSpec.load(JRDREADS, owner=JD)
+    store.store(jrdreads)
+    blob = store.blob('JD Margulici', 'bands', 'Jr Dreads')
+    assert blob.exists()
+    retrieval = store.retrieve(JD, 'bands', 'Jr Dreads')
+    assert str(retrieval) == str(jrdreads)
+    assert store.list(JD, 'bands') == ['Jr Dreads']
 
 
 if __name__ == '__main__':

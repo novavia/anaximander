@@ -75,7 +75,7 @@ class Feature(schema.Schema):
 
 @tract
 class Turefea(schema.Schema):
-    device = ReStr(key=True, pattern=MAC_PATTERN)    
+    device = ReStr(key=True, pattern=MAC_PATTERN)
     Feature_Value_0 = Scalar(NxFloat, key=True, sequential=True)
     timestamp = Timestamp()
 
@@ -84,6 +84,7 @@ class Turefea(schema.Schema):
 def featurelog():
     """Returns a feature dataframe."""
     return Feature.Frame.from_csv(FEATURELOG_PATH)[mac]
+
 
 @pytest.fixture(scope="module")
 def turefealog():
@@ -146,8 +147,10 @@ def test_highlight_survey(featurelog, turefealog):
 
 if __name__ == '__main__':
     pytest.main([__file__])
+
     def th_survey(log):
         return ThresholdHighlightSurvey(log, 2, threshold=10)
+
     log = featurelog()
-    survey = th_survey(log)    
+    survey = th_survey(log)
     digest = survey(plot=True)

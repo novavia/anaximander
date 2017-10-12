@@ -447,11 +447,11 @@ def test_range_attributes(featurelog):
     frame = FeatureMapping(featurelog, device='68:9E:19:07:DE:C3')
     assert len(frame) == 3
     frame = FeatureMapping(featurelog, device=['68:9E:19:07:DE:C3'])
-    assert len(frame) == 3    
+    assert len(frame) == 3
     frame = FeatureMapping(featurelog, timestamp=('2016-9-14 10:03', None))
     assert len(frame) == 5
     frame = FeatureMapping(featurelog, ix_range=('2016-9-14 10:03', None))
-    assert len(frame) == 5    
+    assert len(frame) == 5
     frame = FeatureMappingMK(featurelog, Feature_Value_0=0)
     assert len(frame) == 0
     with pytest.raises(frm.FrameError):
