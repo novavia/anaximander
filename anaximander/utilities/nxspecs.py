@@ -20,6 +20,7 @@ import io
 import os
 from pathlib import Path
 import shutil
+from threading import Thread
 from weakref import WeakValueDictionary
 
 from google.cloud.storage.client import Client
@@ -741,7 +742,7 @@ class SpecStore(dts.StorageResource):
             source = self.__retrieve__(ownership, path, identifier)
             cls = SpecContainerType.__path_registry__[path]
         except (TypeError, dts.ResourceError, KeyError):
-            params = dict(ownerhsip=ownership,
+            params = dict(owner=owner,
                           path=path,
                           identifier=identifier)
             msg = "Could not retrieve a spec sheet with parameters {}"
@@ -758,13 +759,120 @@ class SpecStore(dts.StorageResource):
         ownership = str(owner)
         return self.__list__(ownership, path)
 
-    # TODO: include the following methods
-    # delete a spec container by identifier
-    # list ownership
-    # delete an owner
-    # list all paths for a given owner
-    # delete a path for a given owner
-    # delete a path for all owners
+    @abc.abstractmethod
+    def __delete_sheet__(self, ownership, path, identifier):
+        """The deletion primitive for spec sheets."""
+        pass
+
+    def delete(self, owner, path, identifier, confirm=True):
+        """Deletes a spec sheet."""
+        params = dict(owner=owner,
+                      path=path,
+                      identifier=identifier)
+        try:
+            ownership = str(owner)
+            SpecContainerType.__path_registry__[path]
+        except (TypeError, KeyError):
+            msg = "Could not retrieve a spec sheet with parameters {}"
+            raise dts.ResourceError(msg.format(params))
+        if confirm is not False:
+            msg = "This will permanently delete a specification sheet " + \
+                  "with these parameters {}. Would like to proceed? (Y/n)."
+            confirmation = input(msg.format(params))
+            if not confirmation == 'Y':
+                msg = "Aborting deletion method."
+                print(msg)
+                return False
+        try:
+            self.__delete_sheet__(ownership, path, identifier)
+            return True
+        except dts.ResourceError:
+            return False
+
+    @abc.abstractmethod
+    def __list_ownership__(self):
+        """Primitive for listing ownership."""
+        pass
+
+    def list_ownership(self):
+        """Returns a list of ownerships."""
+        return self.__list_ownership__()
+
+    @abc.abstractmethod
+    def __drop_ownership__(self, ownership, force=False):
+        """primitive for dropping owner."""
+        pass
+
+    def drop_owner(self, owner, confirm=True, force=False):
+        """Drops owner from the specification store.
+
+        Params:
+            owner: the owner to be dropped.
+            confirm: flag indicating whether to prompt the user.
+            force: unless True, the action will fail if the store
+                contains spec sheets for the owner.
+        """
+        if confirm is not False:
+            msg = "The following owner: {} will be permanently deleted. " \
+                "Do you wish to proceed? (Y/n)."
+            confirmation = input(msg.format(owner))
+            if not confirmation == 'Y':
+                msg = "Aborting deletion method."
+                print(msg)
+                return False
+        try:
+            ownership = str(owner)
+            self.__drop_ownership__(ownership, force=force)
+            return True
+        except (TypeError, dts.ResourceError):
+            return False
+
+    @abc.abstractmethod
+    def __list_paths__(self, ownership):
+        """Primitive for list_paths."""
+        pass
+
+    def list_paths(self, owner):
+        """Lists implemented paths for supplied owner."""
+        ownership = str(owner)
+        return self.__list_paths__(ownership)
+
+    @abc.abstractmethod
+    def __drop_path__(self, path, ownership, force=False):
+        """Primitive for drop_path."""
+        pass
+
+    def drop_path(self, path, confirm=True, force=False, owners=None):
+        """Drops path for all owners from the specification store.
+
+        Params:
+            path: the path to be dropped.
+            confirm: flag indicating whether to prompt the user.
+            force: unless True, the action will fail on any path that
+                contains specifications.
+            owners: optional list of owners upon which to limit the action.
+                Defaults to None, meaning that the action is carried out
+                across the whole store.
+        """
+        if confirm is not False:
+            if owners is None:
+                scope = "all owners"
+            else:
+                scope = "owners: {}".format(owners)
+            msg = "The following path: {0} will be permanently deleted " \
+                "for {1}. Do you wish to proceed? (Y/n)."
+            confirmation = input(msg.format(path, scope))
+            if not confirmation == 'Y':
+                msg = "Aborting deletion method."
+                print(msg)
+                return False
+        if owners is None:
+            ownership_list = self.list_ownership()
+        else:
+            ownership_list = [str(o) for o in owners]
+        for ownership in ownership_list:
+            self.__drop_path__(path, ownership, force=force)
+        return True
 
 
 class SpecDirectory(SpecStore):
@@ -781,7 +889,7 @@ class SpecDirectory(SpecStore):
         return self._root.exists()
 
     def __empty__(self):
-        return not os.listdir()
+        return not os.listdir(self._root)
 
     def __create__(self):
         self._root.mkdir(parents=True, exist_ok=True)
@@ -809,6 +917,41 @@ class SpecDirectory(SpecStore):
         directory = self._root / os.path.join(ownership, path)
         paths = directory.glob('*.yaml')
         return [p.name[:-5] for p in paths]
+
+    def __delete_sheet__(self, ownership, path, identifier):
+        directory = self._root / os.path.join(ownership, path)
+        file = directory / (identifier + '.yaml')
+        try:
+            os.remove(file)
+        except FileNotFoundError:
+            raise dts.ResourceError()
+
+    def __list_ownership__(self):
+        return [p.name for p in self._root.iterdir() if p.is_dir()]
+
+    def __drop_ownership__(self, ownership, force=False):
+        directory = self._root / ownership
+        try:
+            if force is True:
+                shutil.rmtree(directory)
+            else:
+                directory.rmdir()
+        except OSError:
+            raise dts.ResourceError()
+
+    def __list_paths__(self, ownership):
+        directory = self._root / ownership
+        return [p.name for p in directory.iterdir() if p.is_dir()]
+
+    def __drop_path__(self, path, ownership, force=False):
+        directory = self._root / os.path.join(ownership, path)
+        try:
+            if force is True:
+                shutil.rmtree(directory)
+            else:
+                directory.rmdir()
+        except OSError:
+            raise dts.ResourceError()
 
 
 class SpecBucketGCP(SpecStore):
@@ -846,7 +989,7 @@ class SpecBucketGCP(SpecStore):
     def __empty__(self):
         itr = self._bucket.list_blobs()
         try:
-            next(itr)
+            next(iter(itr))
         except StopIteration:
             return True
         else:
@@ -883,3 +1026,55 @@ class SpecBucketGCP(SpecStore):
         prefix = '/'.join([ownership, path])
         blobs = self._bucket.list_blobs(prefix=prefix)
         return [b.name.split('/')[-1][:-5] for b in blobs]
+
+    def __delete_sheet__(self, ownership, path, identifier):
+        blob = self.blob(ownership, path, identifier)
+        try:
+            blob.delete()
+        except NotFound:
+            raise dts.ResourceError()
+
+    def __list_ownership__(self):
+        def ownership(blob):
+            return blob.name.split('/')[0]
+        return list(set(ownership(b) for b in self._bucket.list_blobs()))
+
+    def __drop_ownership__(self, ownership, force=False):
+        if not force:
+            return
+        prefix = ownership
+        blobs = self._bucket.list_blobs(prefix=prefix)
+
+        def delete():
+            for b in blobs:
+                try:
+                    b.delete()
+                except:
+                    continue
+
+        deletion_thread = Thread(target=delete)
+        deletion_thread.start()
+
+    def __list_paths__(self, ownership):
+        prefix = ownership
+
+        def path(blob):
+            return '/'.join(blob.name.split('/')[1:-1])
+        paths = (path(b) for b in self._bucket.list_blobs(prefix=prefix))
+        return list(set(paths))
+
+    def __drop_path__(self, path, ownership, force=False):
+        if not force:
+            return
+        prefix = '/'.join([ownership, path])
+        blobs = self._bucket.list_blobs(prefix=prefix)
+
+        def delete():
+            for b in blobs:
+                try:
+                    b.delete()
+                except:
+                    continue
+
+        deletion_thread = Thread(target=delete)
+        deletion_thread.start()

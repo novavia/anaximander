@@ -15,6 +15,7 @@ import datetime as dt
 import io
 import os
 from pathlib import Path
+import time
 
 import pandas as pd
 import pytest
@@ -266,6 +267,16 @@ def test_spec_directory():
     retrieval = store.retrieve(JD, 'bands', 'Jr Dreads')
     assert str(retrieval) == str(jrdreads)
     assert store.list(JD, 'bands') == ['Jr Dreads']
+    store.delete(JD, 'bands', 'Jr Dreads', confirm=False)
+    assert store.list(JD, 'bands') == []
+    store.store(jrdreads)
+    assert store.list_ownership() == ['JD Margulici']
+    assert store.list_paths(JD) == ['bands']
+    store.drop_path('bands', confirm=False, force=True)
+    assert store.list_paths(JD) == []
+    store.store(jrdreads)
+    store.drop_owner(JD, confirm=False, force=True)
+    assert store.empty
 
 
 @pytest.mark.online
@@ -278,6 +289,18 @@ def test_spec_bucket():
     retrieval = store.retrieve(JD, 'bands', 'Jr Dreads')
     assert str(retrieval) == str(jrdreads)
     assert store.list(JD, 'bands') == ['Jr Dreads']
+    store.delete(JD, 'bands', 'Jr Dreads', confirm=False)
+    assert store.list(JD, 'bands') == []
+    store.store(jrdreads)
+    assert store.list_ownership() == ['JD Margulici']
+    assert store.list_paths(JD) == ['bands']
+    store.drop_path('bands', confirm=False, force=True)
+    time.sleep(0.25)
+    assert store.list_paths(JD) == []
+    store.store(jrdreads)
+    store.drop_owner(JD, confirm=False, force=True)
+    time.sleep(0.25)
+    assert store.empty
 
 
 if __name__ == '__main__':
