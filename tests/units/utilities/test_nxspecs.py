@@ -13,11 +13,11 @@ Copyright (C) Novavia Solutions, LLC.
 
 import datetime as dt
 import io
+import json
 import os
 from pathlib import Path
 import time
 
-import pandas as pd
 import pytest
 
 from anaximander import TESTDIR
@@ -31,15 +31,19 @@ BUCKET = 'specifications'
 # Test Constants
 # =============================================================================
 
-instrument_spec = nxs.Selection('Guitar',
-                                'Lead Singing',
-                                'Backup Singing',
-                                'Drums',
-                                'Bass',
-                                'Keys')
+
+class InstrumentSpec(nxs.Selection):
+    enumeration = {
+                   'Guitar':            'gtr',
+                   'Lead Singing':      'lds',
+                   'Backup Singing':    'bks',
+                   'Drums':             'drm',
+                   'Bass':              'bas',
+                   'Keys':              'kys'
+                   }
 
 
-class InstrumentList(nxs.SpecList, ispec=instrument_spec):
+class InstrumentList(nxs.SpecList, ispec=InstrumentSpec):
     pass
 
 
@@ -47,7 +51,7 @@ class BandSpec(nxs.SpecDict):
     __path__ = 'bands'
     __identifier__ = 'name'
     name = nxs.Str(required=True, key='Name')
-    formation = nxs.Timestamp(key='Formation')
+    formation = nxs.Date(key='Formation')
     musicians = nxs.Dict(InstrumentList, key='Musicians')
 
 
@@ -248,12 +252,19 @@ def test_datetime():
 
 def test_full_spec():
     jrdreads = BandSpec.load(JRDREADS)
-    assert isinstance(jrdreads.formation, pd.Timestamp)
+    assert isinstance(jrdreads.formation, dt.date)
     assert jrdreads.musicians['JD'][0] == 'Guitar'
     with pytest.raises(ValueError):
         jrdreads.musicians['JD'].append('Kazoo')
     with pytest.raises(TypeError):
         jrdreads.musicians['Paul'] = 0
+
+
+def test_json():
+    jrdreads = BandSpec.load(JRDREADS)
+    string = jrdreads.json()
+    assert json.loads(string)["Formation"] == "2015-02-17"
+    assert json.loads(string)["Musicians"]["JD"][0] == "gtr"
 
 
 def test_spec_directory():

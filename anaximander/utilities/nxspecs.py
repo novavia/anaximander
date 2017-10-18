@@ -14,9 +14,10 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import OrderedDict, ChainMap
-from collections.abc import MutableSequence, MutableMapping
+from collections.abc import Mapping, MutableSequence, MutableMapping
 import datetime as dt
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -24,7 +25,7 @@ from threading import Thread
 from weakref import WeakValueDictionary
 
 from google.cloud.storage.client import Client
-from google.cloud.exceptions import Conflict, NotFound
+from google.cloud.exceptions import NotFound
 import pandas as pd
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedSeq, CommentedMap
@@ -35,6 +36,37 @@ from anaximander.utilities import datastore as dts
 # =============================================================================
 # Specifcation item classes
 # =============================================================================
+
+
+class SpecEncoder(json.JSONEncoder):
+    """Custom JSON encoder for specifications."""
+
+    def default(self, obj):
+        if isinstance(obj, SpecDict):
+            specs = obj.__keyspecs__
+            ispec = obj.ispec
+            rdict = {}
+            for key, val in obj.items():
+                try:
+                    spec = specs[key]
+                except KeyError:
+                    k = key
+                    if ispec:
+                        v = ispec.__json__(val)
+                    else:
+                        v = val
+                else:
+                    k = spec.compact
+                    v = spec.__json__(val)
+                rdict[k] = v
+            return rdict
+        elif isinstance(obj, SpecList):
+            ispec = obj.ispec
+            if ispec:
+                return [ispec.__json__(v) for v in obj]
+            else:
+                return list(obj)
+        return super().default(self, obj)
 
 
 class Spec(abc.ABC):
@@ -68,16 +100,20 @@ class Spec(abc.ABC):
             valid value.
         required: boolean. If True, specification maps must always provide
             a value for the corresponding key.
+        compact: either None or a string. This is the key to use for compact
+            representation, which is the default for JSON export.
     """
 
     def __init__(self, stype=None, key=None, default=None, validator=None,
-                 required=False):
+                 required=False, compact=None):
         self.stype = stype
         if key is not None:
             self.key = key
         self.default = default
         self.validator = validator
         self.required = required
+        if compact is not None:
+            self.compact = compact
 
     @xprops.singlesetproperty
     def stype(self):
@@ -98,6 +134,10 @@ class Spec(abc.ABC):
     @xprops.singlesetproperty
     def required(self):
         return None
+
+    @xprops.singlesetproperty
+    def compact(self):
+        return self.key
 
     @xprops.singlesetproperty
     def attr(self):
@@ -211,6 +251,10 @@ class Spec(abc.ABC):
         return value is supplied to the YAML serializer.
         Note that this does not operate on container specifications.
         """
+        return val
+
+    def __json__(self, val):
+        """An optional json encoder."""
         return val
 
     def validate(self, val):
@@ -360,12 +404,18 @@ class Date(TypedSpec):
     def stype(self):
         return dt.date
 
+    def __json__(self, val):
+        return str(val)
+
 
 class DateTime(TypedSpec):
 
     @property
     def stype(self):
         return dt.datetime
+
+    def __json__(self, val):
+        return str(val)
 
 
 class Timestamp(TypedSpec):
@@ -380,18 +430,39 @@ class Timestamp(TypedSpec):
     def __dumper__(self, val):
         return val.to_pydatetime()
 
+    def __json__(self, val):
+        return str(val)
+
 
 class Selection(Str):
+    """Specifies a categorical variable.
+
+    The possible categories are specified in the enumeration variable,
+    either in a subclass, or optionally at instantiation.
+    The enumeration can be either a sequence or a mapping. A sequence
+    defines the possible values of the specification. In the case of a
+    mapping, these values are the keys, whereas the mapping's values
+    define the shorthand versions that is used when exporting to JSON.
+    """
     enumeration = []
 
-    def __init__(self, *enumeration, key=None, default=None, validator=None,
-                 required=False):
+    def __init__(self, key=None, default=None, validator=None,
+                 required=False, enumeration=None):
         if enumeration:
             self.enumeration = enumeration
         super().__init__(key, default, validator, required)
 
+    @property
+    def mapping(self):
+        return isinstance(self.enumeration, Mapping)
+
     def __validator__(self, val):
         return val in self.enumeration
+
+    def __json__(self, val):
+        if self.mapping:
+            return self.enumeration[val]
+        return val
 
 # =============================================================================
 # Specification container classes
@@ -423,7 +494,9 @@ class SpecContainerType(abc.ABCMeta):
     def __init__(cls, name, bases, namespace, ispec=None, **yaml):
         cls._yaml = YAML(**yaml)
         if ispec is not None:
-            if not isinstance(ispec, Spec):
+            if issubclass(ispec, Spec):
+                ispec = ispec()
+            elif not isinstance(ispec, Spec):
                 ispec = Spec(ispec)
             cls.__ispec__ = ispec
         cls.__cache__ = WeakValueDictionary()
@@ -586,6 +659,16 @@ class SpecContainer(metaclass=SpecContainerType):
         """Dumps spec to sink, either a file pointer or pathlib.Path."""
         return self._yaml.dump(self._data, sink)
 
+    def json(self, sink=None):
+        """Dumps a compact json to sink, either a file pointer or pathlib.Path.
+
+        if sink is None, returns a json string (equivalent to json.dumps).
+        """
+        if sink:
+            json.dump(self, sink, cls=SpecEncoder)
+        else:
+            return json.dumps(self, cls=SpecEncoder)
+
     def __validator__(self):
         """Placeholder for a container-level validation function."""
         return True
@@ -605,7 +688,7 @@ class SpecContainer(metaclass=SpecContainerType):
         if idt is not None:
             cls = type(self).__name__
             return '{cls}[{idt}]'.format(cls=cls, idt=idt)
-        return super().__repr__(self)
+        return super().__repr__()
 
     def __str__(self):
         stringio = io.StringIO()
@@ -662,6 +745,11 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
         super()._post_init()
         if type(self).__identifier__ is not None:
             type(self).__cache__[self.identifier] = self
+
+    @property
+    def specs(self):
+        """The specification fields declared by the class."""
+        return self.__keyspecs__
 
     def __len__(self):
         stored_keys = set(self._data)
