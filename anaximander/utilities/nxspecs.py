@@ -331,13 +331,15 @@ class ContainerSpec(Spec):
     """
 
     def __init__(self, ispec=None, key=None, default=None, validator=None,
-                 required=False):
+                 required=False, compact=None):
         self.ispec = ispec
         if key is not None:
             self.key = key
         self.default = default
         self.validator = validator
         self.required = required
+        if compact is not None:
+            self.compact = compact
 
     @xprops.singlesetproperty
     def ispec(self):
@@ -365,12 +367,15 @@ class Dict(ContainerSpec):
 class TypedSpec(Spec):
     """A Spec whose type is defined at the class level."""
 
-    def __init__(self, key=None, default=None, validator=None, required=False):
+    def __init__(self, key=None, default=None, validator=None, required=False,
+                 compact=None):
         if key is not None:
             self.key = key
         self.default = default
         self.validator = validator
         self.required = required
+        if compact is not None:
+            self.compact = compact
 
     @abc.abstractproperty
     def stype(self):
@@ -447,10 +452,10 @@ class Selection(Str):
     enumeration = []
 
     def __init__(self, key=None, default=None, validator=None,
-                 required=False, enumeration=None):
+                 required=False, compact=None, enumeration=None):
         if enumeration:
             self.enumeration = enumeration
-        super().__init__(key, default, validator, required)
+        super().__init__(key, default, validator, required, compact)
 
     @property
     def mapping(self):

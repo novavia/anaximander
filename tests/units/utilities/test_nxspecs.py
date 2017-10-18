@@ -51,7 +51,7 @@ class BandSpec(nxs.SpecDict):
     __path__ = 'bands'
     __identifier__ = 'name'
     name = nxs.Str(required=True, key='Name')
-    formation = nxs.Date(key='Formation')
+    formation = nxs.Date(key='Formation', compact='Frm')
     musicians = nxs.Dict(InstrumentList, key='Musicians')
 
 
@@ -263,7 +263,7 @@ def test_full_spec():
 def test_json():
     jrdreads = BandSpec.load(JRDREADS)
     string = jrdreads.json()
-    assert json.loads(string)["Formation"] == "2015-02-17"
+    assert json.loads(string)["Frm"] == "2015-02-17"
     assert json.loads(string)["Musicians"]["JD"][0] == "gtr"
 
 
