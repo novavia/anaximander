@@ -144,7 +144,7 @@ def test_record(full_table):
     assert record.mac == '88:4A:EA:69:DF:A2'
     keys = ('88:4A:EA:69:DF:A2',
             pd.Timestamp('2016-09-14 10:02:27.900000+00:00'))
-    with pytest.raises(gbt.EmptyQueryException):
+    with pytest.raises(KeyError):
         full_table.record(*keys)
 
 

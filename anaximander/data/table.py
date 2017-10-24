@@ -190,7 +190,7 @@ class DataTable(NxObject):
             raise NotImplementedError(msg.format(type(self)))
         except EmptyQueryException:
             msg = "No row found with keys {0}."
-            raise EmptyQueryException(msg.format(keys))
+            raise KeyError(msg.format(keys))
         return self.schema().load(dict(zip(self.schema.fields, tuple_))).data
 
 # =============================================================================
