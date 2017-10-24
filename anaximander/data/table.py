@@ -21,7 +21,7 @@ import pandas as pd
 
 from ..utilities import xprops, nxrange
 from ..meta import NxObject, typeinitmethod, archetype, typeattribute
-from .frame import NxDataFrame, NxDataCollection, NxDataSequence
+from .frame import NxDataFrame, NxDataCollection, NxDataSequence, dtypes
 from .annotations import interval
 
 __all__ = ['DataTableException', 'DataTableAdminException',

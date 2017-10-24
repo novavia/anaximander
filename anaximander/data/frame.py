@@ -230,6 +230,8 @@ class NxDataFrame(IndexedDataObject):
                     columns.append(col)
                     if col_type != dtype:
                         conversions[col] = dtype
+                        if dtype is np.dtype('bool'):
+                            df[col] = df[col].replace('False', 0)
             dataframe = df[columns]
         if conversions:
             try:
