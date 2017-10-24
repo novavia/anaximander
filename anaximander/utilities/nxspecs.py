@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import shutil
 from threading import Thread
+import time
 from weakref import WeakValueDictionary
 
 from google.cloud.storage.client import Client
@@ -100,18 +101,23 @@ class Spec(abc.ABC):
             valid value.
         required: boolean. If True, specification maps must always provide
             a value for the corresponding key.
+        nullable: if True, the spec can be explicitly set to None, which
+            is serialized as 'null'. Otherwise, setting to None may
+            raise an error if the stype is set or if validator doesn't
+            allow None values.
         compact: either None or a string. This is the key to use for compact
             representation, which is the default for JSON export.
     """
 
     def __init__(self, stype=None, key=None, default=None, validator=None,
-                 required=False, compact=None):
+                 required=False, nullable=False, compact=None):
         self.stype = stype
         if key is not None:
             self.key = key
         self.default = default
         self.validator = validator
         self.required = required
+        self.nullable = nullable
         if compact is not None:
             self.compact = compact
 
@@ -150,10 +156,6 @@ class Spec(abc.ABC):
         if not hasattr(self, '_key'):
             self.key = val
 
-    @property
-    def cache(self):
-        return '_' + self.attr
-
     @xprops.cachedproperty
     def spec_type(self):
         """The actual spec type, inferred from stype at runtime."""
@@ -189,8 +191,10 @@ class Spec(abc.ABC):
         try:
             val = container._data[self.key]
         except KeyError:
-            if self.default is not None:
-                return self.setter(container, self.default)
+            if not self.required:
+                return self.default
+            else:
+                raise
         else:
             return self.load(val)
 
@@ -199,18 +203,8 @@ class Spec(abc.ABC):
         if self.key is None or not isinstance(container, SpecDict):
             msg = "Call is only permitted with a keyed specification."
             raise TypeError(msg)
-        if val is None:
-            if self.required:
-                msg = "Cannot set None value on required key {0}."
-                raise TypeError(msg.format(self.key))
-        else:
-            val = self.dump(val)
-        if val is not None:
-            container._data.__setitem__(self.key, val)
-        else:
-            container._data.__delitem__(self.key)
-        if self.descriptor:
-            setattr(container, self.cache, val)
+        val = self.dump(self.__setter__(val))
+        container._data.__setitem__(self.key, val)
 
     def deleter(self, container):
         """The deleter method for a SpecDict that declares the spec."""
@@ -224,11 +218,6 @@ class Spec(abc.ABC):
             del container._data[self.key]
         except KeyError:
             pass
-        if self.descriptor:
-            try:
-                del self.cache
-            except AttributeError:
-                pass
 
     def __validator__(self, val):
         """An optional validator method for subclasses."""
@@ -253,11 +242,19 @@ class Spec(abc.ABC):
         """
         return val
 
+    def __setter__(self, val):
+        """An optional setter method applied when setting a value."""
+        if self.container:
+            return self.spec_type(val)
+        return val
+
     def __json__(self, val):
         """An optional json encoder."""
         return val
 
     def validate(self, val):
+        if self.nullable and val is None:
+            return True
         if self.spec_type is not None:
             if not isinstance(val, self.spec_type):
                 msg = "Incorrect type {0} supplied to {1}."
@@ -278,8 +275,6 @@ class Spec(abc.ABC):
         """Loads data from a yaml collection."""
         if self.container:
             rval = self.spec_type.from_rtype(val)
-        elif val is None and self.default is not None:
-            rval = self.default
         else:
             rval = self.__loader__(val)
         self.validate(rval)
@@ -287,8 +282,6 @@ class Spec(abc.ABC):
 
     def dump(self, val):
         """Passes data to a yaml collection."""
-        if val is None:
-            return
         self.validate(val)
         if isinstance(val, SpecContainer):
             return val._data
@@ -297,12 +290,7 @@ class Spec(abc.ABC):
     def __get__(self, obj, objtype=None):
         if obj is None:
             return self
-        try:
-            return getattr(obj, self.cache)
-        except AttributeError:
-            val = self.getter(obj)
-            setattr(obj, self.cache, val)
-            return val
+        return self.getter(obj)
 
     def __set__(self, obj, value):
         self.setter(obj, value)
@@ -331,13 +319,14 @@ class ContainerSpec(Spec):
     """
 
     def __init__(self, ispec=None, key=None, default=None, validator=None,
-                 required=False, compact=None):
+                 required=False, nullable=False, compact=None):
         self.ispec = ispec
         if key is not None:
             self.key = key
         self.default = default
         self.validator = validator
         self.required = required
+        self.nullable = nullable
         if compact is not None:
             self.compact = compact
 
@@ -352,14 +341,14 @@ class ContainerSpec(Spec):
 
 class List(ContainerSpec):
 
-    @property
+    @xprops.cachedproperty
     def stype(self):
         return SpecList.sub(self.ispec)
 
 
 class Dict(ContainerSpec):
 
-    @property
+    @xprops.cachedproperty
     def stype(self):
         return SpecDict.sub(self.ispec)
 
@@ -368,12 +357,13 @@ class TypedSpec(Spec):
     """A Spec whose type is defined at the class level."""
 
     def __init__(self, key=None, default=None, validator=None, required=False,
-                 compact=None):
+                 nullable=False, compact=None):
         if key is not None:
             self.key = key
         self.default = default
         self.validator = validator
         self.required = required
+        self.nullable = nullable
         if compact is not None:
             self.compact = compact
 
@@ -395,12 +385,20 @@ class Int(TypedSpec):
     def stype(self):
         return int
 
+    def __setter__(self, val):
+        if val is not None:
+            return int(val)
+
 
 class Float(TypedSpec):
 
     @property
     def stype(self):
         return float
+
+    def __setter__(self, val):
+        if val is not None:
+            return float(val)
 
 
 class Date(TypedSpec):
@@ -435,6 +433,9 @@ class Timestamp(TypedSpec):
     def __dumper__(self, val):
         return val.to_pydatetime()
 
+    def __setter__(self, val):
+        return pd.Timestamp(val)
+
     def __json__(self, val):
         return str(val)
 
@@ -452,10 +453,11 @@ class Selection(Str):
     enumeration = []
 
     def __init__(self, key=None, default=None, validator=None,
-                 required=False, compact=None, enumeration=None):
+                 required=False, nullable=False, compact=None,
+                 enumeration=None):
         if enumeration:
             self.enumeration = enumeration
-        super().__init__(key, default, validator, required, compact)
+        super().__init__(key, default, validator, required, nullable, compact)
 
     @property
     def mapping(self):
@@ -648,7 +650,7 @@ class SpecContainer(metaclass=SpecContainerType):
     def _push(self, val):
         """Converts specification item to the suitable type for ruamel."""
         if self.ispec is not None:
-            return self.ispec.dump(val)
+            return self.ispec.dump(self.ispec.__setter__(val))
         if isinstance(val, SpecContainer):
             return val._data
         else:
@@ -1097,7 +1099,9 @@ class SpecBucketGCP(SpecStore):
 
     def __drop__(self, force=False):
         if force is True:
-            self._bucket.delete_blobs(list(self._bucket.list_blobs()))
+            blobs = self._bucket.list_blobs(versions=True)
+            self._bucket.delete_blobs(list(blobs))
+        time.sleep(1)
         self._bucket.delete()
 
     def blob(self, ownership, path, identifier):

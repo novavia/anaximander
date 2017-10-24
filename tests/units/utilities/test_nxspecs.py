@@ -211,7 +211,7 @@ def test_descriptors():
         guitar = nxs.Str(key="Guitar")
         drums = nxs.Str(key="Drums")
         bass = nxs.Str(key="Bass")
-        keys = nxs.Str(key="Keys")
+        keys = nxs.Str(key="Keys", nullable=True)
     assert len(BandSpec.__keyspecs__) == 4
     string = """# Jr Dreads 2017
                 Guitar: JD  # Goes by Jr Dreads
@@ -228,6 +228,8 @@ def test_descriptors():
     assert len(jrdreads) == 4
     with pytest.raises(TypeError):
         jrdreads['Keys'] = 0
+    jrdreads['Keys'] = None
+    assert str(jrdreads)[-6:-1] == "Keys:"
 
 
 def test_datetime():
