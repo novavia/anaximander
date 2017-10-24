@@ -34,7 +34,7 @@ from ..utilities.nxtime import MAX_TIMESTAMP
 from ..meta import prototype, metacharacter
 from .schema import Schema
 from .table import DataTable, DataQuery, DataQueryException, \
-    DataTableWriteException, DataTableAdminException
+    DataTableWriteException, DataTableAdminException, EmptyQueryException
 
 __all__ = ['BigTableDataTable', 'BigTableQuery', 'BigTableQueryException',
            'BigTableInsertException', 'Client', 'Instance']
@@ -365,6 +365,22 @@ class BigTableDataTable(DataTable):
         n = self.threadpoolsize
         with ThreadPoolExecutor(n) as executor:
             executor.map(self.__insert__, records)
+
+    def __record__(self, *keys, **kwargs):
+        """Returns a raw record from primary key, in the form of a tuple.
+
+        If the primary key is not found, raises an EmptyQueryException.
+        """
+        rowkey = self.rowkey(*keys)
+        row = self.table.read_row(rowkey.encode())
+        if row is None:
+            raise EmptyQueryException()
+        attrs = ChainMap(*[{k.decode('utf-8'): v[0].value.decode('utf-8')
+                            for k, v in row.cells[family].items()}
+                           for family in self.columns])
+        fields = self.schema.fields
+        return tuple(attrs[k] if k in attrs
+                     else fields[k].default for k in fields)
 
     def _hbase_append__(self, frame, **kwargs):
         """Not in use because the connection pool is an illusion.

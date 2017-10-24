@@ -163,17 +163,35 @@ class DataTable(NxObject):
             msg = "Updating is not implemented on {0} table objects."""
             raise DataTableWriteException(msg.format(type(self)))
 
-    def __delete__(self, rowkey, **kwargs):
+    def __delete__(self, *rowkey, **kwargs):
         raise NotImplementedError
 
-    def delete(self, *rowkeys, **kwargs):
-        """Deletes the specified rows from a key or other arguments."""
+    def delete(self, *rowkey, **kwargs):
+        """Deletes the specified row from its key fields."""
         try:
-            for rowkey in rowkeys:
-                self.__delete__(rowkeys, **kwargs)
+            self.__delete__(*rowkey, **kwargs)
         except NotImplementedError:
             msg = "Deleting is not implemented on {0} table objects."""
             raise DataTableWriteException(msg.format(type(self)))
+
+    def __record__(self, *keys, **kwargs):
+        """Returns a raw record from primary key field attributes.
+
+        If the primary key is not found, raises an EmptyQueryException.
+        """
+        raise NotImplementedError
+
+    def record(self, *keys, **kwargs):
+        """Returns a a record from primary key fields."""
+        try:
+            tuple_ = self.__record__(*keys, **kwargs)
+        except NotImplementedError:
+            msg = "Fetching records by key is not implemented on {0} objects."
+            raise NotImplementedError(msg.format(type(self)))
+        except EmptyQueryException:
+            msg = "No row found with keys {0}."
+            raise EmptyQueryException(msg.format(keys))
+        return self.schema().load(dict(zip(self.schema.fields, tuple_))).data
 
 # =============================================================================
 # Query base class

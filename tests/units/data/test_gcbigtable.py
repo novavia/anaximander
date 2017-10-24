@@ -137,6 +137,17 @@ def test_keymaker(frame):
     assert rowkey(*record.keys) == '2A:FD:96:AE:A4:88#2628597598480000'
 
 
+def test_record(full_table):
+    keys = ('88:4A:EA:69:DF:A2',
+            pd.Timestamp('2016-09-14 10:02:27.800000+00:00'))
+    record = full_table.record(*keys)
+    assert record.mac == '88:4A:EA:69:DF:A2'
+    keys = ('88:4A:EA:69:DF:A2',
+            pd.Timestamp('2016-09-14 10:02:27.900000+00:00'))
+    with pytest.raises(gbt.EmptyQueryException):
+        full_table.record(*keys)
+
+
 def test_insert(empty_table, frame):
     record = frame.iloc[0]
     empty_table.insert(record)
