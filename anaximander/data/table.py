@@ -181,7 +181,7 @@ class DataTable(NxObject):
         """
         raise NotImplementedError
 
-    def record(self, *keys, **kwargs):
+    def record(self, *keys, retry=True, **kwargs):
         """Returns a a record from primary key fields."""
         try:
             tuple_ = self.__record__(*keys, **kwargs)
@@ -191,6 +191,11 @@ class DataTable(NxObject):
         except EmptyQueryException:
             msg = "No row found with keys {0}."
             raise KeyError(msg.format(keys))
+        # Single retry, which seems to eliminate most problems.
+        except _Rendezvous:
+            if retry:
+                return self.record(*keys, retry=False, **kwargs)
+            raise
         return self.schema().load(dict(zip(self.schema.fields, tuple_))).data
 
 # =============================================================================
