@@ -377,7 +377,7 @@ class BigTableDataTable(DataTable):
             raise EmptyQueryException()
         attrs = ChainMap(*[{k.decode('utf-8'): v[0].value.decode('utf-8')
                             for k, v in row.cells[family].items()}
-                           for family in self.columns])
+                           for family in self.columns if family in row.cells])
         fields = self.schema.fields
         return tuple(attrs[k] if k in attrs
                      else fields[k].default for k in fields)
