@@ -1075,10 +1075,12 @@ class SpecBucketGCP(SpecStore):
     def __exists__(self):
         if not self._bucket.exists():
             return False
-        if not self._bucket.versioning_enabled:
-            msg = "A bucket-based specification store should enable " + \
-                  "versions, however {0} does not."
-            self.warn(msg.format(self))
+        # XXX: versioning is not properly supported by the google
+        # storage client. Blobs should be versioned once this is fixed.
+        # if not self._bucket.versioning_enabled:
+        #     msg = "A bucket-based specification store should enable " + \
+        #           "versions, however {0} does not."
+        #     self.warn(msg.format(self))
         return True
 
     def __empty__(self):
@@ -1091,10 +1093,10 @@ class SpecBucketGCP(SpecStore):
             return False
 
     def __create__(self):
-        if self.exists():
-            self.__drop__()
         self._bucket.create()
-        self._bucket.versioning_enabled = True
+        # XXX: versioning is not properly supported by the google
+        # storage client. Blobs should be versioned once this is fixed.
+        # self._bucket.versioning_enabled = True
         self._bucket.patch()
 
     def __drop__(self, force=False):
