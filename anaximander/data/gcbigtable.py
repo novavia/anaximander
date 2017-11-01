@@ -519,12 +519,22 @@ class BigTableQuery(DataQuery):
             limit (int): limits the number of rows scanned by Bigtable on
                 a per-non-sequential key basis. The default reads all rows.
         """
-        rowkeypairs = self._make_rowkeypairs()
-        row_groups = [self.table.table.read_rows(s, e,
-                                                 filter_=self.rowfilter,
-                                                 reverse=self.table.reverse,
-                                                 limit=limit)
-                      for s, e in rowkeypairs]
+        rowkeypairs = list(self._make_rowkeypairs())
+
+        def row_group(keys):
+            start_key, end_key = keys
+            return self.table.table.read_rows(start_key,
+                                              end_key,
+                                              filter_=self.rowfilter,
+                                              reverse=self.table.reverse,
+                                              limit=limit)
+        with ThreadPoolExecutor(len(rowkeypairs)) as executor:
+            row_groups = executor.map(row_group, rowkeypairs)
+#        row_groups = [self.table.table.read_rows(s, e,
+#                                                 filter_=self.rowfilter,
+#                                                 reverse=self.table.reverse,
+#                                                 limit=limit)
+#                      for s, e in rowkeypairs]
         maxrows = fun.get(maxrows, self._maxrows)
         row_count = 0
         for g in row_groups:
