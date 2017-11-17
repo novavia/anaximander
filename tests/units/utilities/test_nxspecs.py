@@ -24,12 +24,30 @@ from anaximander import TESTDIR
 from anaximander.utilities import nxspecs as nxs
 
 STORE_PATH = os.path.join(TESTDIR, 'data/specifications')
-PROJECT = 'anaximander'
+PROJECT = 'anaximander-tests'
 BUCKET = 'specifications'
 
 # =============================================================================
 # Test Constants
 # =============================================================================
+
+
+@pytest.fixture(scope="session")
+def local_store():
+    """Creates a local spec store."""
+    store = nxs.SpecDirectory(STORE_PATH)
+    store.create(True, False, True)
+    yield store
+    store.drop(False, True)
+
+
+@pytest.fixture(scope="session")
+def remote_store():
+    """Creates a local spec store."""
+    store = nxs.SpecBucketGCP(PROJECT, BUCKET)
+    store.create(True, False, True)
+    yield store
+    store.drop(False, True)
 
 
 class InstrumentSpec(nxs.Selection):
@@ -269,8 +287,8 @@ def test_json():
     assert json.loads(string)["Musicians"]["JD"][0] == "gtr"
 
 
-def test_spec_directory():
-    store = nxs.SpecDirectory(STORE_PATH)
+def test_spec_directory(local_store):
+    store = local_store
     jrdreads = BandSpec.load(JRDREADS, owner=JD)
     store.store(jrdreads)
     path = Path(STORE_PATH) / 'JD Margulici' / 'bands' / 'Jr Dreads.yaml'
@@ -293,8 +311,8 @@ def test_spec_directory():
 
 
 @pytest.mark.online
-def test_spec_bucket():
-    store = nxs.SpecBucketGCP(PROJECT, BUCKET)
+def test_spec_bucket(remote_store):
+    store = remote_store
     jrdreads = BandSpec.load(JRDREADS, owner=JD)
     store.store(jrdreads)
     blob = store.blob('JD Margulici', 'bands', 'Jr Dreads')

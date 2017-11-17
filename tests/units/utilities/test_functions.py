@@ -69,6 +69,13 @@ class TestStringFormatting(TestCase):
         assert n == '?'
         assert string == "My car has 4 wheels and ? cylinders."
 
+    def test_iformat(self):
+        item = Item(0)
+        assert fun.iformat('ix')(item) == "<Item ix:0>"
+        assert fun.iformat()(item) == "<Item>"
+        item.child = Item(1)
+        assert fun.iformat('ix', 'child.ix')(item) == "<Item ix:0 child:1>"
+
 
 class TestCollectionFunctions(TestCase):
 
@@ -80,6 +87,7 @@ class TestCollectionFunctions(TestCase):
         self.assertEqual(union, dict(a=1, b=2, c=3, d=4, e=5))
         with self.assertRaises(ValueError):
             union = fun.dictunion(d0, d1, unique_keys=True)
+
 
 def test_pairwise():
     iterable = range(4)

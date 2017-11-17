@@ -103,6 +103,32 @@ def lformat(string):
     caller_locals = sys._getframe(1).f_locals
     return string.format(**curlydict(caller_locals))
 
+
+def iformat(*attrs):
+    """Returns standard instance formatter with supplied attributes."""
+    def formatter(inst):
+        cls = type(inst).__name__
+        if not attrs:
+            return f"<{cls}>"
+        keyvals = {}
+        for a in attrs:
+            path = a.split('.')
+            obj = inst
+            for link in path[:-1]:
+                obj = getattr(obj, link)
+            keyvals[path[0]] = getattr(obj, path[-1])
+        content = " ".join(f"{k}:{v}" for k, v in keyvals.items())
+        return f"<{cls} {content}>"
+    return formatter
+
+
+def nxrepr(*attrs):
+    """A class decorator that adds standard representation."""
+    def decorator(cls):
+        cls.__repr__ = iformat(*attrs)
+        return cls
+    return decorator
+
 # =============================================================================
 # Iteration / collection functions
 # =============================================================================
