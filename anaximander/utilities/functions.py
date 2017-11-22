@@ -11,7 +11,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-from collections import deque
+from collections import deque, ChainMap
 import functools
 import itertools
 import socket
@@ -185,6 +185,29 @@ def pairwise(iterable, step=1):
         return pairs
     else:
         return itertools.islice(pairs, 0, None, step)
+
+
+class OrderedChainMap(ChainMap):
+    """ChainMap that preserves key ordering."""
+
+    def __iter__(self):
+        items = set()
+        for mapping in self.maps:
+            for i in mapping:
+                if i in items:
+                    continue
+                items.add(i)
+                yield i
+
+
+def no_dup_list(*iterables):
+    """Returns a list with no duplicates."""
+    items = list()
+    for item in itertools.chain(*iterables):
+        if item in items:
+            continue
+        items.append(item)
+    return items
 
 # =============================================================================
 # Function decorators

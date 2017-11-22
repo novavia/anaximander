@@ -326,11 +326,11 @@ def test_spec_bucket(remote_store):
     assert store.list_ownership() == ['JD Margulici']
     assert store.list_paths(JD) == ['bands']
     store.drop_path('bands', confirm=False, force=True)
-    time.sleep(0.25)
+    time.sleep(1.0)
     assert store.list_paths(JD) == []
     store.store(jrdreads)
     store.drop_owner(JD, confirm=False, force=True)
-    time.sleep(0.25)
+    time.sleep(1.0)
     assert store.empty
 
 

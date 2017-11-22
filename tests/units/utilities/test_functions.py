@@ -11,6 +11,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+from collections import OrderedDict
 from unittest import TestCase
 
 import pytest
@@ -96,6 +97,21 @@ def test_pairwise():
     assert list(fun.pairwise(iterable, 3)) == [(0, 1)]
 
 
+def test_ordered_chain_map():
+    d0 = OrderedDict(a=1, b=2, c=3)
+    d1 = OrderedDict(a=4, d=5, e=6)
+    d2 = dict(b=7, e=8)
+    ocm = fun.OrderedChainMap(d0, d1, d2)
+    assert list(ocm) == ['a', 'b', 'c', 'd', 'e']
+
+
+def test_no_dup_list():
+    a = list(range(5))
+    b = range(3, 8)
+    assert fun.no_dup_list(a) == a
+    assert fun.no_dup_list(a, b) == list(range(8))
+
+
 class TestDecorators(TestCase):
 
     def test_args_or_kwargs(self):
@@ -162,4 +178,4 @@ def test_monkeypatch_overwrite(klass):
 
 
 if __name__ == '__main__':
-    pytest.main([__file__])
+    pytest.main([__file__, '-x', '--pdb'])

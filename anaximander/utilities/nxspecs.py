@@ -13,7 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 
 import abc
-from collections import OrderedDict, ChainMap
+from collections import OrderedDict
 from collections.abc import Mapping, MutableSequence, MutableMapping
 import datetime as dt
 import io
@@ -31,6 +31,7 @@ import pandas as pd
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedSeq, CommentedMap
 
+from anaximander.utilities.functions import OrderedChainMap, no_dup_list
 from anaximander.utilities import xprops
 from anaximander.utilities import datastore as dts
 
@@ -192,7 +193,13 @@ class Spec(abc.ABC):
             val = container._data[self.key]
         except KeyError:
             if not self.required:
-                return self.default
+                if self.container:
+                    if self.default is None:
+                        return self.spec_type()
+                    else:
+                        return self.default
+                else:
+                    return self.default
             else:
                 raise
         else:
@@ -245,7 +252,13 @@ class Spec(abc.ABC):
     def __setter__(self, val):
         """An optional setter method applied when setting a value."""
         if self.container:
-            return self.spec_type(val)
+            if val is None:
+                if self.default is not None:
+                    return self.spec_type(self.default)
+                else:
+                    return self.spec_type()
+            else:
+                return self.spec_type(val)
         return val
 
     def __json__(self, val):
@@ -274,7 +287,10 @@ class Spec(abc.ABC):
     def load(self, val):
         """Loads data from a yaml collection."""
         if self.container:
-            rval = self.spec_type.from_rtype(val)
+            if val is None:
+                rval = self.spec_type.from_rtype()
+            else:
+                rval = self.spec_type.from_rtype(val)
         else:
             rval = self.__loader__(val)
         self.validate(rval)
@@ -284,7 +300,10 @@ class Spec(abc.ABC):
         """Passes data to a yaml collection."""
         self.validate(val)
         if isinstance(val, SpecContainer):
-            return val._data
+            if val._data:
+                return val._data
+            else:
+                return None
         return self.__dumper__(val)
 
     def __get__(self, obj, objtype=None):
@@ -337,6 +356,10 @@ class ContainerSpec(Spec):
     @abc.abstractproperty
     def stype(self):
         return None
+
+    @property
+    def container(self):
+        return True
 
 
 class List(ContainerSpec):
@@ -483,13 +506,14 @@ class SpecContainerType(abc.ABCMeta):
         * ispec: Either a Spec instance, or a container type or the name
             of a container type which is looked up. This sets the
             default container item type, and can be left to None.
+        * flow: If True, flow-style format will be used by default.
         * **yaml: arguments to pass to the creation of a YAML object used
             for serialization / deserialization.
     """
     __registry__ = WeakValueDictionary()  # General type registry
     __path_registry__ = WeakValueDictionary()  # Registry for storage types
 
-    def __new__(mcl, name, bases, namespace, ispec=None, **yaml):
+    def __new__(mcl, name, bases, namespace, ispec=None, flow=None, **yaml):
         cls = super().__new__(mcl, name, bases, namespace)
         mcl.__registry__[name] = cls
         try:
@@ -498,8 +522,13 @@ class SpecContainerType(abc.ABCMeta):
             pass
         return cls
 
-    def __init__(cls, name, bases, namespace, ispec=None, **yaml):
+    def __init__(cls, name, bases, namespace, ispec=None, flow=None, **yaml):
         cls._yaml = YAML(**yaml)
+        if flow is not None:
+            cls._default_flow_style = flow
+        elif not hasattr(cls, '_default_flow_style'):
+            cls._default_flow_style = False
+        cls._yaml.default_flow_style = cls._default_flow_style
         if ispec is not None:
             if issubclass(ispec, Spec):
                 ispec = ispec()
@@ -518,9 +547,13 @@ class SpecContainerType(abc.ABCMeta):
 
 
 class SpecDictType(SpecContainerType):
-    """Specialized metaclass for mapped specifications."""
+    """Specialized metaclass for mapped specifications.
 
-    def __init__(cls, name, bases, namespace, ispec=None, **yaml):
+    The optional keys argument supplies a list of admissible keys.
+    """
+
+    def __init__(cls, name, bases, namespace, ispec=None, keys=None,
+                 flow=None, **yaml):
         keyspecs = [b.__keyspecs__ for b in bases
                     if isinstance(b, SpecDictType)]
         new_keyspecs = OrderedDict()
@@ -534,7 +567,17 @@ class SpecDictType(SpecContainerType):
                 v.attr = k
                 v.descriptor = True
                 new_keyspecs[v.key] = v
-        cls.__keyspecs__ = ChainMap(new_keyspecs, *keyspecs)
+        cls.__keyspecs__ = OrderedChainMap(new_keyspecs, *keyspecs)
+        if cls.__keys__ is None:
+            if keys is None:
+                cls.__keys__ = None
+            else:
+                cls.__keys__ = no_dup_list(keys)
+        else:
+            if keys is None:
+                cls.__keys__ = no_dup_list(cls.__keys__)
+            else:
+                cls.__keys__ = no_dup_list(cls.__keys__, keys)
         super().__init__(name, bases, namespace, ispec=ispec)
         # Sets the identifier property as applicable
         if isinstance(cls.__identifier__, str):
@@ -590,6 +633,8 @@ class SpecContainer(metaclass=SpecContainerType):
     def _post_init(self):
         self.initialized = True
         self.validate()
+        if self._default_flow_style is True:
+            self._data.fa.set_flow_style()
 
     @property
     def ispec(self):
@@ -738,6 +783,8 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
     # Either an attribute name or callable that returns the identifier.
     # If None, the identifer is set externally.
     __identifier__ = None
+    # __keys__ is an optional list of admissible keys.
+    __keys__ = None
 
     def __init__(self, mapping=(), owner=None, identifier=None,
                  _delay=False, **kwargs):
@@ -761,7 +808,7 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
     def __len__(self):
         stored_keys = set(self._data)
         declared_keys = set(self.__keyspecs__)
-        return len(stored_keys | declared_keys)
+        return len(declared_keys | stored_keys)
 
     def __getitem__(self, key):
         try:
@@ -773,6 +820,10 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
             raise KeyError
 
     def __setitem__(self, key, val):
+        if self.__keys__ is not None:
+            if key not in self.__keys__:
+                msg = "{0} is not an allowable key."
+                raise KeyError(msg.format(key))
         try:
             self.__keyspecs__[key].setter(self, val)
         except KeyError:
@@ -787,9 +838,16 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
         self.validate()
 
     def __iter__(self):
-        stored_keys = set(self._data)
-        declared_keys = set(self.__keyspecs__)
-        return iter(stored_keys | declared_keys)
+        for key in self.__keyspecs__:
+            yield key
+        if self.__keys__ is not None:
+            for key in self.__keys__:
+                if key in self._data and key not in self.__keyspecs__:
+                    yield key
+        else:
+            for key in self._data:
+                if key not in self.__keyspecs__:
+                    yield key
 
 # =============================================================================
 # Specification storage interface
