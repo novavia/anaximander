@@ -23,7 +23,7 @@ from pathlib import Path
 import shutil
 from threading import Thread
 import time
-from weakref import WeakValueDictionary
+from weakref import ref, WeakValueDictionary
 
 from google.cloud.storage.client import Client
 from google.cloud.exceptions import NotFound
@@ -323,7 +323,7 @@ class Spec(abc.ABC):
             stype = self.spec_type.__name__
         except AttributeError:
             stype = None
-        string = '{p}(type={t}, key={k}, default={d})'
+        string = '<{p} type:{t} key:{k} default:{d}>'
         return string.format(p=prefix, t=stype, k=self.key, d=self.default)
 
 
@@ -511,15 +511,10 @@ class SpecContainerType(abc.ABCMeta):
             for serialization / deserialization.
     """
     __registry__ = WeakValueDictionary()  # General type registry
-    __path_registry__ = WeakValueDictionary()  # Registry for storage types
 
     def __new__(mcl, name, bases, namespace, ispec=None, flow=None, **yaml):
         cls = super().__new__(mcl, name, bases, namespace)
         mcl.__registry__[name] = cls
-        try:
-            mcl.__path_registry__[namespace['__path__']] = cls
-        except KeyError:
-            pass
         return cls
 
     def __init__(cls, name, bases, namespace, ispec=None, flow=None, **yaml):
@@ -535,11 +530,6 @@ class SpecContainerType(abc.ABCMeta):
             elif not isinstance(ispec, Spec):
                 ispec = Spec(ispec)
             cls.__ispec__ = ispec
-        cls.__cache__ = WeakValueDictionary()
-
-    def __getitem__(cls, identifier):
-        """Cache retrieval mechanism."""
-        return cls.__cache__.__getitem__(identifier)
 
     def sub(cls, ispec):
         """Returns a subclass with the supplied ispec."""
@@ -579,13 +569,6 @@ class SpecDictType(SpecContainerType):
             else:
                 cls.__keys__ = no_dup_list(cls.__keys__, keys)
         super().__init__(name, bases, namespace, ispec=ispec)
-        # Sets the identifier property as applicable
-        if isinstance(cls.__identifier__, str):
-            attr = cls.__identifier__
-            cls.identifier = property(lambda i: getattr(i, attr))
-        elif callable(cls.__identifier__):
-            func = cls.__identifier__
-            cls.identifier = property(func)
 
 
 # Abstract base class for List and Dict
@@ -599,34 +582,24 @@ class SpecContainer(metaclass=SpecContainerType):
     outline content.
     Both types accept an optional ispec parameter from their metaclass, which
     indicates an expected default type for random items.
-    The __path__ variable is intended to be assigned a string by subclasses,
-    possibly containing slashes, so as to provide a storage path from
-    a given directory root.
-    The storage model is as follows: root/<owner>/<path>/<identifier>.yaml,
-    where owner is an object that must print to a string which can be used
-    in a file path, path is provided by the container type, and identity
-    is an optional string argument. Owner is stored as a weak reference.
-    If any of the three attributes owner, path or identifier evaluates to
-    None, an attempt to store the specification will fail.
+    The optional spec owner becomes necessary to store the spec in yaml
+    file, in which case the owner must provide a storage path which will
+    be used from the root of a SpecStore.
 
     Params:
-        owner: optional owner. Must be an object that accepts weak references,
-            and have a __str__ method that evaluates to a string compatible
-            with a hierarchical file storage structure.
-        identifier: an optional string that uniquely identifies the container
-            within its type.
+        owner: optional owner. Must be an object that can be weak referenced,
+            and feature a spec attribute, _spec_storage_path /
+            _spec_identifier properties, and whose type provides a
+            spec_type attribute.
         _delay: internal parameter to enable 'from_rtype' instantiation.
     """
     # Corresponding ruamel commented type(s)
     __rtype__ = (CommentedSeq, CommentedMap)
     __ispec__ = None  # Placeholder for specifying default element type
-    __path__ = None  # An optional storage path into a specification store
 
     @abc.abstractmethod
-    def __init__(self, owner=None, identifier=None, _delay=False):
+    def __init__(self, owner=None, _delay=False):
         self.owner = owner
-        if identifier is not None:
-            self.identifier = identifier
         if not _delay:
             self._post_init()
 
@@ -650,20 +623,17 @@ class SpecContainer(metaclass=SpecContainerType):
         """Optional owner object for a specification container."""
         return None
 
-    @xprops.singlesetproperty
-    def identifier(self):
-        """Optional instance identifier, unique to a container type."""
-        return None
-
-    @identifier.setter
-    def identifier(self, idt):
-        if not isinstance(idt, str):
-            raise TypeError()
-        type(self).__cache__[idt] = self
-        self._identifier = idt
+    @owner.setter
+    def owner(self, obj):
+        if obj is not None:
+            if not isinstance(obj, Owner):
+                raise TypeError
+            obj.spec = self
+        else:
+            setattr(self, '_owner', None)
 
     @classmethod
-    def from_rtype(cls, data, owner=None, identifier=None):
+    def from_rtype(cls, data, owner=None):
         """Instantiates a Spec from a ruamel commented collection."""
         if not isinstance(data, cls.__rtype__):
             msg = "Method call requires a ruamel Commented collection."
@@ -673,9 +643,7 @@ class SpecContainer(metaclass=SpecContainerType):
                 cls = SpecList
             elif isinstance(data, CommentedMap):
                 cls = SpecDict
-        instance = cls(owner=owner,
-                       identifier=identifier,
-                       _delay=True)
+        instance = cls(owner=owner, _delay=True)
         instance._data = data
         instance.initialized = True
         instance.validate()
@@ -702,10 +670,9 @@ class SpecContainer(metaclass=SpecContainerType):
             return val
 
     @classmethod
-    def load(cls, source, owner=None, identifier=None):
+    def load(cls, source, owner=None):
         """Loads source, either a file pointer, string or pathlib.Path."""
-        return cls.from_rtype(cls._yaml.load(source),
-                              owner=owner, identifier=identifier)
+        return cls.from_rtype(cls._yaml.load(source), owner=owner)
 
     def dump(self, sink):
         """Dumps spec to sink, either a file pointer or pathlib.Path."""
@@ -736,11 +703,7 @@ class SpecContainer(metaclass=SpecContainerType):
             raise ValueError(msg.format(self))
 
     def __repr__(self):
-        idt = self.identifier
-        if idt is not None:
-            cls = type(self).__name__
-            return '{cls}[{idt}]'.format(cls=cls, idt=idt)
-        return super().__repr__()
+        return f'<{type(self)} owner:{self.owner}>'
 
     def __str__(self):
         stringio = io.StringIO()
@@ -752,11 +715,10 @@ class SpecList(SpecContainer, MutableSequence):
     """An enumerated specification."""
     __rtype__ = CommentedSeq
 
-    def __init__(self, iterable=(), owner=None, identifier=None,
-                 _delay=False):
+    def __init__(self, iterable=(), owner=None, _delay=False):
         self._data = CommentedSeq()
         self.extend(iterable)
-        super().__init__(owner, identifier, _delay)
+        super().__init__(owner, _delay)
 
     def __len__(self):
         return self._data.__len__()
@@ -780,25 +742,13 @@ class SpecList(SpecContainer, MutableSequence):
 class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
     """A keyed specification."""
     __rtype__ = CommentedMap
-    # Either an attribute name or callable that returns the identifier.
-    # If None, the identifer is set externally.
-    __identifier__ = None
     # __keys__ is an optional list of admissible keys.
     __keys__ = None
 
-    def __init__(self, mapping=(), owner=None, identifier=None,
-                 _delay=False, **kwargs):
+    def __init__(self, mapping=(), owner=None, _delay=False, **kwargs):
         self._data = CommentedMap()
         self.update(mapping, **kwargs)
-        # In case identifiers are internal, the argument is ignored silently.
-        if self.__identifier__ is not None:
-            identifier = None
-        super().__init__(owner, identifier, _delay)
-
-    def _post_init(self):
-        super()._post_init()
-        if type(self).__identifier__ is not None:
-            type(self).__cache__[self.identifier] = self
+        super().__init__(owner, _delay)
 
     @property
     def specs(self):
@@ -850,21 +800,43 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
                     yield key
 
 # =============================================================================
+# Specification owner mixin class
+# =============================================================================
+
+
+class Owner:
+    """Mixin class for objects that own a specification."""
+    spec_type = SpecDict
+
+    @abc.abstractproperty
+    def _spec_storage_path(self):
+        return None
+
+    @abc.abstractproperty
+    def _spec_identifier(self):
+        return None
+
+    @xprops.settablecachedproperty
+    def spec(self):
+        return None
+
+    @spec.setter
+    def spec(self, container):
+        if not isinstance(container, self.spec_type):
+            raise TypeError
+        setattr(self, '_spec', container)
+        setattr(container, '_owner', ref(self))
+
+# =============================================================================
 # Specification storage interface
 # =============================================================================
 
 
 class SpecStore(dts.StorageResource):
-    """Base class for specification stores.
-
-    The storage model is as follows: root/<owner>/<path>/<identifier>.yaml,
-    where owner is an object that must print to a string which can be used
-    in a file path, path is provided by the container type, and identity
-    is an optional string argument.
-    """
+    """Base class for specification stores."""
 
     @abc.abstractmethod
-    def __store__(self, container, ownership, path, identifier):
+    def __store__(self, container, path, identifier):
         """The storage method defined by subclasses."""
         pass
 
@@ -874,128 +846,63 @@ class SpecStore(dts.StorageResource):
             raise TypeError()
         try:
             owner = container.owner
-            ownership = str(owner)
-            path = container.__path__
-            identifier = container.identifier
-            assert all((owner, path, identifier))
-        except (AttributeError, TypeError, AssertionError):
-            msg = "A spec container must have a valid owner, path and " + \
-                  "identifier to be stored."
+            path = owner._spec_storage_path
+            identifier = owner._spec_identifier
+        except AttributeError:
+            msg = "A spec container must have a valid owner to be stored."
             raise ValueError(msg)
-        self.__store__(container, ownership, path, identifier)
+        self.__store__(container, path, identifier)
 
     @abc.abstractmethod
-    def __retrieve__(self, ownership, path, identifier):
+    def __retrieve__(self, path, identifer):
         """The retrieve method, which must return a valid source."""
         pass
 
-    def retrieve(self, owner, path, identifier):
+    def retrieve(self, owner):
+        if not isinstance(owner, Owner):
+            raise TypeError
+        path = owner._spec_storage_path
+        identifier = owner._spec_identifier
+        cls = owner.spec_type
         try:
-            ownership = str(owner)
-            source = self.__retrieve__(ownership, path, identifier)
-            cls = SpecContainerType.__path_registry__[path]
-        except (TypeError, dts.ResourceError, KeyError):
-            params = dict(owner=owner,
-                          path=path,
-                          identifier=identifier)
-            msg = "Could not retrieve a spec sheet with parameters {}"
-            raise dts.ResourceError(msg.format(params))
-        return cls.load(source, owner, identifier)
+            source = self.__retrieve__(path, identifier)
+        except dts.ResourceError:
+            msg = "No specifications stored for supplied owner {0}."
+            raise dts.ResourceError(msg.format(owner))
+        return cls.load(source, owner)
 
     @abc.abstractmethod
-    def __list__(self, ownership, path):
+    def __list__(self, path=None):
         """The list method, which must return a list of identifiers."""
         pass
 
-    def list(self, owner, path):
-        """List available specifications for owner on path."""
-        ownership = str(owner)
-        return self.__list__(ownership, path)
+    def list(self, path=None):
+        """List available specifications from suppliex path."""
+        return self.__list__(path)
 
     @abc.abstractmethod
-    def __delete_sheet__(self, ownership, path, identifier):
+    def __delete_sheet__(self, path, identifier):
         """The deletion primitive for spec sheets."""
         pass
 
-    def delete(self, owner, path, identifier, confirm=True):
+    def delete(self, owner, confirm=True):
         """Deletes a spec sheet."""
-        params = dict(owner=owner,
-                      path=path,
-                      identifier=identifier)
+        if not isinstance(owner, Owner):
+            raise TypeError
+        path = owner._spec_storage_path
+        identifier = owner._spec_identifier
         try:
-            ownership = str(owner)
-            SpecContainerType.__path_registry__[path]
-        except (TypeError, KeyError):
-            msg = "Could not retrieve a spec sheet with parameters {}"
-            raise dts.ResourceError(msg.format(params))
-        if confirm is not False:
-            msg = "This will permanently delete a specification sheet " + \
-                  "with these parameters {}. Would like to proceed? (Y/n)."
-            confirmation = input(msg.format(params))
-            if not confirmation == 'Y':
-                msg = "Aborting deletion method."
-                print(msg)
-                return False
-        try:
-            self.__delete_sheet__(ownership, path, identifier)
-            return True
+            self.__delete_sheet__(path, identifier)
         except dts.ResourceError:
             return False
+        return True
 
     @abc.abstractmethod
-    def __list_ownership__(self):
-        """Primitive for listing ownership."""
-        pass
-
-    def list_ownership(self):
-        """Returns a list of ownerships."""
-        return self.__list_ownership__()
-
-    @abc.abstractmethod
-    def __drop_ownership__(self, ownership, force=False):
-        """primitive for dropping owner."""
-        pass
-
-    def drop_owner(self, owner, confirm=True, force=False):
-        """Drops owner from the specification store.
-
-        Params:
-            owner: the owner to be dropped.
-            confirm: flag indicating whether to prompt the user.
-            force: unless True, the action will fail if the store
-                contains spec sheets for the owner.
-        """
-        if confirm is not False:
-            msg = "The following owner: {} will be permanently deleted. " \
-                "Do you wish to proceed? (Y/n)."
-            confirmation = input(msg.format(owner))
-            if not confirmation == 'Y':
-                msg = "Aborting deletion method."
-                print(msg)
-                return False
-        try:
-            ownership = str(owner)
-            self.__drop_ownership__(ownership, force=force)
-            return True
-        except (TypeError, dts.ResourceError):
-            return False
-
-    @abc.abstractmethod
-    def __list_paths__(self, ownership):
-        """Primitive for list_paths."""
-        pass
-
-    def list_paths(self, owner):
-        """Lists implemented paths for supplied owner."""
-        ownership = str(owner)
-        return self.__list_paths__(ownership)
-
-    @abc.abstractmethod
-    def __drop_path__(self, path, ownership, force=False):
+    def __drop_path__(self, path, force=False):
         """Primitive for drop_path."""
         pass
 
-    def drop_path(self, path, confirm=True, force=False, owners=None):
+    def drop_path(self, path, confirm=True, force=False):
         """Drops path for all owners from the specification store.
 
         Params:
@@ -1003,28 +910,19 @@ class SpecStore(dts.StorageResource):
             confirm: flag indicating whether to prompt the user.
             force: unless True, the action will fail on any path that
                 contains specifications.
-            owners: optional list of owners upon which to limit the action.
-                Defaults to None, meaning that the action is carried out
-                across the whole store.
         """
         if confirm is not False:
-            if owners is None:
-                scope = "all owners"
-            else:
-                scope = "owners: {}".format(owners)
             msg = "The following path: {0} will be permanently deleted " \
-                "for {1}. Do you wish to proceed? (Y/n)."
-            confirmation = input(msg.format(path, scope))
+                "from {1}. Do you wish to proceed? (Y/n)."
+            confirmation = input(msg.format(path, self))
             if not confirmation == 'Y':
                 msg = "Aborting deletion method."
                 print(msg)
                 return False
-        if owners is None:
-            ownership_list = self.list_ownership()
-        else:
-            ownership_list = [str(o) for o in owners]
-        for ownership in ownership_list:
-            self.__drop_path__(path, ownership, force=force)
+        try:
+            self.__drop_path__(path, force=force)
+        except dts.ResourceError:
+            return False
         return True
 
 
@@ -1053,51 +951,37 @@ class SpecDirectory(SpecStore):
         else:
             self._root.rmdir()
 
-    def __store__(self, container, ownership, path, identifier):
-        directory = self._root / os.path.join(ownership, path)
+    def __store__(self, container, path, identifier):
+        directory = self._root / os.path.join(path)
         if not directory.exists():
             directory.mkdir(parents=True)
         container.dump(directory / (identifier + '.yaml'))
 
-    def __retrieve__(self, ownership, path, identifier):
-        directory = self._root / os.path.join(ownership, path)
+    def __retrieve__(self, path, identifier):
+        directory = self._root / os.path.join(path)
         file = directory / (identifier + '.yaml')
         if not file.exists():
             raise dts.ResourceError()
         return file
 
-    def __list__(self, ownership, path):
-        directory = self._root / os.path.join(ownership, path)
+    def __list__(self, path=None):
+        if path is not None:
+            directory = self._root / path
+        else:
+            directory = self._root
         paths = directory.glob('*.yaml')
-        return [p.name[:-5] for p in paths]
+        return [str(p.relative_to(directory))[:-5] for p in paths]
 
-    def __delete_sheet__(self, ownership, path, identifier):
-        directory = self._root / os.path.join(ownership, path)
+    def __delete_sheet__(self, path, identifier):
+        directory = self._root / os.path.join(path)
         file = directory / (identifier + '.yaml')
         try:
             os.remove(file)
         except FileNotFoundError:
             raise dts.ResourceError()
 
-    def __list_ownership__(self):
-        return [p.name for p in self._root.iterdir() if p.is_dir()]
-
-    def __drop_ownership__(self, ownership, force=False):
-        directory = self._root / ownership
-        try:
-            if force is True:
-                shutil.rmtree(directory)
-            else:
-                directory.rmdir()
-        except OSError:
-            raise dts.ResourceError()
-
-    def __list_paths__(self, ownership):
-        directory = self._root / ownership
-        return [p.name for p in directory.iterdir() if p.is_dir()]
-
-    def __drop_path__(self, path, ownership, force=False):
-        directory = self._root / os.path.join(ownership, path)
+    def __drop_path__(self, path, force=False):
+        directory = self._root / os.path.join(path)
         try:
             if force is True:
                 shutil.rmtree(directory)
@@ -1164,67 +1048,39 @@ class SpecBucketGCP(SpecStore):
         time.sleep(1)
         self._bucket.delete()
 
-    def blob(self, ownership, path, identifier):
-        name = '/'.join([ownership, path, identifier + '.yaml'])
+    def blob(self, path, identifier):
+        name = '/'.join([path, identifier + '.yaml'])
         return self._bucket.blob(name)
 
-    def __store__(self, container, ownership, path, identifier):
-        blob = self.blob(ownership, path, identifier)
+    def __store__(self, container, path, identifier):
+        blob = self.blob(path, identifier)
         blob.upload_from_string(str(container))
 
-    def __retrieve__(self, ownership, path, identifier):
-        blob = self.blob(ownership, path, identifier)
+    def __retrieve__(self, path, identifier):
+        blob = self.blob(path, identifier)
         try:
             return blob.download_as_string().decode('utf-8')
         except NotFound:
             raise dts.ResourceError()
 
-    def __list__(self, ownership, path):
-        prefix = '/'.join([ownership, path])
-        blobs = self._bucket.list_blobs(prefix=prefix)
-        return [b.name.split('/')[-1][:-5] for b in blobs]
+    def __list__(self, path=None):
+        blobs = self._bucket.list_blobs(prefix=path)
+        if path is None:
+            return [b.name[:-5] for b in blobs]
+        else:
+            return [b.name[len(path) + 1:-5] for b in blobs]
 
-    def __delete_sheet__(self, ownership, path, identifier):
-        blob = self.blob(ownership, path, identifier)
+    def __delete_sheet__(self, path, identifier):
+        blob = self.blob(path, identifier)
         try:
             blob.delete()
         except NotFound:
             raise dts.ResourceError()
 
-    def __list_ownership__(self):
-        def ownership(blob):
-            return blob.name.split('/')[0]
-        return list(set(ownership(b) for b in self._bucket.list_blobs()))
-
-    def __drop_ownership__(self, ownership, force=False):
+    def __drop_path__(self, path, force=False):
         if not force:
             return
-        prefix = ownership
-        blobs = self._bucket.list_blobs(prefix=prefix)
-
-        def delete():
-            for b in blobs:
-                try:
-                    b.delete()
-                except:
-                    continue
-
-        deletion_thread = Thread(target=delete)
-        deletion_thread.start()
-
-    def __list_paths__(self, ownership):
-        prefix = ownership
-
-        def path(blob):
-            return '/'.join(blob.name.split('/')[1:-1])
-        paths = (path(b) for b in self._bucket.list_blobs(prefix=prefix))
-        return list(set(paths))
-
-    def __drop_path__(self, path, ownership, force=False):
-        if not force:
-            return
-        prefix = '/'.join([ownership, path])
-        blobs = self._bucket.list_blobs(prefix=prefix)
+        blobs = self._bucket.list_blobs(prefix=path)
 
         def delete():
             for b in blobs:

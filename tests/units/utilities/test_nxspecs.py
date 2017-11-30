@@ -66,37 +66,47 @@ class InstrumentList(nxs.SpecList, ispec=InstrumentSpec):
 
 
 class BandSpec(nxs.SpecDict):
-    __path__ = 'bands'
-    __identifier__ = 'name'
     name = nxs.Str(required=True, key='Name')
     formation = nxs.Date(key='Formation', compact='Frm')
     musicians = nxs.Dict(InstrumentList, key='Musicians')
 
 
-class Owner:
+class Band(nxs.Owner):
+    spec_type = BandSpec
 
     def __init__(self, name):
         self.name = name
+
+    @property
+    def _spec_storage_path(self):
+        return 'bands'
+
+    @property
+    def _spec_identifier(self):
+        return self.name
+
+    def __repr__(self):
+        return f'<Owner name:{self.name}>'
 
     def __str__(self):
         return self.name
 
 
-JRDREADS = """# Jr Dreads 2017
-              Name: Jr Dreads
-              Formation: 2015-02-17
-              Musicians:
-                JD:
-                  - Guitar
-                  - Lead Singing
-                Mike:
-                  - Drums
-                  - Backup Singing
-                Greg:
-                  - Bass
-           """
+JRDREADS_SPEC = """# Jr Dreads 2017
+                  Name: Jr Dreads
+                  Formation: 2015-02-17
+                  Musicians:
+                    JD:
+                      - Guitar
+                      - Lead Singing
+                    Mike:
+                      - Drums
+                      - Backup Singing
+                    Greg:
+                      - Bass
+               """
 
-JD = Owner("JD Margulici")
+JRDREADS = Band("Jr Dreads")
 
 # =============================================================================
 # Test Cases
@@ -271,7 +281,7 @@ def test_datetime():
 
 
 def test_full_spec():
-    jrdreads = BandSpec.load(JRDREADS)
+    jrdreads = BandSpec.load(JRDREADS_SPEC)
     assert isinstance(jrdreads.formation, dt.date)
     assert jrdreads.musicians['JD'][0] == 'Guitar'
     with pytest.raises(ValueError):
@@ -281,7 +291,7 @@ def test_full_spec():
 
 
 def test_json():
-    jrdreads = BandSpec.load(JRDREADS)
+    jrdreads = BandSpec.load(JRDREADS_SPEC)
     string = jrdreads.json()
     assert json.loads(string)["Frm"] == "2015-02-17"
     assert json.loads(string)["Musicians"]["JD"][0] == "gtr"
@@ -289,47 +299,36 @@ def test_json():
 
 def test_spec_directory(local_store):
     store = local_store
-    jrdreads = BandSpec.load(JRDREADS, owner=JD)
+    jrdreads = BandSpec.load(JRDREADS_SPEC, owner=JRDREADS)
     store.store(jrdreads)
-    path = Path(STORE_PATH) / 'JD Margulici' / 'bands' / 'Jr Dreads.yaml'
+    path = Path(STORE_PATH) / 'bands' / 'Jr Dreads.yaml'
     assert path.exists()
     with path.open() as f:
         assert f.readline()[0:4] == "# Jr"
-    retrieval = store.retrieve(JD, 'bands', 'Jr Dreads')
+    retrieval = store.retrieve(JRDREADS)
     assert str(retrieval) == str(jrdreads)
-    assert store.list(JD, 'bands') == ['Jr Dreads']
-    store.delete(JD, 'bands', 'Jr Dreads', confirm=False)
-    assert store.list(JD, 'bands') == []
+    assert store.list('bands') == ['Jr Dreads']
+    store.delete(JRDREADS, confirm=False)
+    assert store.list('bands') == []
     store.store(jrdreads)
-    assert store.list_ownership() == ['JD Margulici']
-    assert store.list_paths(JD) == ['bands']
     store.drop_path('bands', confirm=False, force=True)
-    assert store.list_paths(JD) == []
-    store.store(jrdreads)
-    store.drop_owner(JD, confirm=False, force=True)
     assert store.empty
 
 
 @pytest.mark.online
 def test_spec_bucket(remote_store):
     store = remote_store
-    jrdreads = BandSpec.load(JRDREADS, owner=JD)
+    jrdreads = BandSpec.load(JRDREADS_SPEC, owner=JRDREADS)
     store.store(jrdreads)
-    blob = store.blob('JD Margulici', 'bands', 'Jr Dreads')
+    blob = store.blob('bands', 'Jr Dreads')
     assert blob.exists()
-    retrieval = store.retrieve(JD, 'bands', 'Jr Dreads')
+    retrieval = store.retrieve(JRDREADS)
     assert str(retrieval) == str(jrdreads)
-    assert store.list(JD, 'bands') == ['Jr Dreads']
-    store.delete(JD, 'bands', 'Jr Dreads', confirm=False)
-    assert store.list(JD, 'bands') == []
+    assert store.list('bands') == ['Jr Dreads']
+    store.delete(JRDREADS, confirm=False)
+    assert store.list('bands') == []
     store.store(jrdreads)
-    assert store.list_ownership() == ['JD Margulici']
-    assert store.list_paths(JD) == ['bands']
     store.drop_path('bands', confirm=False, force=True)
-    time.sleep(1.0)
-    assert store.list_paths(JD) == []
-    store.store(jrdreads)
-    store.drop_owner(JD, confirm=False, force=True)
     time.sleep(1.0)
     assert store.empty
 
