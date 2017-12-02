@@ -703,7 +703,7 @@ class SpecContainer(metaclass=SpecContainerType):
             raise ValueError(msg.format(self))
 
     def __repr__(self):
-        return f'<{type(self)} owner:{self.owner}>'
+        return f'<{type(self).__name__} owner:{self.owner}>'
 
     def __str__(self):
         stringio = io.StringIO()
