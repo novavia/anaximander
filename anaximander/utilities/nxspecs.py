@@ -21,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 from threading import Thread
 import time
 from weakref import ref, WeakValueDictionary
@@ -33,7 +34,7 @@ from ruamel.yaml.comments import CommentedSeq, CommentedMap
 
 from anaximander.utilities.functions import OrderedChainMap, no_dup_list
 from anaximander.utilities import xprops
-from anaximander.utilities import datastore as dts
+from anaximander.utilities.datastore import StorageResource, ResourceError
 
 # =============================================================================
 # Specifcation item classes
@@ -190,41 +191,27 @@ class Spec(abc.ABC):
             msg = "Call is only permitted with a keyed specification."
             raise TypeError(msg)
         try:
-            val = container._data[self.key]
+            return container[self.key]
         except KeyError:
-            if not self.required:
-                if self.container:
-                    if self.default is None:
-                        return self.spec_type()
-                    else:
-                        return self.default
-                else:
-                    return self.default
-            else:
-                raise
-        else:
-            return self.load(val)
+            raise AttributeError
 
     def setter(self, container, val):
         """The setter method for a SpecDict that declares the spec."""
         if self.key is None or not isinstance(container, SpecDict):
             msg = "Call is only permitted with a keyed specification."
             raise TypeError(msg)
-        val = self.dump(self.__setter__(val))
-        container._data.__setitem__(self.key, val)
+        container.__setitem__(self.key, val)
 
     def deleter(self, container):
         """The deleter method for a SpecDict that declares the spec."""
         if self.key is None or not isinstance(container, SpecDict):
             msg = "Call is only permitted with a keyed specification."
             raise TypeError(msg)
-        if self.required:
+        try:
+            del container[self.key]
+        except KeyError:
             msg = "Cannot delete required key {0}."
             raise AttributeError(msg.format(self.key))
-        try:
-            del container._data[self.key]
-        except KeyError:
-            pass
 
     def __validator__(self, val):
         """An optional validator method for subclasses."""
@@ -288,7 +275,7 @@ class Spec(abc.ABC):
         """Loads data from a yaml collection."""
         if self.container:
             if val is None:
-                rval = self.spec_type.from_rtype()
+                rval = self.spec_type()
             else:
                 rval = self.spec_type.from_rtype(val)
         else:
@@ -568,6 +555,15 @@ class SpecDictType(SpecContainerType):
                 cls.__keys__ = no_dup_list(cls.__keys__)
             else:
                 cls.__keys__ = no_dup_list(cls.__keys__, keys)
+        key_order = list(OrderedChainMap(cls.__keyspecs__, cls.__keys__ or {}))
+
+        def sort(cls, key):
+            try:
+                return key_order.index(key)
+            except ValueError:
+                return sys.maxsize
+        cls.__sort__ = classmethod(sort)
+
         super().__init__(name, bases, namespace, ispec=ispec)
 
 
@@ -628,7 +624,7 @@ class SpecContainer(metaclass=SpecContainerType):
         if obj is not None:
             if not isinstance(obj, Owner):
                 raise TypeError
-            obj.spec = self
+            obj.specs = self
         else:
             setattr(self, '_owner', None)
 
@@ -762,12 +758,28 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
 
     def __getitem__(self, key):
         try:
-            return self.__keyspecs__[key].getter(self)
+            spec = self.__keyspecs__[key]
         except KeyError:
-            item = self._data[key]
-            return self._pull(item)
-        except:
-            raise KeyError
+            try:
+                item = self._data[key]
+                return self._pull(item)
+            except KeyError:
+                raise
+        else:
+            try:
+                val = self._data[key]
+                return spec.load(val)
+            except KeyError:
+                if not spec.required:
+                    if spec.container:
+                        if spec.default is None:
+                            return spec.spec_type()
+                        else:
+                            return spec.default
+                    else:
+                        return spec.default
+                else:
+                    raise
 
     def __setitem__(self, key, val):
         if self.__keys__ is not None:
@@ -775,29 +787,39 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
                 msg = "{0} is not an allowable key."
                 raise KeyError(msg.format(key))
         try:
-            self.__keyspecs__[key].setter(self, val)
+            spec = self.__keyspecs__[key]
         except KeyError:
             self._data.__setitem__(key, self._push(val))
+        else:
+            val = spec.dump(spec.__setter__(val))
+            self._data.__setitem__(key, val)
+        self._sort()
         self.validate()
 
     def __delitem__(self, key):
         try:
-            self.__keyspecs__[key].deleter(self)
+            spec = self.__keyspecs__[key]
         except KeyError:
             self._data.__delitem__(key)
+        else:
+            if spec.required:
+                msg = "Cannot delete required key {0}."
+                raise KeyError(msg.format(key))
+            try:
+                del self._data[key]
+            except KeyError:
+                pass
         self.validate()
 
+    def _sort(self):
+        """Sorts _data in place to maintain key order."""
+        keys = sorted(self._data.keys(), key=self.__sort__)
+        data = CommentedMap({k: self._data[k] for k in keys})
+        self._data.copy_attributes(data, deep=True)
+        self._data = data
+
     def __iter__(self):
-        for key in self.__keyspecs__:
-            yield key
-        if self.__keys__ is not None:
-            for key in self.__keys__:
-                if key in self._data and key not in self.__keyspecs__:
-                    yield key
-        else:
-            for key in self._data:
-                if key not in self.__keyspecs__:
-                    yield key
+        return self._data.__iter__()
 
 # =============================================================================
 # Specification owner mixin class
@@ -805,7 +827,7 @@ class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
 
 
 class Owner:
-    """Mixin class for objects that own a specification."""
+    """Mixin class for objects that own specifications."""
     spec_type = SpecDict
 
     @abc.abstractproperty
@@ -817,14 +839,14 @@ class Owner:
         return None
 
     @xprops.settablecachedproperty
-    def spec(self):
+    def specs(self):
         return None
 
-    @spec.setter
-    def spec(self, container):
+    @specs.setter
+    def specs(self, container):
         if not isinstance(container, self.spec_type):
             raise TypeError
-        setattr(self, '_spec', container)
+        setattr(self, '_specs', container)
         setattr(container, '_owner', ref(self))
 
 # =============================================================================
@@ -832,7 +854,7 @@ class Owner:
 # =============================================================================
 
 
-class SpecStore(dts.StorageResource):
+class SpecStore(StorageResource):
     """Base class for specification stores."""
 
     @abc.abstractmethod
@@ -866,9 +888,9 @@ class SpecStore(dts.StorageResource):
         cls = owner.spec_type
         try:
             source = self.__retrieve__(path, identifier)
-        except dts.ResourceError:
+        except ResourceError:
             msg = "No specifications stored for supplied owner {0}."
-            raise dts.ResourceError(msg.format(owner))
+            raise ResourceError(msg.format(owner))
         return cls.load(source, owner)
 
     @abc.abstractmethod
@@ -893,7 +915,7 @@ class SpecStore(dts.StorageResource):
         identifier = owner._spec_identifier
         try:
             self.__delete_sheet__(path, identifier)
-        except dts.ResourceError:
+        except ResourceError:
             return False
         return True
 
@@ -921,7 +943,7 @@ class SpecStore(dts.StorageResource):
                 return False
         try:
             self.__drop_path__(path, force=force)
-        except dts.ResourceError:
+        except ResourceError:
             return False
         return True
 
@@ -961,7 +983,7 @@ class SpecDirectory(SpecStore):
         directory = self._root / os.path.join(path)
         file = directory / (identifier + '.yaml')
         if not file.exists():
-            raise dts.ResourceError()
+            raise ResourceError()
         return file
 
     def __list__(self, path=None):
@@ -978,7 +1000,7 @@ class SpecDirectory(SpecStore):
         try:
             os.remove(file)
         except FileNotFoundError:
-            raise dts.ResourceError()
+            raise ResourceError()
 
     def __drop_path__(self, path, force=False):
         directory = self._root / os.path.join(path)
@@ -988,7 +1010,7 @@ class SpecDirectory(SpecStore):
             else:
                 directory.rmdir()
         except OSError:
-            raise dts.ResourceError()
+            raise ResourceError()
 
 
 class SpecBucketGCP(SpecStore):
@@ -1061,7 +1083,7 @@ class SpecBucketGCP(SpecStore):
         try:
             return blob.download_as_string().decode('utf-8')
         except NotFound:
-            raise dts.ResourceError()
+            raise ResourceError()
 
     def __list__(self, path=None):
         blobs = self._bucket.list_blobs(prefix=path)
@@ -1075,7 +1097,7 @@ class SpecBucketGCP(SpecStore):
         try:
             blob.delete()
         except NotFound:
-            raise dts.ResourceError()
+            raise ResourceError()
 
     def __drop_path__(self, path, force=False):
         if not force:
