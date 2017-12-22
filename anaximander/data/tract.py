@@ -27,7 +27,7 @@ from ..meta import NxObject, archetype, directory, typeattribute
 from .exceptions import DataError
 from . import schema as sch, record as rec, frame as frm
 
-__all__ = ['tract', 'domain', 'Domain', 'DataTract']
+__all__ = ['tract', 'domain', 'Domain', 'DataTract', 'TractError']
 
 # =============================================================================
 # DataTract class
