@@ -327,6 +327,8 @@ class ProtoRegistry(nrg.Hierarchy):
             except KeyError:
                 pass
             else:
+                if xcls is None:
+                    return
                 if issubclass(cls, xcls):
                     return
                 else:

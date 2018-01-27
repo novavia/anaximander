@@ -194,6 +194,10 @@ class TimeInterval(Interval):
         return type(self)(self.lower.tz_convert(tzinfo),
                           self.upper.tz_convert(tzinfo))
 
+    @property
+    def duration(self):
+        return self.upper - self.lower
+
 
 def _lower_string_convert(value):
     if value is None:
