@@ -1,0 +1,43 @@
+# Untracked directories
+**/__pycache__/**
+/wiki/**
+
+# Compiled Python files
+*.pyc
+
+# Python pth files
+*.pth
+
+# Vim swap files
+.*.swp
+
+# Local working files
+*.log
+
+# Folder view configuration files
+.DS_Store
+Desktop.ini
+
+# Thumbnail cache files
+._*
+Thumbs.db
+
+# Files that might appear on external disks
+.Spotlight-V100
+.Trashes
+.emacs.desktop
+.spyderworkspace
+.spyderproject
+.project
+.pydevproject
+.settings/
+
+# FIles that were inserted to create local containers
+client-secret.json
+google-cloud-sdk-127.0.0-linux-x86_64.tar.gz
+pipelines_local_test.sh
+container.sh
+
+#others
+*~
+\#*
