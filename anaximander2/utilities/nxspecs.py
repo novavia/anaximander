@@ -1,0 +1,1115 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+This module provides facilities for YAML-based specifications.
+
+This module is part of the Anaximander project.
+Copyright (C) Novavia Solutions, LLC.
+"""
+
+# =============================================================================
+# Import statements
+# =============================================================================
+
+
+import abc
+from collections import OrderedDict
+from collections.abc import Mapping, MutableSequence, MutableMapping
+import datetime as dt
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+from threading import Thread
+import time
+from weakref import ref, WeakValueDictionary
+
+from google.cloud.storage.client import Client
+from google.cloud.exceptions import NotFound
+import pandas as pd
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedSeq, CommentedMap
+
+from anaximander.utilities.functions import OrderedChainMap, no_dup_list
+from anaximander.utilities import xprops
+from anaximander.utilities.datastore import StorageResource, ResourceError
+
+# =============================================================================
+# Specifcation item classes
+# =============================================================================
+
+
+class SpecEncoder(json.JSONEncoder):
+    """Custom JSON encoder for specifications."""
+
+    def default(self, obj):
+        if isinstance(obj, SpecDict):
+            specs = obj.__keyspecs__
+            ispec = obj.ispec
+            rdict = {}
+            for key, val in obj.items():
+                try:
+                    spec = specs[key]
+                except KeyError:
+                    k = key
+                    if ispec:
+                        v = ispec.__json__(val)
+                    else:
+                        v = val
+                else:
+                    k = spec.compact
+                    v = spec.__json__(val)
+                rdict[k] = v
+            return rdict
+        elif isinstance(obj, SpecList):
+            ispec = obj.ispec
+            if ispec:
+                return [ispec.__json__(v) for v in obj]
+            else:
+                return list(obj)
+        return super().default(self, obj)
+
+
+class Spec(abc.ABC):
+    """Container for metadata regarding a specification item.
+
+    Params:
+        stype: one of the following object types:
+            * None is valid
+            * A type, including in particular a SpecContainerType
+            * A string that registers a SpecContainerType
+            If None, any type will be admitted -though this could be overriden
+            by the validate argument. Note that yaml's built-in type
+            conversion applies, such that collection will be automatically
+            and recursively turned into either SpecList or SpecDict.
+            If a type, then type validation is applied, irrespective of
+            what is passed to validate.
+            In the case of SpecContainerType, a string can be supplied, which
+            be looked up in the SpecContainerType registry.
+        key: optionally, a string name to use as the specification storage
+            key. This is only used in SpecDict (SpecList instances don't
+            implement keys). If a spec is declared as a class descriptor,
+            the descriptor's attribute name can be different from the key.
+            This is especially useful to specify keys containing spaces and/or
+            capital letters. For instance the key "Device Type" could be
+            declared with a descriptor device_type, and the declaration would
+            need to supply the string "Device Type" to the key argument. If
+            unspecified, the key is identical to the descriptor name.
+        default: a default value that is used if no value is provided for
+            the corresponding key.
+        validator: either None or a callable that must return True on a
+            valid value.
+        required: boolean. If True, specification maps must always provide
+            a value for the corresponding key.
+        nullable: if True, the spec can be explicitly set to None, which
+            is serialized as 'null'. Otherwise, setting to None may
+            raise an error if the stype is set or if validator doesn't
+            allow None values.
+        compact: either None or a string. This is the key to use for compact
+            representation, which is the default for JSON export.
+    """
+
+    def __init__(self, stype=None, key=None, default=None, validator=None,
+                 required=False, nullable=False, compact=None):
+        self.stype = stype
+        if key is not None:
+            self.key = key
+        self.default = default
+        self.validator = validator
+        self.required = required
+        self.nullable = nullable
+        if compact is not None:
+            self.compact = compact
+
+    @xprops.singlesetproperty
+    def stype(self):
+        return None
+
+    @xprops.singlesetproperty
+    def key(self):
+        return None
+
+    @xprops.singlesetproperty
+    def default(self):
+        return None
+
+    @xprops.singlesetproperty
+    def validator(self):
+        return None
+
+    @xprops.singlesetproperty
+    def required(self):
+        return None
+
+    @xprops.singlesetproperty
+    def compact(self):
+        return self.key
+
+    @xprops.singlesetproperty
+    def attr(self):
+        """Attribute name."""
+        return self.key
+
+    @attr.setter
+    def attr(self, val):
+        setattr(self, '_attr', val)
+        if not hasattr(self, '_key'):
+            self.key = val
+
+    @xprops.cachedproperty
+    def spec_type(self):
+        """The actual spec type, inferred from stype at runtime."""
+        stype = self.stype
+        if stype is None:
+            return None
+        if isinstance(stype, type):
+            return stype
+        try:
+            return SpecContainerType.__registry__[stype]
+        except KeyError:
+            if isinstance(stype, str):
+                msg = "Unknown specification container type name {0}"
+                raise KeyError(msg.format(stype))
+            else:
+                raise TypeError
+
+    @property
+    def container(self):
+        """True if the spec designates a nested container."""
+        return isinstance(self.spec_type, SpecContainerType)
+
+    @xprops.settablecachedproperty
+    def descriptor(self):
+        """True if the spec was declared as a class descriptor."""
+        return False
+
+    def getter(self, container):
+        """The getter method for a SpecDict that declares the spec."""
+        if self.key is None or not isinstance(container, SpecDict):
+            msg = "Call is only permitted with a keyed specification."
+            raise TypeError(msg)
+        try:
+            return container[self.key]
+        except KeyError:
+            raise AttributeError
+
+    def setter(self, container, val):
+        """The setter method for a SpecDict that declares the spec."""
+        if self.key is None or not isinstance(container, SpecDict):
+            msg = "Call is only permitted with a keyed specification."
+            raise TypeError(msg)
+        container.__setitem__(self.key, val)
+
+    def deleter(self, container):
+        """The deleter method for a SpecDict that declares the spec."""
+        if self.key is None or not isinstance(container, SpecDict):
+            msg = "Call is only permitted with a keyed specification."
+            raise TypeError(msg)
+        try:
+            del container[self.key]
+        except KeyError:
+            msg = "Cannot delete required key {0}."
+            raise AttributeError(msg.format(self.key))
+
+    def __validator__(self, val):
+        """An optional validator method for subclasses."""
+        return True
+
+    def __loader__(self, val):
+        """An optional loader method for subclasses.
+
+        The method is applied on values that have already been deserialized
+        from a YAML specification, and offers the opportunity for additional
+        transformation.
+        Note that this does not operate on container specifications.
+        """
+        return val
+
+    def __dumper__(self, val):
+        """An optional dumper method for subclasses.
+
+        Inputs are passed from specification container instances and the
+        return value is supplied to the YAML serializer.
+        Note that this does not operate on container specifications.
+        """
+        return val
+
+    def __setter__(self, val):
+        """An optional setter method applied when setting a value."""
+        if self.container:
+            if val is None:
+                if self.default is not None:
+                    return self.spec_type(self.default)
+                else:
+                    return self.spec_type()
+            else:
+                return self.spec_type(val)
+        return val
+
+    def __json__(self, val):
+        """An optional json encoder."""
+        return val
+
+    def validate(self, val):
+        if self.nullable and val is None:
+            return True
+        if self.spec_type is not None:
+            if not isinstance(val, self.spec_type):
+                msg = "Incorrect type {0} supplied to {1}."
+                raise TypeError(msg.format(type(val), self))
+        try:
+            assert self.__validator__(val)
+        except AssertionError:
+            msg = "Invalid value {0} supplied to {1}."
+            raise ValueError(msg.format(val, self))
+        if self.validator is not None:
+            try:
+                assert self.validator(val)
+            except AssertionError:
+                msg = "Invalid value {0} supplied to {1}."
+                raise ValueError(msg.format(val, self))
+
+    def load(self, val):
+        """Loads data from a yaml collection."""
+        if self.container:
+            if val is None:
+                rval = self.spec_type()
+            else:
+                rval = self.spec_type.from_rtype(val)
+        else:
+            rval = self.__loader__(val)
+        self.validate(rval)
+        return rval
+
+    def dump(self, val):
+        """Passes data to a yaml collection."""
+        self.validate(val)
+        if isinstance(val, SpecContainer):
+            if val._data:
+                return val._data
+            else:
+                return None
+        return self.__dumper__(val)
+
+    def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
+        return self.getter(obj)
+
+    def __set__(self, obj, value):
+        self.setter(obj, value)
+
+    def __delete__(self, obj):
+        self.deleter(obj)
+
+    def __repr__(self):
+        prefix = type(self).__name__
+        try:
+            stype = self.spec_type.__name__
+        except AttributeError:
+            stype = None
+        string = '<{p} type:{t} key:{k} default:{d}>'
+        return string.format(p=prefix, t=stype, k=self.key, d=self.default)
+
+
+class ContainerSpec(Spec):
+    """Base class for List and Dict specifications.
+
+    The signature is modified slightly such that the first optional argument
+    specifies the default expected type of the container's items. Admissible
+    values for ispec are the same as those passed to SpecContainerType, i.e.
+    either a Spec instance, a SpecContainer type, or a SpecContainery type
+    name.
+    """
+
+    def __init__(self, ispec=None, key=None, default=None, validator=None,
+                 required=False, nullable=False, compact=None):
+        self.ispec = ispec
+        if key is not None:
+            self.key = key
+        self.default = default
+        self.validator = validator
+        self.required = required
+        self.nullable = nullable
+        if compact is not None:
+            self.compact = compact
+
+    @xprops.singlesetproperty
+    def ispec(self):
+        return None
+
+    @abc.abstractproperty
+    def stype(self):
+        return None
+
+    @property
+    def container(self):
+        return True
+
+
+class List(ContainerSpec):
+
+    @xprops.cachedproperty
+    def stype(self):
+        return SpecList.sub(self.ispec)
+
+
+class Dict(ContainerSpec):
+
+    @xprops.cachedproperty
+    def stype(self):
+        return SpecDict.sub(self.ispec)
+
+
+class TypedSpec(Spec):
+    """A Spec whose type is defined at the class level."""
+
+    def __init__(self, key=None, default=None, validator=None, required=False,
+                 nullable=False, compact=None):
+        if key is not None:
+            self.key = key
+        self.default = default
+        self.validator = validator
+        self.required = required
+        self.nullable = nullable
+        if compact is not None:
+            self.compact = compact
+
+    @abc.abstractproperty
+    def stype(self):
+        return None
+
+
+class Str(TypedSpec):
+
+    @property
+    def stype(self):
+        return str
+
+
+class Int(TypedSpec):
+
+    @property
+    def stype(self):
+        return int
+
+    def __setter__(self, val):
+        if val is not None:
+            return int(val)
+
+
+class Float(TypedSpec):
+
+    @property
+    def stype(self):
+        return float
+
+    def __setter__(self, val):
+        if val is not None:
+            return float(val)
+
+
+class Date(TypedSpec):
+
+    @property
+    def stype(self):
+        return dt.date
+
+    def __json__(self, val):
+        return str(val)
+
+
+class DateTime(TypedSpec):
+
+    @property
+    def stype(self):
+        return dt.datetime
+
+    def __json__(self, val):
+        return str(val)
+
+
+class Timestamp(TypedSpec):
+
+    @property
+    def stype(self):
+        return pd.Timestamp
+
+    def __loader__(self, val):
+        return pd.Timestamp(val)
+
+    def __dumper__(self, val):
+        return val.to_pydatetime()
+
+    def __setter__(self, val):
+        return pd.Timestamp(val)
+
+    def __json__(self, val):
+        return str(val)
+
+
+class Selection(Str):
+    """Specifies a categorical variable.
+
+    The possible categories are specified in the enumeration variable,
+    either in a subclass, or optionally at instantiation.
+    The enumeration can be either a sequence or a mapping. A sequence
+    defines the possible values of the specification. In the case of a
+    mapping, these values are the keys, whereas the mapping's values
+    define the shorthand versions that is used when exporting to JSON.
+    """
+    enumeration = []
+
+    def __init__(self, key=None, default=None, validator=None,
+                 required=False, nullable=False, compact=None,
+                 enumeration=None):
+        if enumeration:
+            self.enumeration = enumeration
+        super().__init__(key, default, validator, required, nullable, compact)
+
+    @property
+    def mapping(self):
+        return isinstance(self.enumeration, Mapping)
+
+    def __validator__(self, val):
+        return val in self.enumeration
+
+    def __json__(self, val):
+        if self.mapping:
+            return self.enumeration[val]
+        return val
+
+# =============================================================================
+# Specification container classes
+# =============================================================================
+
+
+class SpecContainerType(abc.ABCMeta):
+    """The Specification container metaclass.
+
+    The metaclass takes two original inputs:
+        * ispec: Either a Spec instance, or a container type or the name
+            of a container type which is looked up. This sets the
+            default container item type, and can be left to None.
+        * flow: If True, flow-style format will be used by default.
+        * **yaml: arguments to pass to the creation of a YAML object used
+            for serialization / deserialization.
+    """
+    __registry__ = WeakValueDictionary()  # General type registry
+
+    def __new__(mcl, name, bases, namespace, ispec=None, flow=None, **yaml):
+        cls = super().__new__(mcl, name, bases, namespace)
+        mcl.__registry__[name] = cls
+        return cls
+
+    def __init__(cls, name, bases, namespace, ispec=None, flow=None, **yaml):
+        cls._yaml = YAML(**yaml)
+        if flow is not None:
+            cls._default_flow_style = flow
+        elif not hasattr(cls, '_default_flow_style'):
+            cls._default_flow_style = False
+        cls._yaml.default_flow_style = cls._default_flow_style
+        if ispec is not None:
+            if issubclass(ispec, Spec):
+                ispec = ispec()
+            elif not isinstance(ispec, Spec):
+                ispec = Spec(ispec)
+            cls.__ispec__ = ispec
+
+    def sub(cls, ispec):
+        """Returns a subclass with the supplied ispec."""
+        return type(cls)(cls.__name__, (cls,), {}, ispec)
+
+
+class SpecDictType(SpecContainerType):
+    """Specialized metaclass for mapped specifications.
+
+    The optional keys argument supplies a list of admissible keys.
+    """
+
+    def __init__(cls, name, bases, namespace, ispec=None, keys=None,
+                 flow=None, **yaml):
+        keyspecs = [b.__keyspecs__ for b in bases
+                    if isinstance(b, SpecDictType)]
+        new_keyspecs = OrderedDict()
+        if 'keyspecs' in namespace:
+            for k, v in namespace['keyspecs'].items():
+                if isinstance(v, Spec):
+                    v.key = k
+                    new_keyspecs[k] = v
+        for k, v in namespace.items():
+            if isinstance(v, Spec):
+                v.attr = k
+                v.descriptor = True
+                new_keyspecs[v.key] = v
+        cls.__keyspecs__ = OrderedChainMap(new_keyspecs, *keyspecs)
+        if cls.__keys__ is None:
+            if keys is None:
+                cls.__keys__ = None
+            else:
+                cls.__keys__ = no_dup_list(keys)
+        else:
+            if keys is None:
+                cls.__keys__ = no_dup_list(cls.__keys__)
+            else:
+                cls.__keys__ = no_dup_list(cls.__keys__, keys)
+        key_order = list(OrderedChainMap(cls.__keyspecs__, cls.__keys__ or {}))
+
+        def sort(cls, key):
+            try:
+                return key_order.index(key)
+            except ValueError:
+                return sys.maxsize
+        cls.__sort__ = classmethod(sort)
+
+        super().__init__(name, bases, namespace, ispec=ispec)
+
+
+# Abstract base class for List and Dict
+class SpecContainer(metaclass=SpecContainerType):
+    """Base class for specification containers.
+
+    SpecContainer gets subclassed into SpecList and SpecDict. The former
+    is a sequence of items, which may be homogeneous or heterogeneous in
+    terms of item types. The latter is expected to be much more common,
+    and in particular, it allows for the use of descriptors in subclasses to
+    outline content.
+    Both types accept an optional ispec parameter from their metaclass, which
+    indicates an expected default type for random items.
+    The optional spec owner becomes necessary to store the spec in yaml
+    file, in which case the owner must provide a storage path which will
+    be used from the root of a SpecStore.
+
+    Params:
+        owner: optional owner. Must be an object that can be weak referenced,
+            and feature a spec attribute, _spec_storage_path /
+            _spec_identifier properties, and whose type provides a
+            spec_type attribute.
+        _delay: internal parameter to enable 'from_rtype' instantiation.
+    """
+    # Corresponding ruamel commented type(s)
+    __rtype__ = (CommentedSeq, CommentedMap)
+    __ispec__ = None  # Placeholder for specifying default element type
+
+    @abc.abstractmethod
+    def __init__(self, owner=None, _delay=False):
+        self.owner = owner
+        if not _delay:
+            self._post_init()
+
+    def _post_init(self):
+        self.initialized = True
+        self.validate()
+        if self._default_flow_style is True:
+            self._data.fa.set_flow_style()
+
+    @property
+    def ispec(self):
+        return type(self).__ispec__
+
+    @xprops.singlesetproperty
+    def initialized(self):
+        """Lock used to start validation."""
+        return False
+
+    @xprops.weakproperty
+    def owner(self):
+        """Optional owner object for a specification container."""
+        return None
+
+    @owner.setter
+    def owner(self, obj):
+        if obj is not None:
+            if not isinstance(obj, Owner):
+                raise TypeError
+            obj.specs = self
+        else:
+            setattr(self, '_owner', None)
+
+    @classmethod
+    def from_rtype(cls, data, owner=None):
+        """Instantiates a Spec from a ruamel commented collection."""
+        if not isinstance(data, cls.__rtype__):
+            msg = "Method call requires a ruamel Commented collection."
+            raise TypeError(msg)
+        if cls is SpecContainer:
+            if isinstance(data, CommentedSeq):
+                cls = SpecList
+            elif isinstance(data, CommentedMap):
+                cls = SpecDict
+        instance = cls(owner=owner, _delay=True)
+        instance._data = data
+        instance.initialized = True
+        instance.validate()
+        return instance
+
+    def _pull(self, val):
+        """Converts yaml content to suitable type."""
+        if self.ispec is not None:
+            return self.ispec.load(val)
+        if isinstance(val, CommentedSeq):
+            return SpecList.from_rtype(val)
+        elif isinstance(val, CommentedMap):
+            return SpecDict.from_rtype(val)
+        else:
+            return val
+
+    def _push(self, val):
+        """Converts specification item to the suitable type for ruamel."""
+        if self.ispec is not None:
+            return self.ispec.dump(self.ispec.__setter__(val))
+        if isinstance(val, SpecContainer):
+            return val._data
+        else:
+            return val
+
+    @classmethod
+    def load(cls, source, owner=None):
+        """Loads source, either a file pointer, string or pathlib.Path."""
+        return cls.from_rtype(cls._yaml.load(source), owner=owner)
+
+    def dump(self, sink):
+        """Dumps spec to sink, either a file pointer or pathlib.Path."""
+        return self._yaml.dump(self._data, sink)
+
+    def json(self, sink=None):
+        """Dumps a compact json to sink, either a file pointer or pathlib.Path.
+
+        if sink is None, returns a json string (equivalent to json.dumps).
+        """
+        if sink:
+            json.dump(self, sink, cls=SpecEncoder)
+        else:
+            return json.dumps(self, cls=SpecEncoder)
+
+    def __validator__(self):
+        """Placeholder for a container-level validation function."""
+        return True
+
+    def validate(self):
+        """Validates that self conforms to __validator__."""
+        if not self.initialized:
+            return
+        try:
+            assert self.__validator__()
+        except AssertionError:
+            msg = "Invalid container {0}"
+            raise ValueError(msg.format(self))
+
+    def __repr__(self):
+        return f'<{type(self).__name__} owner:{self.owner}>'
+
+    def __str__(self):
+        stringio = io.StringIO()
+        self.dump(stringio)
+        return stringio.getvalue()
+
+
+class SpecList(SpecContainer, MutableSequence):
+    """An enumerated specification."""
+    __rtype__ = CommentedSeq
+
+    def __init__(self, iterable=(), owner=None, _delay=False):
+        self._data = CommentedSeq()
+        self.extend(iterable)
+        super().__init__(owner, _delay)
+
+    def __len__(self):
+        return self._data.__len__()
+
+    def __getitem__(self, ix):
+        return self._pull(self._data[ix])
+
+    def __setitem__(self, ix, val):
+        self._data.__setitem__(ix, self._push(val))
+        self.validate()
+
+    def __delitem__(self, ix):
+        self._data.__delitem__(ix)
+        self.validate()
+
+    def insert(self, ix, val):
+        self._data.insert(ix, self._push(val))
+        self.validate()
+
+
+class SpecDict(SpecContainer, MutableMapping, metaclass=SpecDictType):
+    """A keyed specification."""
+    __rtype__ = CommentedMap
+    # __keys__ is an optional list of admissible keys.
+    __keys__ = None
+
+    def __init__(self, mapping=(), owner=None, _delay=False, **kwargs):
+        self._data = CommentedMap()
+        self.update(mapping, **kwargs)
+        super().__init__(owner, _delay)
+
+    @property
+    def specs(self):
+        """The specification fields declared by the class."""
+        return self.__keyspecs__
+
+    def __len__(self):
+        stored_keys = set(self._data)
+        declared_keys = set(self.__keyspecs__)
+        return len(declared_keys | stored_keys)
+
+    def __getitem__(self, key):
+        try:
+            spec = self.__keyspecs__[key]
+        except KeyError:
+            try:
+                item = self._data[key]
+                return self._pull(item)
+            except KeyError:
+                raise
+        else:
+            try:
+                val = self._data[key]
+                return spec.load(val)
+            except KeyError:
+                if not spec.required:
+                    if spec.container:
+                        if spec.default is None:
+                            return spec.spec_type()
+                        else:
+                            return spec.default
+                    else:
+                        return spec.default
+                else:
+                    raise
+
+    def __setitem__(self, key, val):
+        if self.__keys__ is not None:
+            if key not in self.__keys__:
+                msg = "{0} is not an allowable key."
+                raise KeyError(msg.format(key))
+        try:
+            spec = self.__keyspecs__[key]
+        except KeyError:
+            self._data.__setitem__(key, self._push(val))
+        else:
+            val = spec.dump(spec.__setter__(val))
+            self._data.__setitem__(key, val)
+        self._sort()
+        self.validate()
+
+    def __delitem__(self, key):
+        try:
+            spec = self.__keyspecs__[key]
+        except KeyError:
+            self._data.__delitem__(key)
+        else:
+            if spec.required:
+                msg = "Cannot delete required key {0}."
+                raise KeyError(msg.format(key))
+            try:
+                del self._data[key]
+            except KeyError:
+                pass
+        self.validate()
+
+    def _sort(self):
+        """Sorts _data in place to maintain key order."""
+        keys = sorted(self._data.keys(), key=self.__sort__)
+        data = CommentedMap({k: self._data[k] for k in keys})
+        self._data.copy_attributes(data, deep=True)
+        self._data = data
+
+    def __iter__(self):
+        return self._data.__iter__()
+
+# =============================================================================
+# Specification owner mixin class
+# =============================================================================
+
+
+class Owner:
+    """Mixin class for objects that own specifications."""
+    spec_type = SpecDict
+
+    @abc.abstractproperty
+    def _spec_storage_path(self):
+        return None
+
+    @abc.abstractproperty
+    def _spec_identifier(self):
+        return None
+
+    @xprops.settablecachedproperty
+    def specs(self):
+        return None
+
+    @specs.setter
+    def specs(self, container):
+        if not isinstance(container, self.spec_type):
+            raise TypeError
+        setattr(self, '_specs', container)
+        setattr(container, '_owner', ref(self))
+
+# =============================================================================
+# Specification storage interface
+# =============================================================================
+
+
+class SpecStore(StorageResource):
+    """Base class for specification stores."""
+
+    @abc.abstractmethod
+    def __store__(self, container, path, identifier):
+        """The storage method defined by subclasses."""
+        pass
+
+    def store(self, container):
+        """Stores a spec container."""
+        if not isinstance(container, SpecContainer):
+            raise TypeError()
+        try:
+            owner = container.owner
+            path = owner._spec_storage_path
+            identifier = owner._spec_identifier
+        except AttributeError:
+            msg = "A spec container must have a valid owner to be stored."
+            raise ValueError(msg)
+        self.__store__(container, path, identifier)
+
+    @abc.abstractmethod
+    def __retrieve__(self, path, identifer):
+        """The retrieve method, which must return a valid source."""
+        pass
+
+    def retrieve(self, owner):
+        if not isinstance(owner, Owner):
+            raise TypeError
+        path = owner._spec_storage_path
+        identifier = owner._spec_identifier
+        cls = owner.spec_type
+        try:
+            source = self.__retrieve__(path, identifier)
+        except ResourceError:
+            msg = "No specifications stored for supplied owner {0}."
+            raise ResourceError(msg.format(owner))
+        return cls.load(source, owner)
+
+    @abc.abstractmethod
+    def __list__(self, path=None):
+        """The list method, which must return a list of identifiers."""
+        pass
+
+    def list(self, path=None):
+        """List available specifications from suppliex path."""
+        return self.__list__(path)
+
+    @abc.abstractmethod
+    def __delete_sheet__(self, path, identifier):
+        """The deletion primitive for spec sheets."""
+        pass
+
+    def delete(self, owner, confirm=True):
+        """Deletes a spec sheet."""
+        if not isinstance(owner, Owner):
+            raise TypeError
+        path = owner._spec_storage_path
+        identifier = owner._spec_identifier
+        try:
+            self.__delete_sheet__(path, identifier)
+        except ResourceError:
+            return False
+        return True
+
+    @abc.abstractmethod
+    def __drop_path__(self, path, force=False):
+        """Primitive for drop_path."""
+        pass
+
+    def drop_path(self, path, confirm=True, force=False):
+        """Drops path for all owners from the specification store.
+
+        Params:
+            path: the path to be dropped.
+            confirm: flag indicating whether to prompt the user.
+            force: unless True, the action will fail on any path that
+                contains specifications.
+        """
+        if confirm is not False:
+            msg = "The following path: {0} will be permanently deleted " \
+                "from {1}. Do you wish to proceed? (Y/n)."
+            confirmation = input(msg.format(path, self))
+            if not confirmation == 'Y':
+                msg = "Aborting deletion method."
+                print(msg)
+                return False
+        try:
+            self.__drop_path__(path, force=force)
+        except ResourceError:
+            return False
+        return True
+
+
+class SpecDirectory(SpecStore):
+    """A spec store in a locally accessible file system."""
+
+    def __init__(self, path):
+        self._root = Path(path)
+
+    @property
+    def root(self):
+        return self._root
+
+    def __exists__(self):
+        return self._root.exists()
+
+    def __empty__(self):
+        return not os.listdir(self._root)
+
+    def __create__(self):
+        self._root.mkdir(parents=True, exist_ok=True)
+
+    def __drop__(self, force=False):
+        if force is True:
+            shutil.rmtree(self._root)
+        else:
+            self._root.rmdir()
+
+    def __store__(self, container, path, identifier):
+        directory = self._root / os.path.join(path)
+        if not directory.exists():
+            directory.mkdir(parents=True)
+        container.dump(directory / (identifier + '.yaml'))
+
+    def __retrieve__(self, path, identifier):
+        directory = self._root / os.path.join(path)
+        file = directory / (identifier + '.yaml')
+        if not file.exists():
+            raise ResourceError()
+        return file
+
+    def __list__(self, path=None):
+        if path is not None:
+            directory = self._root / path
+        else:
+            directory = self._root
+        paths = directory.glob('*.yaml')
+        return [str(p.relative_to(directory))[:-5] for p in paths]
+
+    def __delete_sheet__(self, path, identifier):
+        directory = self._root / os.path.join(path)
+        file = directory / (identifier + '.yaml')
+        try:
+            os.remove(file)
+        except FileNotFoundError:
+            raise ResourceError()
+
+    def __drop_path__(self, path, force=False):
+        directory = self._root / os.path.join(path)
+        try:
+            if force is True:
+                shutil.rmtree(directory)
+            else:
+                directory.rmdir()
+        except OSError:
+            raise ResourceError()
+
+
+class SpecBucketGCP(SpecStore):
+    """A spec store in a Google Cloud Platform storage bucket.
+
+    Unlike a directory-based specification store, bucket-based stores keep
+    track of versions.
+
+    Params:
+        project: a cloud platform project name.
+        path: a bucket name or path.
+    """
+
+    def __init__(self, project, path):
+        self._client = Client(project)
+        self._bucket = self._client.bucket(path)
+
+    @property
+    def client(self):
+        return self._client
+
+    @property
+    def bucket(self):
+        return self._bucket
+
+    def __exists__(self):
+        if not self._bucket.exists():
+            return False
+        # XXX: versioning is not properly supported by the google
+        # storage client. Blobs should be versioned once this is fixed.
+        # if not self._bucket.versioning_enabled:
+        #     msg = "A bucket-based specification store should enable " + \
+        #           "versions, however {0} does not."
+        #     self.warn(msg.format(self))
+        return True
+
+    def __empty__(self):
+        itr = self._bucket.list_blobs()
+        try:
+            next(iter(itr))
+        except StopIteration:
+            return True
+        else:
+            return False
+
+    def __create__(self):
+        self._bucket.create()
+        # XXX: versioning is not properly supported by the google
+        # storage client. Blobs should be versioned once this is fixed.
+        # self._bucket.versioning_enabled = True
+        self._bucket.patch()
+
+    def __drop__(self, force=False):
+        if force is True:
+            blobs = self._bucket.list_blobs(versions=True)
+            self._bucket.delete_blobs(list(blobs))
+        time.sleep(1)
+        self._bucket.delete()
+
+    def blob(self, path, identifier):
+        name = '/'.join([path, identifier + '.yaml'])
+        return self._bucket.blob(name)
+
+    def __store__(self, container, path, identifier):
+        blob = self.blob(path, identifier)
+        blob.upload_from_string(str(container))
+
+    def __retrieve__(self, path, identifier):
+        blob = self.blob(path, identifier)
+        try:
+            return blob.download_as_string().decode('utf-8')
+        except NotFound:
+            raise ResourceError()
+
+    def __list__(self, path=None):
+        blobs = self._bucket.list_blobs(prefix=path)
+        if path is None:
+            return [b.name[:-5] for b in blobs]
+        else:
+            return [b.name[len(path) + 1:-5] for b in blobs]
+
+    def __delete_sheet__(self, path, identifier):
+        blob = self.blob(path, identifier)
+        try:
+            blob.delete()
+        except NotFound:
+            raise ResourceError()
+
+    def __drop_path__(self, path, force=False):
+        if not force:
+            return
+        blobs = self._bucket.list_blobs(prefix=path)
+
+        def delete():
+            for b in blobs:
+                try:
+                    b.delete()
+                except:
+                    continue
+
+        deletion_thread = Thread(target=delete)
+        deletion_thread.start()
