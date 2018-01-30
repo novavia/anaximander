@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 import bisect
+from collections import defaultdict
 from itertools import chain
 
 import pandas as pd
@@ -500,8 +501,23 @@ class SessionMaker(Operator):
         return output
 
     def __plot__(self, output, **kwargs):
-        ax = plot_highlights(output, 90, 110)
-        plot_marks(self.event_sequence, 100, ax=ax)
+        if output is None:
+            return
+        statetype = output.statetype
+        d = defaultdict(list)
+        for p in output.phases():
+            d[p.state.label].append(p)
+        ax = None
+        for state, phases in d.items():
+            color = statetype(state).color
+            if ax is None:
+                ax = plot_highlights(phases, 90, 110, color=color)
+            else:
+                plot_highlights(phases, 90, 110, ax=ax, color=color)
+        # XXX: for whatever reason, when there is a single active phase,
+        # plotting the events makes the phases disappear... That does not
+        # happen with a single overall phase or multiple active phases...
+#        plot_marks(self.event_sequence, 100, ax=ax)
 
 # =============================================================================
 # Plotting functions
@@ -524,6 +540,8 @@ def plot_series(series, ax='new', **kwargs):
 
 def plot_marks(events, y, ax='new', **kwargs):
     """Plots marks from events, at specified y-axis value."""
+    if events.empty:
+        return
     if ax == 'new':
         fig, ax = plt.subplots()
     plot_data = pd.Series(y, index=events.timestamp())
@@ -531,13 +549,13 @@ def plot_marks(events, y, ax='new', **kwargs):
     return ax
 
 
-# XXX: Change to distinguish between certified / uncertified phases
 def plot_highlights(phases, y0, y1, ax='new', **kwargs):
     """Plots highlights as shaded blocks between specified y-axis values."""
     if ax == 'new':
         fig, ax = plt.subplots()
-    timestamps = (mdates.date2num(t) for t in chain(*phases.phases))
-#    index = (mdates.date2num(i) for i in phases.data.index)
+    color = kwargs.get('color', 'red')
+    intervals = [p.interval for p in phases]
+    timestamps = (mdates.date2num(t) for t in chain(*intervals))
     intervals = [(p, n - p) for p, n in fun.pairwise(timestamps, 2)]
-    ax.broken_barh(intervals, (y0, y1 - y0), facecolor='green', zorder=-1)
+    ax.broken_barh(intervals, (y0, y1 - y0), facecolor=color, zorder=-1)
     return ax

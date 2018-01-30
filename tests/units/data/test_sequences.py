@@ -87,10 +87,10 @@ def test_sessionmaker():
         assert states_upper == datetime(upper)
 
     # Two single-event clusters
-    test([20, 30], 2, 0, LOWER, UPPER, 'blank')
+    test([20, 30], 2, 0, LOWER, UPPER, 'idle')
     # Two continuous clusters
     test(list(range(10, 21)) + list(range(30, 41)),
-         2, '20s', LOWER, UPPER, 'blank')
+         2, '20s', LOWER, UPPER, 'idle')
     # An event close to the lower bound
     test([2] + list(range(10, 21)),
          2, '10s', '2018-1-1 00:00:02', UPPER, 'session')
@@ -100,21 +100,21 @@ def test_sessionmaker():
     test(list(range(0, 11)), 1, '10s', LOWER, UPPER, 'session')
     # The event lower bound is higher than its smallest index
     test(list(range(10, 21)), 1, '10s', '2018-1-1 00:00:05', UPPER,
-         'blank', sample_lower='2018-1-1 00:00:05')
+         'idle', sample_lower='2018-1-1 00:00:05')
     # Event upper bound lower than its highest index and close to high event
     # Also throwing some events in outside the events certification bounds
     test(list(range(10, 21)) + list(range(30, 41)), 1, '10s',
-         LOWER, '2018-1-1 00:00:20', 'blank', sample_upper='2018-1-1 00:00:24')
+         LOWER, '2018-1-1 00:00:20', 'idle', sample_upper='2018-1-1 00:00:24')
     # No event
-    test([], 0, 0, LOWER, UPPER, 'blank')
+    test([], 0, 0, LOWER, UPPER, 'idle')
     # No event, max gap larger than the event window
-    test([], 0, 0, None, None, 'blank', max_gap='70s')
+    test([], 0, 0, None, None, 'idle', max_gap='70s')
     # Adding min span, with non-qualifying event close to upper bound
     test(list(range(10, 21)) + [30, 31, 32, 57, 58], 1, '10s',
-         LOWER, '2018-1-1 00:00:57', 'blank', min_span='5s')
+         LOWER, '2018-1-1 00:00:57', 'idle', min_span='5s')
     # Non-qualifying event near lower bound, and non-contiguous cluster
     test(list(range(10, 21)) + [3, 4, 25, 53], 1, '15s',
-         '2018-1-1 00:00:04', UPPER, 'blank', min_span='5s')
+         '2018-1-1 00:00:04', UPPER, 'idle', min_span='5s')
 
 
 if __name__ == '__main__':
