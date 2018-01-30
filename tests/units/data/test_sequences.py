@@ -20,7 +20,7 @@ import anaximander as nx
 from anaximander.utilities import functions as fun
 from anaximander.utilities.nxtime import datetime, MIN, MAX
 from anaximander.data.sequences import SampleSequence, EventSequence, \
-    PhaseSequence, PeriodSequence, Thresholder, SessionMaker
+    StateSequence, PeriodSequence, Thresholder, SessionMaker
 
 LOWER = datetime('2018-1-1 00:00:00')
 UPPER = datetime('2018-1-1 00:01:00')
@@ -70,13 +70,21 @@ def test_sessionmaker():
         sequence = samples(*highs, lower=sample_lower, upper=sample_upper)
         peaks = Thresholder(sequence, 1)()
         states = SessionMaker(peaks, max_gap=max_gap, min_span=min_span)()
-        sessions = states.phases
+        if states is None:
+            sessions = []
+            states_lower = None
+            states_upper = None
+        else:
+            sessions = states.phases('session')
+            states_lower = states.lower
+            states_upper = states.upper
         assert len(sessions) == session_count
         session_duration = pd.Timedelta(session_duration)
         slengths = pd.Series(p.length for p in sessions)
-        assert slengths.sum() == session_duration
-        assert states.lower == datetime(lower)
-        assert states.upper == datetime(upper)
+        duration = slengths.sum() if not slengths.empty else pd.Timedelta(0)
+        assert duration == session_duration
+        assert states_lower == datetime(lower)
+        assert states_upper == datetime(upper)
 
     # Two single-event clusters
     test([20, 30], 2, 0, LOWER, UPPER, 'blank')
@@ -100,7 +108,7 @@ def test_sessionmaker():
     # No event
     test([], 0, 0, LOWER, UPPER, 'blank')
     # No event, max gap larger than the event window
-    test([], 0, 0, MIN, MAX, 'blank', max_gap='70s')
+    test([], 0, 0, None, None, 'blank', max_gap='70s')
     # Adding min span, with non-qualifying event close to upper bound
     test(list(range(10, 21)) + [30, 31, 32, 57, 58], 1, '10s',
          LOWER, '2018-1-1 00:00:57', 'blank', min_span='5s')

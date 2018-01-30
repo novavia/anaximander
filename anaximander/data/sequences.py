@@ -23,6 +23,7 @@ from .data import NxFloat
 from .fields import Str, Scalar, Timestamp, Period
 from .schema import Schema
 from .frame import NxDataSequence
+from .states import State, UndefinedState
 
 if nx.INTERACTIVE:
     import matplotlib.pyplot as plt
@@ -50,6 +51,10 @@ class EventSequenceSchema(TimeSequenceSchema):
 
 
 class PhaseSequenceSchema(TimeSequenceSchema):
+    state = Str()
+
+
+class StateSequenceSchema(TimeSequenceSchema):
     state = Str()
 
 
@@ -181,6 +186,71 @@ class PhaseSequence(TimeSequence, schema=PhaseSequenceSchema):
         return phases
 
 
+class StateSequence(TimeSequence, schema=StateSequenceSchema):
+
+    def __init__(self, data, context=None, validate=False,
+                 lower=None, upper=None, statetype=None, onstate=None):
+        # XXX: onstate is a bit misguided because it should generally map
+        # to the sequence's fields.
+        # A field is also tied to a StateType so we can determine the
+        # state from a string.
+        """The 'onstate' provides the begin state of the sequence.
+
+        Lower and upper should be validated. None means MIN for lower and
+        MAX for upper.
+        """
+        super().__init__(data, context, validate, lower, upper)
+        # XXX: technically we should normalize this to be either the
+        # state instance or the string -but accept either option in the init
+        if statetype is None:
+            raise ValueError
+        self._statetype = statetype
+        if not isinstance(onstate, State):
+            if onstate is None:
+                onstate = UndefinedState()
+            else:
+                onstate = statetype(onstate)
+        self._onstate = onstate
+
+    @property
+    def onstate(self):
+        return self._onstate
+
+    @property
+    def statetype(self):
+        return self._statetype
+
+    def loc_state(self, timestamp):
+        """Return the state at the specified timestamp."""
+        timestamp = nxtime.datetime(timestamp)
+        if timestamp < self.lower or timestamp > self.upper:
+            raise IndexError
+        ix = bisect.bisect(self.data['timestamp'], timestamp) - 1
+        if ix == -1:
+            return self.statetype(self.onstate)
+        return self.statetype(self.data['state'][ix])
+
+    def phases(self, *states):
+        """Returns phases for supplied states or all states."""
+        # We must materialize a virtual transition at the lower end
+        lower = pd.DataFrame({'timestamp': self.lower,
+                              'state': self.onstate.label},
+                             index=[self.lower])
+        if self.data.empty:
+            df = lower
+        else:
+            df = lower.append(self.data)
+        # We join timestamp on itself to form consecutive pairs
+        nexts = df['timestamp'].shift(-1)
+        nexts.iloc[-1] = self.upper
+        df['next'] = nexts
+        df = df[['state', 'timestamp', 'next']]
+        if states:
+            df = df[df.state.isin(states)]
+        return [Phase(self.statetype(v[0]), rng.TimeInterval(v[1], v[2]))
+                for v in df.values]
+
+
 class PeriodSequence(TimeSequence, schema=PeriodSequenceSchema):
     pass
 
@@ -189,7 +259,7 @@ class PeriodSequence(TimeSequence, schema=PeriodSequenceSchema):
 class Phase:
     state = nxattr.ib()
     interval = nxattr.ib()
-    certified = nxattr.ib()  # T / F
+    certified = nxattr.ib(default=True)  # T / F
 
     @property
     def lower(self):
@@ -207,9 +277,9 @@ class Phase:
     def bounds(self):
         return self.interval.bounds
 
-#    @property
-#    def shade(self):
-#        return self.state.shade
+    @property
+    def color(self):
+        return self.state.color
 
 
 class MultiPhase:
@@ -274,6 +344,14 @@ class Thresholder(Operator):
 
 class SessionMaker(Operator):
 
+    class Session(State):
+        label = 'session'
+        color = 'green'
+
+    class Idle(State):
+        label = 'idle'
+        color = 'white'
+
     def __init__(self, event_sequence, max_gap, min_span=None):
         self.event_sequence = event_sequence
         self.max_gap = pd.Timedelta(max_gap)
@@ -282,7 +360,7 @@ class SessionMaker(Operator):
         else:
             self.min_span = pd.Timedelta(min_span)
 
-    def __call__(self, plot=False, **kwargs):
+    def __old_call__(self, plot=False, **kwargs):
         # Extract the timestamp series of the events
         events = self.event_sequence.data
         timestamps = pd.Series(events.timestamp, index=events.timestamp)
@@ -351,6 +429,72 @@ class SessionMaker(Operator):
 
         output = PhaseSequence(transitions, lower=lower, upper=upper,
                                onstate=onstate)
+        if plot:
+            self.__plot__(output)
+        return output
+
+    def __call__(self, plot=False, **kwargs):
+        # Extract the timestamp series of the events
+        events = self.event_sequence.data
+        events_lower = self.event_sequence.lower
+        events_upper = self.event_sequence.upper
+        timestamps = pd.Series(events.timestamp, index=events.timestamp)
+        # Compute consecutive differences and mark gaps
+        gaps = timestamps.diff() > self.max_gap
+        # The cumulative sum of gaps provide clusters of events
+        clusters = gaps.cumsum()
+        groups = clusters.groupby(clusters).groups
+        # Session spans provided by first and last index of each group
+        spans = [rng.TimeInterval(g[0], g[-1]) for g in groups.values()]
+        # Extract qualified spans based on min_span
+        if self.min_span is not None:
+            qspans = [s for s in spans if s.duration >= self.min_span]
+        else:
+            qspans = spans
+        # Turn spans into state transitions
+        index = list(chain(*qspans))
+        states = ['session', 'idle'] * len(qspans)
+        transitions = pd.DataFrame({'timestamp': index, 'state': states},
+                                   index=index)
+
+        onstate = 'idle'  # placeholder
+        if events.empty:
+            if events_upper - events_lower < self.max_gap:
+                return None
+            lower, upper = events_lower, events_upper
+        else:
+            first_event, last_event = timestamps[0], timestamps[-1]
+            # If there is a gap, we can certify the sequence at the onset
+            if first_event - events_lower >= self.max_gap:
+                lower = events_lower
+            # Otherwise the situation depends on whether the first span
+            # is qualified or not
+            # If qualified, the certificate is the first event
+            # We remove the first transitions and instead set the onstate
+            # to the active state
+            elif spans[0] in qspans:  # if events exist, spans is not empty
+                lower = first_event
+                transitions = transitions.iloc[1:]
+                onstate = 'session'
+            # If not qualified, certificate is at the last event of the
+            # first span provided it is further than max_gap from the events
+            # upper bound.
+            elif events_upper - spans[0].upper >= self.max_gap:
+                lower = spans[0].upper
+            else:
+                return None
+            if events_upper - last_event >= self.max_gap:
+                upper = events_upper
+            elif spans[-1] in qspans:
+                upper = last_event
+                transitions = transitions.iloc[:-1]
+            elif spans[-1].lower - events_lower >= self.max_gap:
+                upper = spans[-1].lower
+            else:
+                return None
+
+        output = StateSequence(transitions, lower=lower, upper=upper,
+                               onstate=onstate, statetype=State)
         if plot:
             self.__plot__(output)
         return output

@@ -109,7 +109,7 @@ class AbstractState(metaclass=StateType, abstract=None):
         else:
             label = kwargs.pop('label', None)
         try:
-            cls = cls.registry[label]
+            cls = cls._registry[label]
             return cls(*args, **kwargs)
         except KeyError:
             msg = f"Cannot instantiate Abstract State {cls.__name__}"
