@@ -25,7 +25,7 @@ from anaximander2.utilities import nxspecs as nxs
 
 STORE_PATH = os.path.join(TESTDIR, 'data/specifications')
 PROJECT = 'anaximander-tests'
-BUCKET = 'specifications'
+BUCKET = 'specifications2'
 
 # =============================================================================
 # Test Constants

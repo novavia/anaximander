@@ -11,10 +11,8 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-
 import pytest
 
-from anaximander2.meta import NxObject
 from anaximander2.utilities.xprops import typedweakproperty
 
 # =============================================================================
@@ -25,18 +23,24 @@ from anaximander2.utilities.xprops import typedweakproperty
 def test_weakproperty():
 
     class C:
-    
-        @typedweakproperty(NxObject)
+        pass
+
+    class D:
+
+        @typedweakproperty(C)
         def obj(self):
             return None
 
+    class X:
+        pass
+
+    d = D()
     c = C()
-    obj = NxObject()
-    c.obj = obj
-    assert c.obj == obj
+    d.obj = c
+    assert d.obj == c
     with pytest.raises(TypeError):
-        obj = object()
-        c.obj = obj
+        x = X()
+        d.obj = x
 
 if __name__ == '__main__':
     pytest.main([__file__])
