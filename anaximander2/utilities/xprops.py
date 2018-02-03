@@ -48,13 +48,18 @@ class cachedproperty(property):
     def __get__(self, obj, objtype=None):
         if obj is None:
             return self
+        # We prefer obj.__dict__ to getattr, as this enables cachedproperty
+        # to operate on instances or types. With the latter, getattr
+        # would look up the inheritance chain which is often not desirable
+        # and somewhat contrary to the notion of a chached property.
         try:
             return obj.__dict__[self.cache]
         except KeyError:
             if self.fget is None:
                 raise AttributeError("Unreadable attribute.")
-            setattr(obj, self.cache, self.fget(obj))
-            return getattr(obj, self.cache)
+            value = self.fget(obj)
+            setattr(obj, self.cache, value)
+            return value
 
     def __set__(self, obj, value):
         if self.fset is not None:
@@ -83,10 +88,11 @@ class cachedproperty(property):
     @staticmethod
     def reset(obj):
         """Resets all cached properties on obj."""
-        attrs = {k: getattr(obj, k, None) for k in dir(type(obj))}
-        props = [k for k, v in attrs.items() if isinstance(v, cachedproperty)]
-        for k in props:
-            delattr(obj, k)
+        cls = type(obj)
+        for attr in dir(cls):
+            v = getattr(cls, attr, None)
+            if isinstance(v, cachedproperty):
+                v.__delete__(obj)
 
 
 class settablecachedproperty(cachedproperty):
