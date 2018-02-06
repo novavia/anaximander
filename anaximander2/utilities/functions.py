@@ -104,10 +104,15 @@ def lformat(string):
     return string.format(**curlydict(caller_locals))
 
 
-def iformat(*attrs):
-    """Returns standard instance formatter with supplied attributes."""
+def iformat(*attrs, cls=None):
+    """Returns standard instance formatter with supplied attributes.
+
+    By default, the formatter uses the class' name. However a customized
+    name can be assigned by keyword argument.
+    """
     def formatter(inst):
-        cls = type(inst).__name__
+        nonlocal cls
+        cls = get(cls, type(inst).__name__)
         if not attrs:
             return f"<{cls}>"
         keyvals = {}

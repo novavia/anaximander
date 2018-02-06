@@ -14,9 +14,16 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
+import threading
 import weakref
 
 from .functions import typecheck
+
+
+# Global lock on reading properties
+# Programmers are responsible for thread safety in setting properties
+# However the module locks the cache for reading properties
+LOCK = threading.Lock()
 
 # =============================================================================
 # Properties
@@ -52,14 +59,15 @@ class cachedproperty(property):
         # to operate on instances or types. With the latter, getattr
         # would look up the inheritance chain which is often not desirable
         # and somewhat contrary to the notion of a chached property.
-        try:
-            return obj.__dict__[self.cache]
-        except KeyError:
-            if self.fget is None:
-                raise AttributeError("Unreadable attribute.")
-            value = self.fget(obj)
-            setattr(obj, self.cache, value)
-            return value
+        with LOCK:
+            try:
+                return obj.__dict__[self.cache]
+            except KeyError:
+                if self.fget is None:
+                    raise AttributeError("Unreadable attribute.")
+                value = self.fget(obj)
+                setattr(obj, self.cache, value)
+                return value
 
     def __set__(self, obj, value):
         if self.fset is not None:
@@ -116,12 +124,13 @@ class singlesetproperty(settablecachedproperty):
     def __get__(self, obj, objtype=None):
         if obj is None:
             return self
-        try:
-            return obj.__dict__[self.cache]
-        except KeyError:
-            if self.fget is None:
-                raise AttributeError("Unreadable attribute.")
-            return self.fget(obj)
+        with LOCK:
+            try:
+                return obj.__dict__[self.cache]
+            except KeyError:
+                if self.fget is None:
+                    raise AttributeError("Unreadable attribute.")
+                return self.fget(obj)
 
     def __set__(self, obj, value):
         if self.cache not in obj.__dict__:
@@ -146,12 +155,13 @@ class weakproperty(settablecachedproperty):
     def __get__(self, obj, objtype=None):
         if obj is None:
             return self
-        try:
-            return getattr(obj, self.cache)()
-        except (AttributeError, TypeError):
-            if self.fget is None:
-                return None
-            return self.fget(obj)
+        with LOCK:
+            try:
+                return getattr(obj, self.cache)()
+            except (AttributeError, TypeError):
+                if self.fget is None:
+                    return None
+                return self.fget(obj)
 
     def __set__(self, obj, value):
         if self.fset is not None:
