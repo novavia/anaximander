@@ -59,6 +59,25 @@ def test_cachedproperty():
     assert D.name == 'D'
 
 
+def test_settablecachedproperty():
+
+    class C:
+
+        @xprops.settablecachedproperty
+        def prop(self):
+            return None
+
+        @prop.validator
+        def prop(self, value):
+            return value > 0
+
+    c = C()
+    c.prop = 3
+    assert c.prop == 3
+    with pytest.raises(ValueError):
+        c.prop = -1
+
+
 def test_singlesetproperty():
 
     class C:
