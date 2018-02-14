@@ -214,6 +214,36 @@ def no_dup_list(*iterables):
         items.append(item)
     return items
 
+
+def merge(*iterables):
+    """Merges iterables, removing duplicates and preserving order.
+
+    Unlike no_dup_list, this function will raise an error if elements
+    in a list are found in an order inconsistent with the merger of prior
+    lists. This is used in resolving descriptor enumerations in class
+    inheritance.
+    """
+    items = list()
+    for itr in iterables:
+        mark = 0
+        for item in itr:
+            try:
+                ix = items.index(item)
+                assert ix >= mark
+            # Item is not in items, append it and move mark accordingly
+            except ValueError:
+                items.append(item)
+                mark = len(items)
+            # Item is found below the mark, raise error
+            except AssertionError:
+                msg = "Cannot merge iterables with inconsistent elements " + \
+                      "ordering."
+                raise ValueError(msg)
+            # Items is found above the mark, move the mark
+            else:
+                mark = ix
+    return items
+
 # =============================================================================
 # Function decorators
 # =============================================================================

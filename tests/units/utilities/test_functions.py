@@ -112,6 +112,19 @@ def test_no_dup_list():
     assert fun.no_dup_list(a, b) == list(range(8))
 
 
+def test_merge():
+    l0 = ['a', 'b', 'c']
+    l1 = ['b', 'd', 'e']
+    l2 = ['a', 'd', 'f']
+    assert fun.merge(l0, l1, l2) == ['a', 'b', 'c', 'd', 'e', 'f']
+    l2 = ['b', 'a']
+    with pytest.raises(ValueError):
+        fun.merge(l0, l1, l2)
+    l2 = ['f', 'd']
+    with pytest.raises(ValueError):
+        fun.merge(l0, l1, l2)
+
+
 class TestDecorators(TestCase):
 
     def test_args_or_kwargs(self):

@@ -60,5 +60,5 @@ class NxMetaError(Exception):
 
 
 from .nxdescriptors import *
-from .nxmetas import *
-from .nxtypes import *
+#from .nxmetas import *
+#from .nxtypes import *

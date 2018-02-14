@@ -12,6 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
+from collections import OrderedDict, ChainMap
 from functools import wraps
 from inspect import signature
 from itertools import count
@@ -22,7 +23,8 @@ from anaximander2.utilities.cmpmixin import ComparableMixin
 from . import NxMetaError
 
 __all__ = ['NxDescriptor', 'ObjectDescriptor', 'TypeDescriptor',
-           'MetaDescriptor', 'TypeProperty', 'MetaCharacter']
+           'MetaDescriptor', 'ObjectCharacter', 'TypeCharacter',
+           'ObjectTypeProperty', 'MetaCharacter']
 
 # =============================================================================
 # Base classes
@@ -99,6 +101,111 @@ class NxDescriptor(ComparableMixin):
         copy_.__dict__ = attrs
         return copy_
 
+    @classmethod
+    def collect(cls, bases, namespace, registry_name='__nxdescriptors__'):
+        """Collects nxdescriptors from supplied namespace and bases.
+
+        Params:
+            cls: the NxDescriptor type whose instances are to be collected
+            bases: a tuple of base classes
+            namespace: a mapping of attributes
+            registry_name: the expected attribute name of descriptor
+            registries in the base classes
+        Returns:
+            an OrderedDict of attribute name to NxDescriptor instances
+
+        The algorithm seeks the registry name on the supplied bases, or
+        otherwise ignores them. It assumes that the registries are
+        ordered dictionary that enumerate items in an ordered fashion.
+        Generally, the namespace's descriptors are appended to the
+        base class' descriptors. If there are mixin classes, i.e. any base
+        beyond the first one, their descriptors are appended to the
+        namespace's descriptors. Hence the descriptor order is as follows:
+            bases[0] > namespace > bases[1:]
+        In the case of the mixins, the order of the bases dictates the order
+        of the descriptors, that is, the last mixin's descriptors are
+        appended last.
+        However it is possible for the namespace to redefine the order of
+        the descriptors by explicitly restating them. In that case, the
+        following rules are enforced:
+            * if the namespace redefines descriptors that are in a base
+            class, it must redefine all of them -this is to ensure a
+            consistent order can be determined;
+            * while it is possible to interlace the order of descriptors
+            that were defined in base classes, the new order for the
+            descriptors defined in any single class must be the same
+            as in that base class.
+        For instance:
+
+            class C0:
+                a = descriptor()
+                b = descriptor()
+
+            class C1:
+                c = descriptor()
+                d = descriptor()
+
+            class C(C0, C1):  # legal
+                a = descriptor()
+                c = descriptor()
+                b = descriptor()
+                d = descriptor()
+
+            class C(C0, C1):  # illegal, violates C1's order
+                a = descriptor()
+                b = descriptor()
+                d = descriptor()
+                c = descriptor()
+
+        Note that it is up to the programmer to ensure that the restatements
+        are consistne with the descriptors declared in the base classes. In
+        other words, while the collect function enforces consistent rules
+        in the naming and sequence of descriptors through inheritance,
+        the definition of the descriptors themselves is not enforced.
+        """
+        # Collects descriptors from namespace
+        ns_descriptors = fun.vfilter(fun.typecheck(cls), namespace)
+        # Orders them by descriptor id
+        ns_descriptors = OrderedDict(sorted(ns_descriptors,
+                                            key=lambda i: i[1].descriptor_id))
+        if not bases:
+            return ns_descriptors
+        # Fetches registries from the base
+        base_descriptors = OrderedDict(getattr(bases[0], registry_name, {}))
+        # Either namespace redefines them, or it appends them
+        ns_descriptors_set = set(ns_descriptors)
+        base_descriptors_set = set(base_descriptors)
+        if ns_descriptors_set & base_descriptors_set:
+            if not base_descriptors_set.issubset(ns_descriptors_set):
+                msg = "A child class must redefine all or none of the " + \
+                      "descriptors from its base class."
+                raise NxMetaError(msg)
+            # Test for compatible ordering
+            try:
+                fun.merge(ns_descriptors, base_descriptors)
+            except ValueError:
+                msg = "Descriptor ordering inconsistent with base class."
+                raise NxMetaError(msg)
+            descriptors = ns_descriptors
+        else:
+            descriptors = base_descriptors
+            for k, v in ns_descriptors.items():
+                descriptors[k] = v
+        # Now we add the mixin descriptors
+        mixin_descriptors = [OrderedDict(getattr(b, registry_name, {}))
+                             for b in bases[1:]]
+        # First we determine the key order, checking for duplication and
+        # consistency
+        try:
+            keys = fun.merge(descriptors.keys(),
+                             *[d.keys() for d in mixin_descriptors])
+        except ValueError:
+            msg = "Descriptor ordering inconsistent with base class."
+            raise NxMetaError(msg)
+        # Then we extract the values by building a chainmap
+        dchain = ChainMap(descriptors, *mixin_descriptors)
+        return OrderedDict((k, dchain[k]) for k in keys)
+
     @abc.abstractmethod
     def __get__(self, obj, objtype=None):
         if obj is None:
@@ -129,12 +236,12 @@ class TypeDescriptor(NxDescriptor):
     __counter__ = count()
 
     def set_typical_property(self, cls):
-        """Implements a  TypicalProperty on the supplied class.
+        """Implements an ObjectTypeProperty on the supplied class.
 
         The intended pattern is to make a type descriptor available to
         that type's instances as read-only property.
         """
-        prop = TypicalProperty(self.name)
+        prop = ObjectTypeProperty(self.name)
         cls.__dict__[self.name] = prop
 
 # Ensures TypeDescriptors are comparable
@@ -181,6 +288,9 @@ class ProtectedAttribute(NxDescriptor):
     setter will raise a ValueError if False is returned. However validate
     may also raise its own exception, in which case the exception type
     is used by the setter.
+    It is also possible to define a class-level method by overwriting
+    __validate__. The method and the instance-defined function are
+    cumulative.
     """
 
     def __init__(self, default=None, validate=None, name=None, cls=None,
@@ -207,16 +317,15 @@ class ProtectedAttribute(NxDescriptor):
             return self.default
 
     def __set__(self, obj, value):
-        if self.validate is not None:
-            try:
-                assert self.validate(obj, value)
-            except Exception as e:
-                msg = f"Invalid value {value} passed to attribute " + \
-                      f"{self.name} of {obj}"
-                etype = type(e)
-                if etype is AssertionError:
-                    etype = ValueError
-                raise etype(msg)
+        try:
+            assert self.validate(obj, self, value)
+        except Exception as e:
+            msg = f"Invalid value {value} passed to attribute " + \
+                  f"{self.name} of {obj}"
+            etype = type(e)
+            if etype is AssertionError:
+                etype = ValueError
+            raise etype(msg)
         setattr(obj, self._cache, self.default)
 
     def __delete__(self, obj):
@@ -224,6 +333,10 @@ class ProtectedAttribute(NxDescriptor):
             delattr(obj, self._cache)
         except AttributeError:
             pass
+
+    def __validate__(self, obj, value):
+        """A validation method to be overwritten in subclasses."""
+        return True
 
     @property
     def validate(self):
@@ -233,14 +346,21 @@ class ProtectedAttribute(NxDescriptor):
 
     @validate.setter
     def validate(self, func):
-        sig = signature(func)
-        # Simple validate function is possible but its signature is changed
-        if len(sig.parameters) is 1:
+        if func is None:
+            def validator(obj, attr, value):
+                return self.__validate__(obj, value)
+        else:
+            sig = signature(func)
+            # Simple validate function is possible but its signature is changed
+
             @wraps(func)
-            def decorated(obj, attr, value):
-                return func(value)
-            func = decorated
-        setattr(self, '_validate', func)
+            def validator(obj, attr, value):
+                class_valid = self.__validate__(obj, value)
+                if len(sig.parameters) is 1:
+                    return func(value) and class_valid
+                else:
+                    return func(obj, attr, value) and class_valid
+        setattr(self, '_validate', validator)
 
     @classmethod
     def reset(cls, obj):
@@ -283,12 +403,16 @@ class SetOnceAttribute(ProtectedAttribute):
 # =============================================================================
 
 
+class ObjectCharacter(SetOnceAttribute, ObjectDescriptor):
+    pass
+
+
 class TypeCharacter(SetOnceAttribute, TypeDescriptor):
     """TypeCharacters are designed for parameters of parametric types."""
     pass
 
 
-class TypicalProperty(ObjectDescriptor):
+class ObjectTypeProperty(ObjectDescriptor):
     """A descriptor that reads a property of the type.
 
     The name is admittedly a bit confusing, but it makes sense in light of
