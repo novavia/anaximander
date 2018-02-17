@@ -14,13 +14,12 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import OrderedDict
 from inspect import getmodule
-from itertools import chain
 import sys
 import types
 
 from ..utilities import functions as fun, xprops
 from . import NxMetaError
-from .nxdescriptors import NxDescriptor, TypeProperty
+from . import nxdescriptors as nxd
 from .nxmetas import archmeta
 
 __all__ = ['NxType', 'nxtype', 'archetype']
@@ -60,48 +59,37 @@ class NxType(abc.ABCMeta):
 
     def __init__(cls, name, bases, namespace, **kwargs):
         # Processes nxdescriptors declared in the namespace
-        is_nxd = fun.typecheck(NxDescriptor)
-        descriptors = OrderedDict(fun.vfilter(is_nxd, namespace))
-        for name, descriptor in descriptors.items():
-            descriptor.name = name
-            descriptor.cls = cls
-        # Creates the descriptor registry by looking up bases
-        base_regs = (getattr(b, '__nxdescriptors__', {}) for b in bases)
-        regs = [descriptors] + list(base_regs)
-        cls.__nxdescriptors__ = OrderedDict()
-        # Traverses all registries in the order of bases / registration
-        for k, v in chain(*[r.items() for r in regs]):
-            # We only keep the highest-priority descriptor version
-            # This order is supposed to be consistent with the mro
-            if k in cls.__nxdescriptors__:
-                continue
-            # Check that the descriptor assignment is unmodified in cls
-            # Or if it's a TypeProperty it is systematically tacked on
-            cls_value = getattr(cls, k, None)
-            if cls_value is v or isinstance(cls_value, TypeProperty):
-                cls.__nxdescriptors__[k] = v
+        nxd.MetaDescriptor.register(cls, namespace)
+        nxd.ObjectDescriptor.register(cls, namespace)
 
-    def nxdescriptors(cls, *types):
-        """Returns a mapping of nxdescriptors filtered by types.
+    def metadescriptors(cls, *types):
+        """Returns a mapping of metadescriptors filtered by types.
 
-        if no types are supplied, then all registered nxdescriptors are
+        if no types are supplied, then all registered metadescriptors are
         returned.
         """
         if not types:
-            types = (NxDescriptor,)
-        descriptors = fun.vfilter(fun.typecheck(*types), cls.__nxdescriptors__)
+            types = (nxd.MetaDescriptor,)
+        descriptors = fun.vfilter(fun.typecheck(*types),
+                                  cls.__metadescriptors__)
         return OrderedDict(descriptors)
 
-    @property
-    def typeproperties(cls):
-        return OrderedDict((k, getattr(cls, k))
-                           for k in cls.nxdescriptors(TypeProperty))
+    def descriptors(cls, *types):
+        """Returns a mapping of instance descriptors filtered by types.
+
+        if no types are supplied, then all registered descriptors are
+        returned.
+        """
+        if not types:
+            types = (nxd.ObjectDescriptor,)
+        descriptors = fun.vfilter(fun.typecheck(*types),
+                                  cls.__objectdescriptors__)
+        return OrderedDict(descriptors)
 
     @xprops.cachedproperty
     def metacharacters(cls):
         """Tuple of type properties for the archetype's metacharacters."""
-        return tuple(getattr(cls, k) for k in
-                     cls.__archetype__.__metacharacters__)
+        return tuple(getattr(cls, k) for k in type(cls).metacharacters)
 
 
 def nxtype(basetype, *traits, name=None, **kwargs):

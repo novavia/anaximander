@@ -16,6 +16,7 @@ from collections import OrderedDict, ChainMap
 from functools import wraps
 from inspect import signature
 from itertools import count
+from typing import Any, get_type_hints
 
 from anaximander2.utilities import xprops, functions as fun
 from anaximander2.utilities.cmpmixin import ComparableMixin
@@ -34,12 +35,15 @@ __all__ = ['NxDescriptor', 'ObjectDescriptor', 'TypeDescriptor',
 class NxDescriptor(ComparableMixin):
     """A basic data descriptor with registration mechanism.
 
-    The descriptor accepts a one-time set name and class reference.
+    The descriptor accepts a name and class reference.
     The intended usage pattern is that the descriptor is declared
     in a class' namespace, and a metaclass collects the descriptors
     and assign them their name and the class in which they were
     declared. However it is possible to set those attributes at
     instantiation.
+    NxDescriptors also takes an optional type attribute. It can be
+    assigned directly through __init__, or it will be looked up in
+    the declaring class' annotations in the bind method.
     The class reference is primarily useful for tracing and debugging
     purposes.
     NxDescriptor also features a registration mechanism, as practice
@@ -51,17 +55,21 @@ class NxDescriptor(ComparableMixin):
     descriptors and sort them by order of appearance.
     This is not necessary in Python 3.6+ when using metaclasses, because class
     declarations are now collected ordered. However there are cases where no
-    metaclass may be used and the creation id can be used instead.
+    metaclass may be involved and the creation id can be used instead.
     Accordingly, NxDescriptors implement rich comparisons based on the
     descritptor id.
     """
     __cmpattrs__ = ('descriptor_id',)
+    # Descriptor registry name for types that declare nxdescriptors
+    __registry__ = '__nxdescriptors__'
 
-    def __init__(self, name=None, cls=None):
+    def __init__(self, name=None, cls=None, type=None):
         if name is not None:
             self._name = name
         if cls is not None:
             self._cls = cls
+        if type is not None:
+            self._type = type
         try:
             self.descriptor_id = next(self.__counter__)
         except (TypeError, AttributeError):
@@ -76,24 +84,20 @@ class NxDescriptor(ComparableMixin):
     def cls(self):
         return None
 
+    @xprops.cachedproperty
+    def type(self):
+        return Any
+
     def bind(self, name, cls):
         """Binds a descriptor to its declaring class and assigns its name."""
         self._name = name
         self._cls = cls
-
-    def register(self, cls, registry_name='__nxdescriptors__'):
-        """Registers self with the supplied class.
-
-        Params:
-            cls: A class in which to register the descriptor.
-            registry_name: The attribute name of the class registry.
-        """
         try:
-            registry = getattr(cls, registry_name)
-            registry[self.name] = self
-        except (AttributeError, TypeError):
-            msg = "NxDescriptors registration requires a valid class registry."
-            raise NxMetaError(msg)
+            type_ = get_type_hints(cls)[name]
+        except KeyError:
+            pass
+        else:
+            self._type = type_
 
     def copy(self):
         copy_ = type(self)
@@ -102,21 +106,20 @@ class NxDescriptor(ComparableMixin):
         return copy_
 
     @classmethod
-    def collect(cls, bases, namespace, registry_name='__nxdescriptors__'):
-        """Collects nxdescriptors from supplied namespace and bases.
+    def register(cls, klass, namespace):
+        """Binds, collects and registers nxdescriptors on newly created class.
 
         Params:
             cls: the NxDescriptor type whose instances are to be collected
-            bases: a tuple of base classes
-            namespace: a mapping of attributes
-            registry_name: the expected attribute name of descriptor
-            registries in the base classes
+            klass: the klass on which descriptors are collected
+            namespace: the namespace declared by klass
         Returns:
-            an OrderedDict of attribute name to NxDescriptor instances
+            an OrderedDict of attribute name to NxDescriptor instances, which
+            is also assigned to klass with the name cls.__registry__.
 
         The algorithm seeks the registry name on the supplied bases, or
         otherwise ignores them. It assumes that the registries are
-        ordered dictionary that enumerate items in an ordered fashion.
+        ordered dictionaries that enumerate items in an ordered fashion.
         Generally, the namespace's descriptors are appended to the
         base class' descriptors. If there are mixin classes, i.e. any base
         beyond the first one, their descriptors are appended to the
@@ -128,7 +131,7 @@ class NxDescriptor(ComparableMixin):
         However it is possible for the namespace to redefine the order of
         the descriptors by explicitly restating them. In that case, the
         following rules are enforced:
-            * if the namespace redefines descriptors that are in a base
+            * if the namespace redefines descriptors that are in the base
             class, it must redefine all of them -this is to ensure a
             consistent order can be determined;
             * while it is possible to interlace the order of descriptors
@@ -168,10 +171,13 @@ class NxDescriptor(ComparableMixin):
         # Orders them by descriptor id
         ns_descriptors = OrderedDict(sorted(ns_descriptors,
                                             key=lambda i: i[1].descriptor_id))
+        for name, desc in ns_descriptors.items():
+            desc.bind(name, klass)
+        bases = klass.__bases__
         if not bases:
             return ns_descriptors
         # Fetches registries from the base
-        base_descriptors = OrderedDict(getattr(bases[0], registry_name, {}))
+        base_descriptors = OrderedDict(getattr(bases[0], cls.__registry__, {}))
         # Either namespace redefines them, or it appends them
         ns_descriptors_set = set(ns_descriptors)
         base_descriptors_set = set(base_descriptors)
@@ -192,7 +198,7 @@ class NxDescriptor(ComparableMixin):
             for k, v in ns_descriptors.items():
                 descriptors[k] = v
         # Now we add the mixin descriptors
-        mixin_descriptors = [OrderedDict(getattr(b, registry_name, {}))
+        mixin_descriptors = [OrderedDict(getattr(b, cls.__registry__, {}))
                              for b in bases[1:]]
         # First we determine the key order, checking for duplication and
         # consistency
@@ -204,7 +210,9 @@ class NxDescriptor(ComparableMixin):
             raise NxMetaError(msg)
         # Then we extract the values by building a chainmap
         dchain = ChainMap(descriptors, *mixin_descriptors)
-        return OrderedDict((k, dchain[k]) for k in keys)
+        registry = OrderedDict((k, dchain[k]) for k in keys)
+        setattr(klass, cls.__registry__, registry)
+        return registry
 
     @abc.abstractmethod
     def __get__(self, obj, objtype=None):
@@ -225,6 +233,7 @@ class NxDescriptor(ComparableMixin):
 class ObjectDescriptor(NxDescriptor):
     """Instance descriptor base class for regular types."""
     __counter__ = count()
+    __registry__ = '__objectdescriptors__'
 
 
 # Ensures ObjectDescriptors are comparable
@@ -234,6 +243,7 @@ ObjectDescriptor.__cmptypes__ = (ObjectDescriptor,)
 class TypeDescriptor(NxDescriptor):
     """Type descriptor base class for metaclasses."""
     __counter__ = count()
+    __registry__ = '__typedescriptors__'
 
     def set_typical_property(self, cls):
         """Implements an ObjectTypeProperty on the supplied class.
@@ -251,6 +261,7 @@ TypeDescriptor.__cmptypes__ = (TypeDescriptor,)
 class MetaDescriptor(NxDescriptor):
     """Descriptor declared in an archetype but aimed at the metaclass."""
     __counter__ = count()
+    __registry__ = '__metadescriptors__'
     __typedescriptor__ = None  # The target TypeDescriptor subclass
 
     def transfer(self, mcl):
@@ -260,6 +271,7 @@ class MetaDescriptor(NxDescriptor):
         del attrs['descriptor_id']
         typedescriptor.__dict__ = attrs
         setattr(mcl, self.name, typedescriptor)
+        return typedescriptor
 
 # Ensures MetaDescriptors are comparable
 MetaDescriptor.__cmptypes__ = (MetaDescriptor,)
@@ -291,14 +303,46 @@ class ProtectedAttribute(NxDescriptor):
     It is also possible to define a class-level method by overwriting
     __validate__. The method and the instance-defined function are
     cumulative.
+    Additionally, if type has beed defined either in the descriptor's
+    constructor or through an annotation, type checking is enforced by
+    automatic decoration of the validate function.
+    This calls for the additional argument nullable, which determines
+    whether None is an acceptable value (default is True).
+    If nullable is True and a None value is supplied, the validate
+    function is bypassed, so there is no need to specifically handle that
+    case.
     """
 
-    def __init__(self, default=None, validate=None, name=None, cls=None,
-                 cache=None):
-        super().__init__(name, cls)
+    def __init__(self, default=None, nullable=True, validate=None, name=None,
+                 cls=None, type=None, cache=None):
+        """ProtectedAttribute constructor.
+
+        Attrs:
+            default: a default value returned by the descriptor when no value
+                has been set.
+            nullable: whether it is acceptable to set a None value on the
+                descriptor.
+            validate: a callable that validates supplied values. Should
+                either take a single value argument, or (obj, attr, value)
+                where obj is the object whose attribute is being set,
+                attr is the descriptor instance (i.e. self in the context
+                of this documentation string), and value the supplied value.
+            name: the descriptor's name.
+            cls: the class that declares the descriptor.
+            type: the expected type for the descriptor.
+            cache: an optional string for naming the attribute that holds
+                the values that are set. It defaults to '_' + name and should
+                rarely be manipulated.
+        """
+        super().__init__(name, cls, type)
         self.default = default
+        self.nullable = nullable
         self.validate = validate
         self._cache = cache
+
+    @property
+    def cache(self):
+        return self._cache
 
     def bind(self, name, cls):
         super().bind(name, cls)
@@ -326,7 +370,7 @@ class ProtectedAttribute(NxDescriptor):
             if etype is AssertionError:
                 etype = ValueError
             raise etype(msg)
-        setattr(obj, self._cache, self.default)
+        setattr(obj, self._cache, value)
 
     def __delete__(self, obj):
         try:
@@ -335,8 +379,13 @@ class ProtectedAttribute(NxDescriptor):
             pass
 
     def __validate__(self, obj, value):
-        """A validation method to be overwritten in subclasses."""
-        return True
+        """A base validation method, can be specialized in subclasses."""
+        if value is None and self.nullable:
+            return True
+        elif not isinstance(value, self._type):
+            raise TypeError()
+        else:
+            return True
 
     @property
     def validate(self):
@@ -356,6 +405,8 @@ class ProtectedAttribute(NxDescriptor):
             @wraps(func)
             def validator(obj, attr, value):
                 class_valid = self.__validate__(obj, value)
+                if value is None:
+                    return class_valid
                 if len(sig.parameters) is 1:
                     return func(value) and class_valid
                 else:
@@ -386,11 +437,13 @@ class ProtectedAttribute(NxDescriptor):
 class SetOnceAttribute(ProtectedAttribute):
     """A ProtectedAttribute that must be set once and only once.
 
-    Defaults are not permitted on SetOnceAttributes.
+    Defaults are not permitted on SetOnceAttributes, and nullable is set
+    to False by default
     """
 
-    def __init__(self, validate=None, name=None, cls=None, cache=None):
-        super().__init__(None, validate, name, cls, cache)
+    def __init__(self, nullable=False, validate=None, name=None, cls=None,
+                 type=None, cache=None):
+        super().__init__(None, nullable, validate, name, cls, type, cache)
 
     def __set__(self, obj, value):
         if self._cache not in obj.__dict__:
@@ -401,6 +454,14 @@ class SetOnceAttribute(ProtectedAttribute):
 # =============================================================================
 # Concrete types
 # =============================================================================
+
+
+class ObjectAttribute(ProtectedAttribute, ObjectDescriptor):
+    pass
+
+
+class TypeAttribute(ProtectedAttribute, TypeDescriptor):
+    pass
 
 
 class ObjectCharacter(SetOnceAttribute, ObjectDescriptor):

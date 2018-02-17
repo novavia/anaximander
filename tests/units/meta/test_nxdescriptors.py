@@ -28,10 +28,7 @@ class Type(type):
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
         cls.class_id = next(cls._id_counter)
-        for k, v in namespace.items():
-            if isinstance(v, nxd.NxDescriptor):
-                v.bind(k, cls)
-        cls.__nxdescriptors__ = nxd.ObjectDescriptor.collect(bases, namespace)
+        nxd.ObjectDescriptor.register(cls, namespace)
 
     @property
     def classname(cls):
@@ -39,12 +36,12 @@ class Type(type):
 
 
 class C(metaclass=Type):
-    x = nxd.ObjectCharacter()
-    classname = nxd.ObjectTypeProperty()
+    x: int = nxd.ObjectCharacter()
+    classname: str = nxd.ObjectTypeProperty()
 
 
 class D(metaclass=Type):
-    class_id = nxd.ObjectTypeProperty()
+    class_id: int = nxd.ObjectTypeProperty()
 
 
 def test_instantiation():
@@ -52,7 +49,7 @@ def test_instantiation():
     with pytest.raises(AttributeError):
         C.x.name = 'x'
     assert repr(C.x) == '<ObjectCharacter name:x>'
-    assert list(C.__nxdescriptors__) == ['x', 'classname']
+    assert list(C.__objectdescriptors__) == ['x', 'classname']
 
 
 def test_objecttypeproperty():
@@ -77,7 +74,8 @@ def test_collect():
     class Z(X, Y):
         e = nxd.ObjectCharacter()
 
-    assert list(Z.__nxdescriptors__) == ['a', 'b', 'classname', 'e', 'c', 'd']
+    assert list(Z.__objectdescriptors__) == ['a', 'b', 'classname',
+                                             'e', 'c', 'd']
     assert Z.classname == 'Z'
 
     class Z(X, Y):
@@ -87,12 +85,13 @@ def test_collect():
         b = nxd.ObjectCharacter()
         classname = nxd.ObjectTypeProperty()
 
-    assert list(Z.__nxdescriptors__) == ['e', 'a', 'c', 'b', 'classname', 'd']
+    assert list(Z.__objectdescriptors__) == ['e', 'a', 'c', 'b',
+                                             'classname', 'd']
     assert Z.a is not X.a
     assert Z.classname == 'Z'
     assert X.classname == 'X'
-    assert Z.__nxdescriptors__['classname'] is not \
-        X.__nxdescriptors__['classname']
+    assert Z.__objectdescriptors__['classname'] is not \
+        X.__objectdescriptors__['classname']
 
     with pytest.raises(nxd.NxMetaError):
         class Z(X, Y):
@@ -103,6 +102,34 @@ def test_collect():
     with pytest.raises(nxd.NxMetaError):
         class Z(X, Y):
             b = nxd.ObjectCharacter()
+
+
+def test_protected_attributes():
+
+    class K(metaclass=Type):
+        x = nxd.ObjectAttribute(default='x', type=str)
+        y: int = nxd.ObjectCharacter(validate=lambda v: v > 0)
+        z: int = nxd.ObjectCharacter(nullable=True, type=str, cache='__z')
+
+    k = K()
+    assert k.x == 'x'
+    k.x = 'hey'
+    assert k.x == k._x == 'hey'
+    k.x = 'ho'
+    assert k.x == k._x == 'ho'
+    with pytest.raises(TypeError):
+        k.x = 1
+    k = K()
+    with pytest.raises(ValueError):
+        k.y = -1
+    with pytest.raises(TypeError):
+        k.y = None
+    k.y = 1
+    k.z = None
+    assert k.z is None
+    assert k.__z is None
+    with pytest.raises(AttributeError):
+        k.z = 0
 
 
 if __name__ == '__main__':
