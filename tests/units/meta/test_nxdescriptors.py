@@ -28,7 +28,7 @@ class Type(type):
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
         cls.class_id = next(cls._id_counter)
-        nxd.ObjectDescriptor.register(cls, namespace)
+        nxd.ObjectDescriptor.collect(cls, namespace)
 
     @property
     def classname(cls):
@@ -108,7 +108,7 @@ def test_protected_attributes():
 
     class K(metaclass=Type):
         x = nxd.ObjectAttribute(default='x', type=str)
-        y: int = nxd.ObjectCharacter(validate=lambda v: v > 0)
+        y: int = nxd.ObjectCharacter(nullable=False, validate=lambda v: v > 0)
         z: int = nxd.ObjectCharacter(nullable=True, type=str, cache='__z')
 
     k = K()

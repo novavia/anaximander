@@ -86,7 +86,7 @@ class NxDescriptor(ComparableMixin):
 
     @xprops.cachedproperty
     def type(self):
-        return Any
+        return object
 
     def bind(self, name, cls):
         """Binds a descriptor to its declaring class and assigns its name."""
@@ -99,6 +99,15 @@ class NxDescriptor(ComparableMixin):
         else:
             self._type = type_
 
+    def register(self, cls):
+        """Adds self to the pertinent registry in cls."""
+        try:
+            registry = getattr(cls, self.__registry__)
+        except AttributeError:
+            registry = OrderedDict()
+            setattr(cls, self.__registry__, registry)
+        registry[self.name] = self
+
     def copy(self):
         copy_ = type(self)
         attrs = self.__dict__.copy()
@@ -106,7 +115,7 @@ class NxDescriptor(ComparableMixin):
         return copy_
 
     @classmethod
-    def register(cls, klass, namespace):
+    def collect(cls, klass, namespace):
         """Binds, collects and registers nxdescriptors on newly created class.
 
         Params:
@@ -251,8 +260,14 @@ class TypeDescriptor(NxDescriptor):
         The intended pattern is to make a type descriptor available to
         that type's instances as read-only property.
         """
-        prop = ObjectTypeProperty(self.name)
-        cls.__dict__[self.name] = prop
+        prop = ObjectTypeProperty(self.name, cls)
+        # Resets possible cached value on cls
+        try:
+            delattr(cls, self.cache)
+        except AttributeError:
+            pass
+        setattr(cls, self.name, prop)
+        prop.register(cls)
 
 # Ensures TypeDescriptors are comparable
 TypeDescriptor.__cmptypes__ = (TypeDescriptor,)
@@ -338,7 +353,10 @@ class ProtectedAttribute(NxDescriptor):
         self.default = default
         self.nullable = nullable
         self.validate = validate
-        self._cache = cache
+        if cache is None and name is not None:
+            self._cache = '_' + self.name
+        else:
+            self._cache = cache
 
     @property
     def cache(self):
@@ -382,7 +400,7 @@ class ProtectedAttribute(NxDescriptor):
         """A base validation method, can be specialized in subclasses."""
         if value is None and self.nullable:
             return True
-        elif not isinstance(value, self._type):
+        elif not isinstance(value, self.type):
             raise TypeError()
         else:
             return True
@@ -437,11 +455,10 @@ class ProtectedAttribute(NxDescriptor):
 class SetOnceAttribute(ProtectedAttribute):
     """A ProtectedAttribute that must be set once and only once.
 
-    Defaults are not permitted on SetOnceAttributes, and nullable is set
-    to False by default
+    Defaults are not permitted on SetOnceAttributes.
     """
 
-    def __init__(self, nullable=False, validate=None, name=None, cls=None,
+    def __init__(self, nullable=True, validate=None, name=None, cls=None,
                  type=None, cache=None):
         super().__init__(None, nullable, validate, name, cls, type, cache)
 
@@ -464,11 +481,11 @@ class TypeAttribute(ProtectedAttribute, TypeDescriptor):
     pass
 
 
-class ObjectCharacter(SetOnceAttribute, ObjectDescriptor):
+class ObjectCharacter(SetOnceAttribute, ObjectAttribute):
     pass
 
 
-class TypeCharacter(SetOnceAttribute, TypeDescriptor):
+class TypeCharacter(SetOnceAttribute, TypeAttribute):
     """TypeCharacters are designed for parameters of parametric types."""
     pass
 
@@ -492,6 +509,6 @@ class ObjectTypeProperty(ObjectDescriptor):
         return getattr(type(obj), self.name)
 
 
-class MetaCharacter(MetaDescriptor):
+class MetaCharacter(SetOnceAttribute, MetaDescriptor):
     """A metadescriptor for archetypical characters."""
     __typedescriptor__ = TypeCharacter

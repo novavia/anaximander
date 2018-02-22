@@ -12,7 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import OrderedDict
+from collections import OrderedDict, ChainMap
 from inspect import getmodule
 import sys
 import types
@@ -20,7 +20,7 @@ import types
 from ..utilities import functions as fun, xprops
 from . import NxMetaError
 from . import nxdescriptors as nxd
-from .nxmetas import archmeta
+from .nxmetas import NxMeta, archmeta
 
 __all__ = ['NxType', 'nxtype', 'archetype']
 
@@ -29,7 +29,7 @@ __all__ = ['NxType', 'nxtype', 'archetype']
 # =============================================================================
 
 
-class NxType(abc.ABCMeta):
+class NxType(abc.ABCMeta, metaclass=NxMeta):
     __basename__ = 'Nx'  # The basename, usable for metaclass instances.
     __archetype__ = None  # The archetype upon which the type is built.
 
@@ -44,6 +44,7 @@ class NxType(abc.ABCMeta):
         return basename
 
     def __new__(mcl, name, bases, namespace, traits=None, **kwargs):
+        # If bases[0] is an archetype, we replace it with the basetype
         archetype = mcl.__archetype__
         if archetype is not None:
             base = bases[0]
@@ -55,12 +56,30 @@ class NxType(abc.ABCMeta):
                 msg = "Incorrect use of an ArcheType subclass."
                 raise NxMetaError(msg)
             bases = (base,)
-        return super().__new__(mcl, name, bases, namespace)
+        # Set proto-class
+        cls = super().__new__(mcl, name, bases, namespace)
+        # Set the type descriptors
+        # They are either supplied by the namespace, kwargs or inheritance
+        attrs = ChainMap(namespace, kwargs)
+        for k, v in mcl.__typedescriptors__.items():
+            if k in attrs:
+                setattr(cls, k, attrs[k])
+            else:
+                setattr(cls, v.cache, getattr(cls, v.cache, None))
+        return cls
 
     def __init__(cls, name, bases, namespace, **kwargs):
         # Processes nxdescriptors declared in the namespace
-        nxd.MetaDescriptor.register(cls, namespace)
-        nxd.ObjectDescriptor.register(cls, namespace)
+        nxd.MetaDescriptor.collect(cls, namespace)
+        nxd.ObjectDescriptor.collect(cls, namespace)
+        archetype = cls.__archetype__
+        overtype = kwargs.get('overtype', False)
+        if archetype is not None:
+            if not any(c is None for c in cls.metacharacters):
+                overtype = kwargs.get('overtype', False)
+                archetype.nxregister(cls, overtype=overtype)
+            else:
+                cls.__new__ = classmethod(_abstract_new)
 
     def metadescriptors(cls, *types):
         """Returns a mapping of metadescriptors filtered by types.
@@ -89,7 +108,25 @@ class NxType(abc.ABCMeta):
     @xprops.cachedproperty
     def metacharacters(cls):
         """Tuple of type properties for the archetype's metacharacters."""
-        return tuple(getattr(cls, k) for k in type(cls).metacharacters)
+        return tuple(getattr(cls, k) for k in type(cls).__metacharacters__)
+
+
+def _abstract_new(cls, *args, **kwargs):
+    """Implementation of __new__ for abstract archetypes and derivatives.
+
+    This function is the __new__ method for any archetype or derivative
+    whose metacharacters have any None values.
+    """
+    metacharacters = OrderedDict((k, getattr(cls, k))
+                                 for k in type(cls).__metacharacters__)
+    try:
+        for k in list(metacharacters):
+            if metacharacters[k] is None:
+                metacharacters[k] = kwargs.pop(k)
+    except KeyError:
+        raise TypeError("Cannot instantiate a type without a full " +
+                        "set of metacharacters.")
+    return cls[tuple(metacharacters)](*args[1:], **kwargs)
 
 
 def nxtype(basetype, *traits, name=None, **kwargs):
