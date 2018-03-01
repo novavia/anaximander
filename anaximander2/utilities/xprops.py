@@ -23,7 +23,7 @@ from .functions import typecheck
 # Global lock on reading properties
 # Programmers are responsible for thread safety in setting properties
 # However the module locks the cache for reading properties
-LOCK = threading.Lock()
+LOCK = threading.RLock()
 
 # =============================================================================
 # Properties

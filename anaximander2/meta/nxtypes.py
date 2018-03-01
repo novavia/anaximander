@@ -12,7 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import OrderedDict, ChainMap
+from collections import ChainMap
 from inspect import getmodule
 import sys
 import types
@@ -31,7 +31,6 @@ __all__ = ['NxType', 'nxtype', 'archetype']
 
 class NxType(abc.ABCMeta, metaclass=NxMeta):
     __basename__ = 'Nx'  # The basename, usable for metaclass instances.
-    __archetype__ = None  # The archetype upon which the type is built.
 
     @classmethod
     def __baptize__(mcl, basetype, traits=None, **kwargs):
@@ -55,31 +54,46 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
             elif not issubclass(base, basetype):
                 msg = "Incorrect use of an ArcheType subclass."
                 raise NxMetaError(msg)
-            bases = (base,)
+            bases = (base,) + bases[1:]
         # Set proto-class
         cls = super().__new__(mcl, name, bases, namespace)
-        # Set the type descriptors
+        # Set the type attributes
         # They are either supplied by the namespace, kwargs or inheritance
         attrs = ChainMap(namespace, kwargs)
-        for k, v in mcl.__typedescriptors__.items():
+        for k, v in mcl.typeattributes.items():
             if k in attrs:
                 setattr(cls, k, attrs[k])
             else:
                 setattr(cls, v.cache, getattr(cls, v.cache, None))
+        # Run new type methods in order
+        for k in type(cls).nxm_metadescriptors(nxd.NewTypeMethod):
+            method = getattr(type(cls), k, None)
+            if method:
+                cls = method(cls)
         return cls
 
     def __init__(cls, name, bases, namespace, **kwargs):
         # Processes nxdescriptors declared in the namespace
         nxd.MetaDescriptor.collect(cls, namespace)
-        nxd.ObjectDescriptor.collect(cls, namespace)
-        archetype = cls.__archetype__
+        nxd.NxDescriptor.collect(cls, namespace)
+        archetype = cls.archetype
         overtype = kwargs.get('overtype', False)
         if archetype is not None:
-            if not any(c is None for c in cls.metacharacters):
-                overtype = kwargs.get('overtype', False)
-                archetype.nxregister(cls, overtype=overtype)
-            else:
-                cls.__new__ = classmethod(_abstract_new)
+            overtype = kwargs.get('overtype', False)
+            archetype.nxregister(cls, overtype=overtype)
+        # Run type init methods in order
+        for k in type(cls).nxm_metadescriptors(nxd.TypeInitMethod):
+            method = getattr(type(cls), k, None)
+            if method:
+                method(cls)
+
+    def nxdescriptors(cls, *types):
+        """Returns a mapping of descriptors filtered by types.
+
+        if no types are supplied, then all registered descriptors are
+        returned.
+        """
+        return nxd.NxDescriptor.retrieve(cls, *types)
 
     def metadescriptors(cls, *types):
         """Returns a mapping of metadescriptors filtered by types.
@@ -87,46 +101,54 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
         if no types are supplied, then all registered metadescriptors are
         returned.
         """
-        if not types:
-            types = (nxd.MetaDescriptor,)
-        descriptors = fun.vfilter(fun.typecheck(*types),
-                                  cls.__metadescriptors__)
-        return OrderedDict(descriptors)
+        return nxd.MetaDescriptor.retrieve(cls, *types)
 
-    def descriptors(cls, *types):
-        """Returns a mapping of instance descriptors filtered by types.
+    @property
+    def archetype(cls):
+        return type(cls).__archetype__
 
-        if no types are supplied, then all registered descriptors are
-        returned.
-        """
-        if not types:
-            types = (nxd.ObjectDescriptor,)
-        descriptors = fun.vfilter(fun.typecheck(*types),
-                                  cls.__objectdescriptors__)
-        return OrderedDict(descriptors)
+    @property
+    def typeattributes(cls):
+        """Tuple of type properties for the archetype's type attributes."""
+        return tuple(getattr(cls, k) for k in type(cls).typeattributes)
 
     @xprops.cachedproperty
-    def metacharacters(cls):
-        """Tuple of type properties for the archetype's metacharacters."""
-        return tuple(getattr(cls, k) for k in type(cls).__metacharacters__)
+    def typeparameters(cls):
+        """Tuple of type properties for the archetype's type parameters."""
+        return tuple(getattr(cls, k) for k in type(cls).typeparameters)
 
+    @xprops.cachedproperty
+    def registration_key(cls):
+        """The key with which cls is registered in its metaclass.
 
-def _abstract_new(cls, *args, **kwargs):
-    """Implementation of __new__ for abstract archetypes and derivatives.
+        This can return None (no registration), or a tuple of type parameter
+        values that are declared as keys.
+        """
+        if cls.is_pending_archetype:
+            return None
+        keys = tuple(getattr(cls, k) for k in type(cls).typekeys)
+        if any([k is None for k in keys]):
+            return None
+        elif len(keys) is 0:
+            return None
+        else:
+            return keys
 
-    This function is the __new__ method for any archetype or derivative
-    whose metacharacters have any None values.
-    """
-    metacharacters = OrderedDict((k, getattr(cls, k))
-                                 for k in type(cls).__metacharacters__)
-    try:
-        for k in list(metacharacters):
-            if metacharacters[k] is None:
-                metacharacters[k] = kwargs.pop(k)
-    except KeyError:
-        raise TypeError("Cannot instantiate a type without a full " +
-                        "set of metacharacters.")
-    return cls[tuple(metacharacters)](*args[1:], **kwargs)
+    @xprops.cachedproperty
+    def abstract(cls):
+        """True if any type parameter is None."""
+        unfilled = any([c is None for c in cls.typeparameters])
+        return cls.is_pending_archetype or unfilled
+
+    @xprops.cachedproperty
+    def is_pending_archetype(cls):
+        """True if parameters have been replaced with metadescriptors."""
+        return any([isinstance(c, nxd.MetaDescriptor)
+                    for c in cls.typeparameters])
+
+    def subtype(cls, *traits, name=None, **kwargs):
+        """Returns a subtype of cls with possible modifiers."""
+        return nxtype(cls, *traits, name=name, **kwargs)
 
 
 def nxtype(basetype, *traits, name=None, **kwargs):
@@ -160,12 +182,16 @@ def archetype(cls):
     structure. In terms of implementation, the archetype is simply a base
     class for derived types, but what makes the clade a particular
     relationship is the specific way in which those derived types relate
-    to the archetype. Archetypes define metacharacters, which are basically
-    class variables for which we would like to set different values for
-    different types. An example could be a family of nested list types each
-    with a set depth. The archetype is an abstract class defining recursive
-    methods for dealing with nested lists, and the concrete types are
-    defined by their depth, which is the clade's metacharacter.
+    to the archetype. Archetypes declare meta descriptors,  particularly
+    type attributes / type parameters which are basically class variables that
+    can be set programatically. An example could be a family of nested list
+    types each with a set depth. The archetype is an abstract class defining
+    recursive methods for dealing with nested lists, and the concrete types are
+    defined by their depth, which is the clade's type parameter.
+    The difference between type attributes and type parameters is that the
+    former are essentially optional, whereas type parameters must have a
+    non-None value for a type to be considered concrete. Furthermore, type
+    parameters can only be set once at instantiation.
     * Clade members can also enrich the archetype with traits, as generally
     enabled by NxType.
     * When an archetype is declared, a metaclass is generated programatically

@@ -25,7 +25,7 @@ from anaximander2.meta import nxdescriptors as nxd
 # =============================================================================
 
 
-x = nxd.MetaCharacter(name='x', type=int)
+x = nxd.TypeParameter(name='x', key=True, type=int)
 
 
 class MyType(abc.ABCMeta, metaclass=nxm.NxMeta):
@@ -44,7 +44,7 @@ class MyType(abc.ABCMeta, metaclass=nxm.NxMeta):
                 raise NxMetaError(msg)
             bases = (base,)
         cls = super().__new__(mcl, name, bases, namespace)
-        for k, v in mcl.__typedescriptors__.items():
+        for k, v in mcl.typeattributes.items():
             if k in kwargs:
                 setattr(cls, k, kwargs[k])
             else:
@@ -56,14 +56,29 @@ class MyType(abc.ABCMeta, metaclass=nxm.NxMeta):
         archetype = cls.__archetype__
         overtype = kwargs.get('overtype', False)
         if archetype is not None:
-            if not any(c is None for c in cls.metacharacters):
+            if not any(c is None for c in cls.typeparameters):
                 overtype = kwargs.get('overtype', False)
                 archetype.nxregister(cls, overtype=overtype)
 
     @xprops.cachedproperty
-    def metacharacters(cls):
-        """Tuple of type properties for the archetype's metacharacters."""
-        return tuple(getattr(cls, k) for k in type(cls).__metacharacters__)
+    def typeparameters(cls):
+        """Tuple of type properties for the archetype's parameters."""
+        return tuple(getattr(cls, k) for k in type(cls).typeparameters)
+
+    @xprops.cachedproperty
+    def registration_key(cls):
+        """The key with which cls is registered in its metaclass.
+
+        This can return None (no registration), or a tuple of type parameter
+        values that are declared as keys.
+        """
+        keys = tuple(getattr(cls, k) for k in type(cls).typekeys)
+        if any([k is None for k in keys]):
+            return None
+        elif len(keys) is 0:
+            return None
+        else:
+            return keys
 
 
 class MyObject(metaclass=MyType):
@@ -78,8 +93,8 @@ def test_nxmeta():
     assert issubclass(DerivedType, MyType)
     assert DerivedType.__basename__ == 'Object'
     assert DerivedType.__name__ == 'ObjectType'
-    assert DerivedType.__metacharacters__ == OrderedDict([('x', x)])
-    assert isinstance(DerivedType.x, nxd.TypeCharacter)
+    assert DerivedType.typeparameters == OrderedDict([('x', x)])
+    assert isinstance(DerivedType.x, nxd.NxAttribute)
 
 
 def test_archetype():
@@ -95,7 +110,7 @@ def test_archetype():
     assert issubclass(Object, MyObject)
     assert isinstance(Object, MyType)
     assert isinstance(Object, MyArchetype)
-    assert isinstance(Object.__basetype__.x, nxd.ObjectTypeProperty)
+    assert isinstance(Object.__basetype__.x, nxd.TypeAttributeProperty)
     assert Object.x is None
     with pytest.raises(AttributeError):
         Object.x = 0

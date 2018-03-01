@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Test module for xprops.
+Test module for nxdescriptors.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
@@ -28,7 +28,7 @@ class Type(type):
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
         cls.class_id = next(cls._id_counter)
-        nxd.ObjectDescriptor.collect(cls, namespace)
+        nxd.NxDescriptor.collect(cls, namespace)
 
     @property
     def classname(cls):
@@ -36,20 +36,20 @@ class Type(type):
 
 
 class C(metaclass=Type):
-    x: int = nxd.ObjectCharacter()
-    classname: str = nxd.ObjectTypeProperty()
+    x: int = nxd.NxAttribute()
+    classname: str = nxd.TypeAttributeProperty()
 
 
 class D(metaclass=Type):
-    class_id: int = nxd.ObjectTypeProperty()
+    class_id: int = nxd.TypeAttributeProperty()
 
 
 def test_instantiation():
     assert C.x.name is 'x'
     with pytest.raises(AttributeError):
         C.x.name = 'x'
-    assert repr(C.x) == '<ObjectCharacter name:x>'
-    assert list(C.__objectdescriptors__) == ['x', 'classname']
+    assert repr(C.x) == '<NxAttribute name:x>'
+    assert list(C.__nxdescriptors__) == ['x', 'classname']
 
 
 def test_objecttypeproperty():
@@ -59,57 +59,62 @@ def test_objecttypeproperty():
 
 
 class X(metaclass=Type):
-    a = nxd.ObjectCharacter()
-    b = nxd.ObjectCharacter()
-    classname = nxd.ObjectTypeProperty()
+    a = nxd.NxAttribute()
+    b = nxd.NxAttribute()
+    classname = nxd.TypeAttributeProperty()
 
 
 class Y(metaclass=Type):
-    c = nxd.ObjectCharacter()
-    d = nxd.ObjectCharacter()
+    c = nxd.NxAttribute()
+    d = nxd.NxAttribute()
 
 
 def test_collect():
     """Tests the proper collection of descriptors in sequence."""
     class Z(X, Y):
-        e = nxd.ObjectCharacter()
+        e = nxd.NxAttribute()
 
-    assert list(Z.__objectdescriptors__) == ['a', 'b', 'classname',
-                                             'e', 'c', 'd']
+    assert list(Z.__nxdescriptors__) == ['a', 'b', 'classname', 'e', 'c', 'd']
     assert Z.classname == 'Z'
 
     class Z(X, Y):
-        e = nxd.ObjectCharacter()
-        a = nxd.ObjectCharacter()
-        c = nxd.ObjectCharacter()
-        b = nxd.ObjectCharacter()
-        classname = nxd.ObjectTypeProperty()
+        e = nxd.NxAttribute()
+        a = nxd.NxAttribute()
+        c = nxd.NxAttribute()
+        b = nxd.NxAttribute()
+        classname = nxd.TypeAttributeProperty()
 
-    assert list(Z.__objectdescriptors__) == ['e', 'a', 'c', 'b',
-                                             'classname', 'd']
+    assert list(Z.__nxdescriptors__) == ['e', 'a', 'c', 'b', 'classname', 'd']
     assert Z.a is not X.a
     assert Z.classname == 'Z'
     assert X.classname == 'X'
-    assert Z.__objectdescriptors__['classname'] is not \
-        X.__objectdescriptors__['classname']
+    assert Z.__nxdescriptors__['classname'] is not \
+        X.__nxdescriptors__['classname']
 
     with pytest.raises(nxd.NxMetaError):
         class Z(X, Y):
-            z = nxd.ObjectCharacter()
-            b = nxd.ObjectCharacter()
-            a = nxd.ObjectCharacter()
+            z = nxd.NxAttribute()
+            b = nxd.NxAttribute()
+            a = nxd.NxAttribute()
 
     with pytest.raises(nxd.NxMetaError):
         class Z(X, Y):
-            b = nxd.ObjectCharacter()
+            b = nxd.NxAttribute()
 
 
-def test_protected_attributes():
+def test_nxattributes():
 
     class K(metaclass=Type):
-        x = nxd.ObjectAttribute(default='x', type=str)
-        y: int = nxd.ObjectCharacter(nullable=False, validate=lambda v: v > 0)
-        z: int = nxd.ObjectCharacter(nullable=True, type=str, cache='__z')
+        x = nxd.NxAttribute(default='x', type=str)
+        y: int = nxd.NxAttribute(nullable=False, validate=lambda v: v > 0)
+        y2: int = nxd.NxAttribute(nullable=False)
+        z: int = nxd.NxAttribute(nullable=True, set_once=True,
+                                 type=str, cache='__z')
+        c = nxd.NxAttribute(default=nxd.call(list))
+    
+        @y2.validator
+        def validate_y2(self, attr, value):
+            return value > 0
 
     k = K()
     assert k.x == 'x'
@@ -125,11 +130,17 @@ def test_protected_attributes():
     with pytest.raises(TypeError):
         k.y = None
     k.y = 1
+    with pytest.raises(ValueError):
+        k.y2 = -1
+    with pytest.raises(TypeError):
+        k.y2 = None
+    k.y2 = 1
     k.z = None
     assert k.z is None
     assert k.__z is None
     with pytest.raises(AttributeError):
         k.z = 0
+    assert k.c == []
 
 
 if __name__ == '__main__':
