@@ -77,6 +77,8 @@ class MyType(abc.ABCMeta, metaclass=nxm.NxMeta):
             return None
         elif len(keys) is 0:
             return None
+        elif len(keys) == 1:
+            return keys[0]
         else:
             return keys
 

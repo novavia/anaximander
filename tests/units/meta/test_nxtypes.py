@@ -109,29 +109,104 @@ def test_archetypes():
     assert Derived[0].name == 'Derived'
 
 
+@nxt.archetype
+class MetaMethodObject(BaseObject):
+    x: int = nxd.TypeParameter(key=True)
+
+    @nxd.newtypemethod
+    def modulate_x(cls):
+        if cls.x is None or cls.x % 3 == cls.x:
+            return cls
+        x = cls.x % 3
+        return cls.archetype[x]
+
+    @nxd.typeinitmethod
+    def square_x(cls):
+        if cls.x is None:
+            pass
+        cls.y = cls.x ** 2
+
+
 def test_metamethods():
-
-    @nxt.archetype
-    class MetaMethodObject(BaseObject):
-        x: int = nxd.TypeParameter(key=True)
-
-        @nxd.newtypemethod
-        def modulate_x(cls):
-            if cls.x is None or cls.x % 3 == cls.x:
-                return cls
-            x = cls.x % 3
-            return cls.archetype[x]
-
-        @nxd.typeinitmethod
-        def square_x(cls):
-            if cls.x is None:
-                pass
-            cls.y = cls.x ** 2
-
+    assert 'modulate_x' not in dir(MetaMethodObject)
     C = MetaMethodObject[2]
     assert C.y == 4
+    assert 'modulate_x' not in dir(C)
     D = MetaMethodObject[5]
     assert D is C
+
+
+@nxt.archetype
+class A(BaseObject):
+    x = nxd.TypeParameter(key=True)
+    y = nxd.TypeParameter(key=True)
+    z = nxd.TypeAttribute()
+
+
+class B(A):
+    x = 0
+
+
+class C(B):
+    y = 1
+
+
+class D(C, overtype=True):
+    z = 2
+
+
+class E(A):
+    e = nxd.TypeAttribute()
+
+
+class F(E):
+    e = 3
+
+
+@nxt.archetype
+class G(F):
+    x = 0
+
+
+class H(G):
+    y = 1
+
+
+class I(H, y=2):
+    pass
+
+
+@nxt.archetype
+class J(I):
+    y = 3
+
+
+class K(J):
+    y = 4
+
+
+def test_complex_inheritance():
+    assert B.abstract
+    assert not C.abstract
+    assert C.z is None
+    assert not D.abstract
+    assert A[0, 1] is D
+    assert E.is_pending_archetype
+    assert E.abstract
+    assert not F.is_pending_archetype
+    assert F.abstract
+    assert G.is_archetype
+    assert G.abstract
+    assert not G.is_pending_archetype
+    assert G[1] is H
+    assert G[2] is I
+    assert not type(J).typekeys
+    assert J.y == 3
+    assert G.registry[3] is J
+    assert K.y == 4
+    with pytest.raises(KeyError):
+        G.registry[4]
+    assert K.registration_key is None
 
 
 if __name__ == '__main__':

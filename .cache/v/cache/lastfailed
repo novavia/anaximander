@@ -1,1 +1,3 @@
-{}
+{
+  "tests/units/meta/test_nxtypes.py::test_complex_inheritance": true
+}

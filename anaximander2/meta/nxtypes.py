@@ -20,7 +20,7 @@ import types
 from ..utilities import functions as fun, xprops
 from . import NxMetaError
 from . import nxdescriptors as nxd
-from .nxmetas import NxMeta, archmeta
+from .nxmetas import NxMeta, archmeta, ArcheType
 
 __all__ = ['NxType', 'nxtype', 'archetype']
 
@@ -43,6 +43,11 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
         return basename
 
     def __new__(mcl, name, bases, namespace, traits=None, **kwargs):
+        # Checks that at most the first base is an NxType
+        # Multiple inheritance is supported for mixin classes only
+        if any(isinstance(b, NxType) for b in bases[1:]):
+            msg = "NxType does not support multiple inheritance."
+            raise NxMetaError(msg)
         # If bases[0] is an archetype, we replace it with the basetype
         archetype = mcl.__archetype__
         if archetype is not None:
@@ -73,7 +78,7 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
         return cls
 
     def __init__(cls, name, bases, namespace, **kwargs):
-        # Processes nxdescriptors declared in the namespace
+        # Processes metadescriptors and nxdescriptors declared in the namespace
         nxd.MetaDescriptor.collect(cls, namespace)
         nxd.NxDescriptor.collect(cls, namespace)
         archetype = cls.archetype
@@ -108,6 +113,10 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
         return type(cls).__archetype__
 
     @property
+    def is_archetype(cls):
+        return isinstance(cls, ArcheType)
+
+    @property
     def typeattributes(cls):
         """Tuple of type properties for the archetype's type attributes."""
         return tuple(getattr(cls, k) for k in type(cls).typeattributes)
@@ -121,8 +130,8 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
     def registration_key(cls):
         """The key with which cls is registered in its metaclass.
 
-        This can return None (no registration), or a tuple of type parameter
-        values that are declared as keys.
+        This can return None (no registration), a singular value, or a tuple
+        of type parameter values that are declared as keys.
         """
         if cls.is_pending_archetype:
             return None
@@ -131,6 +140,8 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
             return None
         elif len(keys) is 0:
             return None
+        elif len(keys) == 1:
+            return keys[0]
         else:
             return keys
 
@@ -142,9 +153,9 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
 
     @xprops.cachedproperty
     def is_pending_archetype(cls):
-        """True if parameters have been replaced with metadescriptors."""
-        return any([isinstance(c, nxd.MetaDescriptor)
-                    for c in cls.typeparameters])
+        """True if there are unprocessed metadescriptors in namespace."""
+        return any([isinstance(getattr(cls, k, None), nxd.MetaDescriptor)
+                    for k in dir(cls)])
 
     def subtype(cls, *traits, name=None, **kwargs):
         """Returns a subtype of cls with possible modifiers."""

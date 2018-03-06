@@ -19,19 +19,19 @@ from itertools import count
 from typing import get_type_hints
 
 from anaximander2.utilities import xprops, functions as fun
-from anaximander2.utilities.cmpmixin import ComparableMixin
 
 from . import NxMetaError
 
 __all__ = ['NxDescriptor', 'MetaDescriptor', 'NxAttribute',
-           'TypeAttribute', 'TypeParameter', 'TypeAttributeProperty']
+           'TypeAttribute', 'TypeParameter', 'TypeAttributeProperty',
+           'newtypemethod', 'typeinitmethod', 'typeproperty']
 
 # =============================================================================
 # Base classes
 # =============================================================================
 
 
-class Registrable(ComparableMixin):
+class Registrable:
     """A class attribute that implements a registration mechanisms.
 
     Metaclasses can collect and name registrables, which provide a base class
@@ -60,8 +60,6 @@ class Registrable(ComparableMixin):
     Accordingly, Registrable implements rich comparisons based on the
     descritptor id.
     """
-    # Comparison attribute (used in conjunction wih type)
-    __cmpattrs__ = ('registration_id',)
     # Placeholder registry name for types that declare concrete registrables
     # In concrete subtypes, __counter__ needs to be a counter object
     __registry__ = None
@@ -231,6 +229,9 @@ class Registrable(ComparableMixin):
         setattr(klass, cls.__registry__, registry)
         return registry
 
+    def __repr__(self):
+        return fun.iformat('name')(self)
+
 
 class NxDescriptor(Registrable):
     """A basic data descriptor with registration mechanism."""
@@ -248,12 +249,6 @@ class NxDescriptor(Registrable):
 
     def __delete__(self, obj):
         raise AttributeError("Can't delete attribute.")
-
-    def __repr__(self):
-        return fun.iformat('name')(self)
-
-# Ensures NxDescriptors are comparable
-NxDescriptor.__cmptypes__ = (NxDescriptor,)
 
 
 class MetaDescriptor(Registrable):
@@ -291,10 +286,6 @@ class MetaDescriptor(Registrable):
         setattr(cls, self.name, descriptor)
         if isinstance(descriptor, NxDescriptor):
             descriptor.register(cls)
-
-# Ensures MetaDescriptors are comparable
-MetaDescriptor.__cmptypes__ = (MetaDescriptor,)
-
 
 # =============================================================================
 # Abstract implementations of typical patterns
@@ -621,6 +612,13 @@ class TypeAttribute(NxMetaAttribute):
             pass
         setattr(cls, self.name, prop)
         prop.register(cls)
+
+    def is_defined(self, cls):
+        """True if the attribute has been set to a non-None value in cls."""
+        definition = getattr(cls, self.name, None)
+        if isinstance(definition, MetaDescriptor):
+            return False
+        return definition is not None
 
 
 class TypeParameter(TypeAttribute):

@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 from collections import OrderedDict
 
+from ..utilities import functions as fun
 from .nxtypes import NxType
 from . import NxMetaError
 
@@ -48,4 +49,7 @@ class NxObject(metaclass=NxType):
                 klass = klass.subtype(**nonkeyparams)
             return klass(*args, **kwargs)
         else:
-            return super().__new__(cls, *args, **kwargs)
+            return super().__new__(cls)
+
+    def __repr__(self):
+        return fun.iformat()(self)

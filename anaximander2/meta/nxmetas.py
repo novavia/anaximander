@@ -138,14 +138,14 @@ def nxmeta(basetype, basename=None):
     basemeta = type(basetype)
     metadescriptors = OrderedDict(getattr(basemeta, '__metadescriptors__', {}))
     typeattributes = OrderedDict(getattr(basemeta, '__typeattributes__', {}))
-    for k in typeattributes:
-        if getattr(basetype, k, None) is not None:
-            del typeattributes[k]
     if hasattr(basetype, '__metadescriptors__'):
         for k, v in basetype.__metadescriptors__.items():
             if isinstance(v, nxd.TypeAttribute):
                 typeattributes[k] = v
             metadescriptors[k] = v
+    for k, v in typeattributes.copy().items():
+        if v.is_defined(basetype):
+            del typeattributes[k]
 
     # Assemble NxMeta arguments
     basename = fun.get(basename, basetype.__name__)
@@ -202,12 +202,19 @@ class ArcheType(metaclass=ArchMeta):
             mcl.__archetype__ = archetype
             # Adds TypeAttributeProperties to basetype for type attributes
             base_typeattributes = getattr(basetype, '__typeattributes__', {})
-            for k, v in mcl.__typeattributes__.items():
+            for k, v in mcl.__metadescriptors__.items():
                 # This checks that the typeattribute isn't a carryover
                 # from a parent archetype, in which case this step is skipped.
-                if not base_typeattributes.get(k, None) == v:
-                    v.set_instance_property(basetype)
-                setattr(archetype, v.cache, None)
+                if isinstance(v, nxd.TypeAttribute):
+                    if not base_typeattributes.get(k, None) == v:
+                        v.set_instance_property(basetype)
+                    setattr(archetype, v.cache, None)
+                # Removes processed metadescriptors from the basetype.
+                else:
+                    try:
+                        delattr(basetype, k)
+                    except AttributeError:
+                        pass
             return archetype
         else:
             cls = mcl.__metatype__(name, bases, namespace, **kwargs)
@@ -215,6 +222,17 @@ class ArcheType(metaclass=ArchMeta):
 
     def __init__(archetype, name, bases, namespace, **kwargs):
         archetype.__archetype__ = archetype
+        basetype = archetype.__basetype__
+        # If basetype was itself registered with its own archetype,
+        # the newly formed archetype takes over as the decorated class.
+        try:
+            base_archetype = basetype.archetype
+            registered = base_archetype.registry[basetype.registration_key]
+            assert registered is basetype
+        except (AttributeError, KeyError, AssertionError):
+            pass
+        else:
+            base_archetype.registry[basetype.registration_key] = archetype
 
     def nxregister(archetype, cls, overtype=False):
         """Registers a subtype.
@@ -232,12 +250,8 @@ class ArcheType(metaclass=ArchMeta):
             registration_key = cls.registration_key
             if registration_key is None:
                 return
-            if len(registration_key) == 1:
-                key = registration_key[0]
-            else:
-                key = tuple(registration_key)
-            if key not in registry or overtype is True:
-                registry[key] = cls
+            if registration_key not in registry or overtype is True:
+                registry[registration_key] = cls
 
     def __getitem__(archetype, key):
         """Enables to retrieve subtypes from the registry.
@@ -259,6 +273,11 @@ class ArcheType(metaclass=ArchMeta):
                 msg = f"Could not create derived type with parameters {key}."
                 raise NxMetaError(msg)
         return subtype
+
+    @property
+    def clade(archetype):
+        """Returns an iterable of registered subclasses."""
+        return type(archetype).registry.values()
 
 
 def archmeta(basetype, basename=None):
