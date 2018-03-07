@@ -80,6 +80,11 @@ class NxMeta(type):
             for attr in typeattributes:
                 mcl.__typeattributes__[attr.name] = attr
                 attr.assign(mcl)
+        # Validates that there is at most one type parameter if it is covariant
+        covariant = any(t.covariant for t in mcl.__typeattributes__.values())
+        if covariant and len(mcl.typeparameters) > 1:
+            msg = "A covariant typeparameter must be single."
+            raise NxMetaError(msg)
 
     def nxm_nxdescriptors(mcl, *types):
         """Returns a mapping of descriptors filtered by types.

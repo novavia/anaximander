@@ -277,15 +277,15 @@ class MetaDescriptor(Registrable):
         return fun.iformat('name')(self)
 
     @abc.abstractmethod
-    def __call__(self, cls):
+    def __call__(self, mcl):
         return None
 
-    def assign(self, cls):
-        """Generates a descriptor and assigns it to cls."""
-        descriptor = self(cls)
-        setattr(cls, self.name, descriptor)
+    def assign(self, mcl):
+        """Generates a descriptor and assigns it to mcl."""
+        descriptor = self(mcl)
+        setattr(mcl, self.name, descriptor)
         if isinstance(descriptor, NxDescriptor):
-            descriptor.register(cls)
+            descriptor.register(mcl)
 
 # =============================================================================
 # Abstract implementations of typical patterns
@@ -569,7 +569,7 @@ class NxMetaAttribute(NxAttributeInterface, MetaDescriptor):
     """A metadescriptor for nxattributes."""
     __dtype__ = NxAttribute
 
-    def __call__(self, cls):
+    def __call__(self, mcl):
         """Transfers self's declarations to a type descriptor."""
         descriptor = self.__dtype__()
         attrs = self.__dict__.copy()
@@ -620,6 +620,11 @@ class TypeAttribute(NxMetaAttribute):
             return False
         return definition is not None
 
+    # Property included to present the same interface as TypeParameter
+    @property
+    def covariant(self):
+        return False
+
 
 class TypeParameter(TypeAttribute):
     """A set_once, required type attribute.
@@ -638,13 +643,69 @@ class TypeParameter(TypeAttribute):
     metaclass. The registration key is either set by a single type parameter,
     or if multiple type parameters have the key flag set to True, the type
     registration key is a tuple of these parameter values.
+    The covariant_from argument can take a type argument. It dictates that
+    subtypes from an archetype that declares the type parameter must be
+    covariant with respect to that parameter. Note that covariance is meant
+    here in terms of concrete inheritance, rather than a mere issubclass
+    registration. As a result of passing a covariant_from argument, an
+    archetype can only accept a single type parameter.
     """
 
     def __init__(self, default=None, nullable=True, validate=None, key=False,
-                 name=None, cls=None, type=None, cache=None):
+                 covariant_from=None, name=None, cls=None, type=None,
+                 cache=None):
         super().__init__(default, nullable, validate, True,
                          name, cls, type, cache)
         self.key = key
+        if covariant_from is not None:
+            if not isinstance(covariant_from, type):
+                msg = "Covariance requires a base type argument."
+                raise TypeError(msg)
+            self._type = type(covariant_from)
+        self.covariant_from = covariant_from
+
+    @property
+    def covariant(self):
+        return self.covariant_from is not None
+
+    def rebase(self, cls):
+        """Rebases cls based on covariance setting."""
+        try:
+            assert self.covariant_from.is_archetype
+        except (AttributeError, AssertionError):
+            covariance_base = self.covariant_from
+        else:
+            covariance_base = self.covariant_from.__basetype__
+        type_ = getattr(cls, self.name)
+        # If type_ is covariant_from, no rebasing is necessary
+        if type_ is self.covariant_from:
+            return cls
+        mro = type_.mro()
+        if covariance_base not in mro:
+            msg = "Improper type parameter setting."
+            raise NxMetaError(msg)
+        base_type = mro[1]
+        base_class = cls.archetype[base_type]
+        if issubclass(cls, base_class):
+            return cls
+        # If cls doesn't inherit from base, we create a new class that does
+        kwargs = {self.name: type_}
+        new = base_class.subtype(name=cls.__name__, overtype=True, **kwargs)
+        # If additional descriptors exist in cls, they are ported to new
+        xattrs = set(cls.__dict__) - set(new.__dict__)
+        for k in xattrs:
+            setattr(new, k, getattr(cls, k))
+        return new
+
+    def assign(self, mcl):
+        super().assign(mcl)
+        if not self.covariant:
+            return
+        covariant_name = self.covariant_from.__name__.lowercase()
+        method_name = 'rebase_from_' + covariant_name
+        method = self.rebase
+        typemethod = NewTypeMethod(method, method_name, mcl)
+        typemethod.assign(mcl)
 
 
 class NewTypeMethod(MetaMethod):
