@@ -62,14 +62,22 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
             bases = (base,) + bases[1:]
         # Set proto-class
         cls = super().__new__(mcl, name, bases, namespace)
+        overtype = kwargs.get('overtype', False)
+        cls.__overtype__ = overtype
         # Set the type attributes
         # They are either supplied by the namespace, kwargs or inheritance
         attrs = ChainMap(namespace, kwargs)
         for k, v in mcl.typeattributes.items():
             if k in attrs:
                 setattr(cls, k, attrs[k])
+            # Inherited attribute test
             else:
-                setattr(cls, v.cache, getattr(cls, v.cache, None))
+                value = getattr(cls, v.cache, None)
+                if value is None or value is v:
+                    # This automatically sets the default
+                    getattr(cls, k)
+                else:
+                    setattr(cls, k, value)
         # Run new type methods in order
         for k in type(cls).nxm_metadescriptors(nxd.NewTypeMethod):
             method = getattr(type(cls), k, None)
@@ -82,10 +90,8 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
         nxd.MetaDescriptor.collect(cls, namespace)
         nxd.NxDescriptor.collect(cls, namespace)
         archetype = cls.archetype
-        overtype = kwargs.get('overtype', False)
         if archetype is not None:
-            overtype = kwargs.get('overtype', False)
-            archetype.nxregister(cls, overtype=overtype)
+            archetype.nxregister(cls, overtype=cls.__overtype__)
         # Run type init methods in order
         for k in type(cls).nxm_metadescriptors(nxd.TypeInitMethod):
             method = getattr(type(cls), k, None)

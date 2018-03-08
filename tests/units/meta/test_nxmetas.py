@@ -25,7 +25,7 @@ from anaximander2.meta import nxdescriptors as nxd
 # =============================================================================
 
 
-x = nxd.TypeParameter(name='x', key=True, type=int)
+x = nxd.TypeParameter(name='x', key=True, type_=int)
 
 
 class MyType(abc.ABCMeta, metaclass=nxm.NxMeta):

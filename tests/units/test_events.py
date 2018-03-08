@@ -31,7 +31,7 @@ class B_Event(Event):
 
 @archetype
 class Party(Event):
-    label = 'party'
+    pass
 
 
 class Concert(Party):
@@ -47,7 +47,7 @@ class Party_A(Party):
 
 
 def test_events():
-    assert Event.sublabels == ['A', 'B', 'party']
+    assert Event.sublabels == ['A', 'B']
     assert Party.sublabels == ['concert', 'jam', 'A']
 
 

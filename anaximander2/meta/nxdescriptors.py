@@ -397,7 +397,7 @@ class NxAttributeInterface(Registrable):
     """
 
     def __init__(self, default=None, nullable=True, validate=None,
-                 set_once=False, name=None, cls=None, type=None, cache=None):
+                 set_once=False, name=None, cls=None, type_=None, cache=None):
         """NxAttribute constructor.
 
         Attrs:
@@ -414,7 +414,7 @@ class NxAttributeInterface(Registrable):
                 has been cached.
             name: the descriptor's name.
             cls: the class that declares the descriptor.
-            type: the expected type for the descriptor.
+            type_: the expected type_ for the descriptor.
             cache: an optional string for naming the attribute that holds
                 the values that are set. It defaults to '_' + name and should
                 rarely be manipulated.
@@ -423,9 +423,10 @@ class NxAttributeInterface(Registrable):
         self.default = default
         self.nullable = nullable
         self.validate = validate
+        self.validate_param = validate  # used to copy the descriptor
         self.set_once = set_once
-        if type is not None:
-            self._type = type
+        if type_ is not None:
+            self._type = type_
         if cache is None and name is not None:
             self._cache = '_' + self.name
         else:
@@ -648,20 +649,33 @@ class TypeParameter(TypeAttribute):
     covariant with respect to that parameter. Note that covariance is meant
     here in terms of concrete inheritance, rather than a mere issubclass
     registration. As a result of passing a covariant_from argument, an
-    archetype can only accept a single type parameter.
+    archetype can only accept a single type parameter. In this case,
+    a few behaviors are automatically enforced: default is set to the
+    type supplied to the covariant_from argument, nullable is set to False,
+    key is set to True, and type_ is the metaclass of the base parameter.
+    As a result, an archetype that declares a covariant type parameter
+    will automatically receive the base parameter.
     """
 
-    def __init__(self, default=None, nullable=True, validate=None, key=False,
-                 covariant_from=None, name=None, cls=None, type=None,
+    def __init__(self, default=None, nullable=True, validate=None, key=True,
+                 covariant_from=None, name=None, cls=None, type_=None,
                  cache=None):
         super().__init__(default, nullable, validate, True,
-                         name, cls, type, cache)
+                         name, cls, type_, cache)
         self.key = key
         if covariant_from is not None:
             if not isinstance(covariant_from, type):
                 msg = "Covariance requires a base type argument."
                 raise TypeError(msg)
-            self._type = type(covariant_from)
+            self.default = covariant_from
+            self.nullable = False
+            try:
+                assert covariant_from.is_archetype
+            except (AttributeError, AssertionError):
+                self._type = type(covariant_from)
+            else:
+                self._type = covariant_from.__metatype__
+            self.key = True
         self.covariant_from = covariant_from
 
     @property
@@ -684,13 +698,24 @@ class TypeParameter(TypeAttribute):
         if covariance_base not in mro:
             msg = "Improper type parameter setting."
             raise NxMetaError(msg)
-        base_type = mro[1]
-        base_class = cls.archetype[base_type]
+        # First we test whether type_ itself is already registered
+        if type_ in cls.archetype.registry:
+            base_class = cls.archetype[type_]
+        else:
+            base_type = mro[1]
+            if base_type is covariance_base:
+                if base_type is not self.covariant_from:
+                    # case where covariant_from is an archetype
+                    base_type = self.covariant_from
+            base_class = cls.archetype[base_type]
+        if base_class is cls.archetype:
+            base_class = base_class.__basetype__
         if issubclass(cls, base_class):
             return cls
         # If cls doesn't inherit from base, we create a new class that does
         kwargs = {self.name: type_}
-        new = base_class.subtype(name=cls.__name__, overtype=True, **kwargs)
+        new = base_class.subtype(name=cls.__name__, overtype=cls.__overtype__,
+                                 **kwargs)
         # If additional descriptors exist in cls, they are ported to new
         xattrs = set(cls.__dict__) - set(new.__dict__)
         for k in xattrs:
@@ -701,11 +726,11 @@ class TypeParameter(TypeAttribute):
         super().assign(mcl)
         if not self.covariant:
             return
-        covariant_name = self.covariant_from.__name__.lowercase()
+        covariant_name = self.covariant_from.__name__.lower()
         method_name = 'rebase_from_' + covariant_name
         method = self.rebase
         typemethod = NewTypeMethod(method, method_name, mcl)
-        typemethod.assign(mcl)
+        typemethod.register(mcl)
 
 
 class NewTypeMethod(MetaMethod):

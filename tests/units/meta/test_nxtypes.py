@@ -38,7 +38,7 @@ def test_archetypes():
 
     @nxt.archetype
     class Object(BaseObject):
-        x = nxd.TypeParameter(key=True)
+        x = nxd.TypeParameter()
 
     assert isinstance(Object, nxt.NxType)
     assert isinstance(Object, nxm.ArcheType)
@@ -49,7 +49,7 @@ def test_archetypes():
     # Archetype subclassing
     @nxt.archetype
     class PhysicalObject(Object):
-        y = nxd.TypeParameter(key=True)
+        y = nxd.TypeParameter()
 
     assert list(PhysicalObject.__metadescriptors__) == ['x', 'y']
     assert PhysicalObject.x is PhysicalObject.__dict__['_x'] is None
@@ -95,7 +95,7 @@ def test_archetypes():
     # Type parameter override
     @nxt.archetype
     class Derived(Object):
-        x: int = nxd.TypeParameter(key=True)
+        x: int = nxd.TypeParameter()
 
         @nxd.typeproperty
         def name(cls):
@@ -111,7 +111,7 @@ def test_archetypes():
 
 @nxt.archetype
 class MetaMethodObject(BaseObject):
-    x: int = nxd.TypeParameter(key=True)
+    x: int = nxd.TypeParameter()
 
     @nxd.newtypemethod
     def modulate_x(cls):
@@ -123,7 +123,7 @@ class MetaMethodObject(BaseObject):
     @nxd.typeinitmethod
     def square_x(cls):
         if cls.x is None:
-            pass
+            return
         cls.y = cls.x ** 2
 
 
@@ -138,8 +138,8 @@ def test_metamethods():
 
 @nxt.archetype
 class A(BaseObject):
-    x = nxd.TypeParameter(key=True)
-    y = nxd.TypeParameter(key=True)
+    x = nxd.TypeParameter()
+    y = nxd.TypeParameter()
     z = nxd.TypeAttribute()
 
 
@@ -176,13 +176,13 @@ class I(H, y=2):
     pass
 
 
-@nxt.archetype
 class J(I):
-    y = 3
+    pass
 
 
+@nxt.archetype
 class K(J):
-    y = 4
+    x = 2
 
 
 def test_complex_inheritance():
@@ -200,13 +200,89 @@ def test_complex_inheritance():
     assert not G.is_pending_archetype
     assert G[1] is H
     assert G[2] is I
-    assert not type(J).typekeys
-    assert J.y == 3
-    assert G.registry[3] is J
-    assert K.y == 4
+    assert J.y == 2
+    assert K.x == 2
     with pytest.raises(KeyError):
         G.registry[4]
     assert K.registration_key is None
+    # This is a violation because we are making a registered subtype
+    # of G be the basetype for a new archetype.
+    with pytest.raises(nxm.NxMetaError):
+        @nxt.archetype
+        class L(G, y=3):
+            pass
+
+
+class Param:
+    pass
+
+
+class P(Param):
+    pass
+
+
+class Q(P):
+    pass
+
+
+@nxt.archetype
+class Covar(BaseObject):
+    x = nxd.TypeParameter(covariant_from=Param)
+
+
+@nxt.archetype
+class ArchParam(BaseObject):
+    a = nxd.TypeParameter()
+
+
+class ArchP(ArchParam):
+    a = 0
+
+
+class ArchQ(ArchP):
+    pass
+
+
+@nxt.archetype
+class ArchCovar(BaseObject):
+    x = nxd.TypeParameter(covariant_from=ArchParam)
+
+
+def test_covariance():
+    assert Covar[Param] is Covar
+
+    class C(Covar, x=P):
+        pass
+    assert issubclass(C, Covar[Param])
+
+    class D(Covar, x=Q):
+        pass
+    assert issubclass(D, C)
+
+    assert ArchCovar[ArchParam] is ArchCovar
+
+    class E(ArchCovar, x=ArchP):
+        pass
+    assert issubclass(E, ArchCovar)
+
+    class F(E, x=ArchQ):
+        pass
+    assert issubclass(F, E)
+
+    class G(ArchCovar, x=ArchParam[0], overtype=True):
+        pass
+    assert issubclass(G, E)
+    assert ArchCovar[ArchP] is G
+
+    class H(ArchCovar, x=ArchP):
+        pass
+    assert issubclass(H, G)
+    assert issubclass(H, E)
+    assert ArchCovar[ArchP] is G
+
+    class I(ArchCovar, x=ArchParam[1]):
+        pass
+    assert ArchCovar[ArchParam[1]] is I
 
 
 if __name__ == '__main__':

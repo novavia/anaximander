@@ -105,11 +105,11 @@ def test_collect():
 def test_nxattributes():
 
     class K(metaclass=Type):
-        x = nxd.NxAttribute(default='x', type=str)
+        x = nxd.NxAttribute(default='x', type_=str)
         y: int = nxd.NxAttribute(nullable=False, validate=lambda v: v > 0)
         y2: int = nxd.NxAttribute(nullable=False)
         z: int = nxd.NxAttribute(nullable=True, set_once=True,
-                                 type=str, cache='__z')
+                                 type_=str, cache='__z')
         c = nxd.NxAttribute(default=nxd.call(list))
     
         @y2.validator

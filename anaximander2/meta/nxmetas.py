@@ -70,15 +70,15 @@ class NxMeta(type):
             mcl.__basename__ = basename
         # Binds and registers descriptors
         nxd.MetaDescriptor.collect(mcl, namespace)
-        for name, attr in mcl.__metadescriptors__.items():
-            # TypeAttributes are treated separately, they must be explicilty
-            # declared
-            if not isinstance(attr, nxd.TypeAttribute):
-                attr.assign(mcl)
         mcl.__typeattributes__ = OrderedDict()
         if typeattributes is not None:
             for attr in typeattributes:
                 mcl.__typeattributes__[attr.name] = attr
+                attr.assign(mcl)
+        for name, attr in mcl.__metadescriptors__.items():
+            # TypeAttributes are treated separately, they must be explicilty
+            # declared
+            if not isinstance(attr, nxd.TypeAttribute):
                 attr.assign(mcl)
         # Validates that there is at most one type parameter if it is covariant
         covariant = any(t.covariant for t in mcl.__typeattributes__.values())
@@ -135,9 +135,9 @@ def nxmeta(basetype, basename=None):
     nxmeta creates a metaclass by subclassing the basetype's metaclass
     and modifiying its behavior based on options that may be found
     in an internal Meta class.
-    The constructor also checks for type properties assignments. If the
-    basetype has defined values for inherited type attributes, then these
-    type attributes are unregistered from the resulting metatype.
+    The constructor also checks for type parameter assignments. If the
+    basetype has defined values for inherited type parameters, then these
+    type parameters are turned into simpler type attributes.
     """
     # Collect and update type attributes
     basemeta = type(basetype)
@@ -148,9 +148,23 @@ def nxmeta(basetype, basename=None):
             if isinstance(v, nxd.TypeAttribute):
                 typeattributes[k] = v
             metadescriptors[k] = v
+    # If a type parameter is defined in the base type, we turn it into
+    # a type attribute
     for k, v in typeattributes.copy().items():
-        if v.is_defined(basetype):
-            del typeattributes[k]
+        if v.is_defined(basetype) and isinstance(v, nxd.TypeParameter):
+            attr = nxd.TypeAttribute(default=v.default,
+                                     nullable=v.nullable,
+                                     validate=v.validate_param,
+                                     set_once=True,
+                                     name=v.name,
+                                     cls=basetype,
+                                     type_=v.type,
+                                     cache=v.cache)
+            # A bit of a hack, necessary to maintain consistent ordering
+            # of metadescriptors
+            attr.registration_id = v.registration_id
+            metadescriptors[k] = attr
+            typeattributes[k] = attr
 
     # Assemble NxMeta arguments
     basename = fun.get(basename, basetype.__name__)
@@ -211,9 +225,14 @@ class ArcheType(metaclass=ArchMeta):
                 # This checks that the typeattribute isn't a carryover
                 # from a parent archetype, in which case this step is skipped.
                 if isinstance(v, nxd.TypeAttribute):
-                    if not base_typeattributes.get(k, None) == v:
+                    if k in base_typeattributes:
+                        if base_typeattributes[k] is not v:
+                            # sets the type attribute to its default value
+                            getattr(archetype, k)
+                    else:
                         v.set_instance_property(basetype)
-                    setattr(archetype, v.cache, None)
+                        # sets the type attribute to its default value
+                        getattr(archetype, k)
                 # Removes processed metadescriptors from the basetype.
                 else:
                     try:
@@ -229,7 +248,7 @@ class ArcheType(metaclass=ArchMeta):
         archetype.__archetype__ = archetype
         basetype = archetype.__basetype__
         # If basetype was itself registered with its own archetype,
-        # the newly formed archetype takes over as the decorated class.
+        # an error is raised.
         try:
             base_archetype = basetype.archetype
             registered = base_archetype.registry[basetype.registration_key]
@@ -237,7 +256,15 @@ class ArcheType(metaclass=ArchMeta):
         except (AttributeError, KeyError, AssertionError):
             pass
         else:
-            base_archetype.registry[basetype.registration_key] = archetype
+            msg = "Archetypes cannot be created from a concrete basetype " + \
+                "that is registered in a parent archetype."
+            raise NxMetaError(msg)
+        archetype.nxregister(archetype)
+        # Run type init methods in order
+        for k in type(archetype).nxm_metadescriptors(nxd.TypeInitMethod):
+            method = getattr(type(archetype), k, None)
+            if method:
+                method(archetype)
 
     def nxregister(archetype, cls, overtype=False):
         """Registers a subtype.
@@ -249,8 +276,9 @@ class ArcheType(metaclass=ArchMeta):
                 type parameter values.
         """
         with LOCK:
-            if cls.__bases__[0] is archetype.__basetype__:
-                archetype.register(cls)  # registration per abc module.
+            if cls is not archetype:
+                if cls.__bases__[0] is archetype.__basetype__:
+                    archetype.register(cls)  # registration per abc module.
             registry = type(archetype).registry
             registration_key = cls.registration_key
             if registration_key is None:
