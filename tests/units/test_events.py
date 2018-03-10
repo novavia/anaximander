@@ -14,23 +14,23 @@ Copyright (C) Novavia Solutions, LLC.
 import pytest
 
 from anaximander2.meta import archetype
-from anaximander2.events import Event
+from anaximander2.events import HardEvent, SoftEvent
 
 # =============================================================================
 # Tests
 # =============================================================================
 
 
-class A_Event(Event):
+class A_Event(HardEvent):
     label = 'A'
 
 
-class B_Event(Event):
+class B_Event(HardEvent):
     label = 'B'
 
 
 @archetype
-class Party(Event):
+class Party(SoftEvent):
     pass
 
 
@@ -47,7 +47,7 @@ class Party_A(Party):
 
 
 def test_events():
-    assert Event.sublabels == ['A', 'B']
+    assert HardEvent.sublabels == ['A', 'B']
     assert Party.sublabels == ['concert', 'jam', 'A']
 
 

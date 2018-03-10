@@ -294,10 +294,13 @@ class ArcheType(metaclass=ArchMeta):
         try:
             subtype = type(archetype).registry[key]
         except KeyError:
-            if isinstance(key, Iterable):
-                parameters = key
-            else:
+            l = len(type(archetype).typekeys)
+            if l == 0:
+                raise
+            elif l == 1:
                 parameters = (key,)
+            elif l > 1:
+                parameters = key
             kwargs = dict(zip(type(archetype).typekeys, parameters))
             try:
                 subtype = archetype.subtype(**kwargs)

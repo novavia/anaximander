@@ -156,7 +156,7 @@ class D(C, overtype=True):
 
 
 class E(A):
-    e = nxd.TypeAttribute()
+    e: int = nxd.TypeAttribute()
 
 
 class F(E):
@@ -185,6 +185,16 @@ class K(J):
     x = 2
 
 
+@nxt.archetype
+class L(BaseObject):
+    x: int = nxd.TypeParameter(nullable=False, validate=lambda v: v > 0)
+
+
+@nxt.archetype
+class M(L):
+    x: int = nxd.TypeParameter(nullable=False, validate=lambda v: v > 10)
+
+
 def test_complex_inheritance():
     assert B.abstract
     assert not C.abstract
@@ -205,11 +215,15 @@ def test_complex_inheritance():
     with pytest.raises(KeyError):
         G.registry[4]
     assert K.registration_key is None
+    assert issubclass(M, L)
+    L[1]().x == 1
+    with pytest.raises(nxm.NxMetaError):
+        M[1]
     # This is a violation because we are making a registered subtype
     # of G be the basetype for a new archetype.
     with pytest.raises(nxm.NxMetaError):
         @nxt.archetype
-        class L(G, y=3):
+        class Z(G, y=3):
             pass
 
 

@@ -11,6 +11,10 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
+from itertools import count
+
+from .meta.nxdescriptors import Registrable
+
 
 __all__ = []
 
@@ -19,8 +23,13 @@ __all__ = []
 # =============================================================================
 
 
-class NxField:
-    pass
+class NxField(Registrable):
+    __registry__ = '__nxfields__'
+    __counter__ = count()
+
+    def __init__(self, index=False, name=None, cls=None):
+        super().__init__(name, cls)
+        self.index = index
 
 
 class Numeric(NxField):
@@ -51,30 +60,33 @@ class Text(String):
 class Categorical(String):
     """Categorical field type, with string-defined categories."""
 
-    def __init__(self, categories):
+    def __init__(self, categories, index=False, name=None, cls=None):
+        super().__init__(index, name, cls)
         self.categories = tuple(categories)
 
 
 class State(Categorical):
-    """State field type, requiring a state type.
+    """State field type, requiring a state archetype.
 
-    The admissible categories are the state type and its subtypes,
+    The admissible categories are the archetype's labels,
     passed by string references.
     """
 
-    def __init__(self, stype):
-        self.stype = stype
+    def __init__(self, archetype, index=False, name=None, cls=None):
+        self.state_type = archetype
+        super().__init__(archetype.sublabels, index, name, cls)
 
 
 class EventType(Categorical):
-    """Field specifying event type, requiring an event type.
+    """Field specifying event type, requiring an event archetype.
 
-    The admissible categories are the event type and its subtypes,
+    The admissible categories are the archetype's labels,
     passed by string references.
     """
 
-    def __init__(self, etype):
-        self.etype = etype
+    def __init__(self, archetype, index=False, name=None, cls=None):
+        self.state_type = archetype
+        super().__init__(archetype.sublabels, index, name, cls)
 
 
 class Date(NxField):
@@ -103,5 +115,6 @@ class ObjectID(Integer):
     Requires an object type at instantiation.
     """
 
-    def __init__(self, otype):
+    def __init__(self, otype, index=False, name=None, cls=None):
+        super().__init__(index, name, cls)
         self.otype = otype

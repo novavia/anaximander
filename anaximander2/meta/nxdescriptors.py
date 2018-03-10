@@ -453,6 +453,10 @@ class NxAttributeInterface(Registrable):
 
     def __validate__(self, obj, value):
         """A base validation method, can be specialized in subclasses."""
+        # Special case permitted for overwriting type attributes in derived
+        # archetypes.
+        if isinstance(value, NxAttributeInterface):
+            return True
         if value is None and self.nullable:
             return True
         elif not isinstance(value, self.type):
@@ -478,7 +482,7 @@ class NxAttributeInterface(Registrable):
             @wraps(func)
             def validator(obj, attr, value):
                 class_valid = self.__validate__(obj, value)
-                if value is None:
+                if value is None or isinstance(value, NxAttributeInterface):
                     return class_valid
                 if len(sig.parameters) is 1:
                     return func(value) and class_valid

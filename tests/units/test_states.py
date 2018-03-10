@@ -11,10 +11,12 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+from datetime import datetime, timedelta
 import pytest
 
 from anaximander2.meta import archetype
-from anaximander2.states import State
+from anaximander2.states import State, statetype
+from anaximander2.events import HardEvent, SoftEvent
 
 # =============================================================================
 # Tests
@@ -29,7 +31,7 @@ class B_State(State):
     label = 'B'
 
 
-@archetype
+@statetype
 class Activity(State):
     pass
 
@@ -52,12 +54,15 @@ class Activity_A(Activity):
 
 def test_states():
     assert State.sublabels == ['A', 'B']
-    assert Activity.sublabels == ['idle', 'operating', 'churning', 'A']
-    op0 = Operating()
-    op1 = Operating()
-    assert op0 == op1
-    s = {op0, op1}
-    assert len(s) == 1
+    assert Activity.sublabels == ['null', 'idle', 'operating', 'churning', 'A']
+    now = datetime.now()
+    transition = Activity.Transition['operating'](now)
+    phase = Activity.Phase['operating'](now, now + timedelta(60))
+    assert isinstance(transition, HardEvent)
+    assert isinstance(phase, SoftEvent)
+    assert isinstance(transition.state, Operating)
+    assert isinstance(phase.state, Operating)
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
