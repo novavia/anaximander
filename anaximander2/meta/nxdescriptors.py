@@ -65,16 +65,19 @@ class Registrable:
     __registry__ = None
     __counter__ = None
 
-    def __init__(self, name=None, cls=None):
+    def __init__(self, name=None, cls=None, registration_id=None):
         if name is not None:
             self._name = name
         if cls is not None:
             self._cls = cls
-        try:
-            self.registration_id = next(self.__counter__)
-        except (TypeError, AttributeError):
-            msg = "Cannot instantiate Registrable without a counter."
-            raise TypeError(msg)
+        if registration_id is not None:
+            self.registration_id = registration_id
+        else:
+            try:
+                self.registration_id = next(self.__counter__)
+            except (TypeError, AttributeError):
+                msg = "Cannot instantiate Registrable without a counter."
+                raise TypeError(msg)
 
     @xprops.cachedproperty
     def name(self):
@@ -115,7 +118,7 @@ class Registrable:
         return OrderedDict(registrables)
 
     def copy(self):
-        copy_ = type(self)
+        copy_ = type(self)(registration_id=self.registration_id)
         attrs = self.__dict__.copy()
         copy_.__dict__ = attrs
         return copy_
@@ -397,7 +400,8 @@ class NxAttributeInterface(Registrable):
     """
 
     def __init__(self, default=None, nullable=True, validate=None,
-                 set_once=False, name=None, cls=None, type_=None, cache=None):
+                 set_once=False, name=None, cls=None, type_=None, cache=None,
+                 registration_id=None):
         """NxAttribute constructor.
 
         Attrs:
@@ -418,8 +422,9 @@ class NxAttributeInterface(Registrable):
             cache: an optional string for naming the attribute that holds
                 the values that are set. It defaults to '_' + name and should
                 rarely be manipulated.
+            registration_id: force registration_id to a set value.
         """
-        super().__init__(name, cls)
+        super().__init__(name, cls, registration_id)
         self.default = default
         self.nullable = nullable
         self.validate = validate
@@ -514,9 +519,9 @@ class NxAttributeInterface(Registrable):
 class MetaMethod(MetaDescriptor):
     """A wrapper for methods aimed at a metaclass derived from an archetype."""
 
-    def __init__(self, method, name=None, cls=None):
+    def __init__(self, method, name=None, cls=None, registration_id=None):
         self.method = method
-        super().__init__(name, cls)
+        super().__init__(name, cls, registration_id)
 
     def __call__(self, cls):
         return self.method
@@ -663,9 +668,9 @@ class TypeParameter(TypeAttribute):
 
     def __init__(self, default=None, nullable=True, validate=None, key=True,
                  covariant_from=None, name=None, cls=None, type_=None,
-                 cache=None):
+                 cache=None, registration_id=None):
         super().__init__(default, nullable, validate, True,
-                         name, cls, type_, cache)
+                         name, cls, type_, cache, registration_id)
         self.key = key
         if covariant_from is not None:
             if not isinstance(covariant_from, type):
@@ -767,8 +772,8 @@ class TypeProperty(MetaDescriptor):
     """A property wrapper aimed at the metaclass."""
 
     def __init__(self, fget=None, fset=None, fdel=None, doc=None, name=None,
-                 cls=None):
-        super().__init__(name, cls)
+                 cls=None, registration_id=None):
+        super().__init__(name, cls, registration_id)
         self.fget = fget
         self.fset = fset
         self.fdel = fdel

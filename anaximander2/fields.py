@@ -24,11 +24,25 @@ __all__ = []
 
 
 class NxField(Registrable):
+    """NxFields are schema descriptors.
+
+    The objects don't feature much functionality as they primarily serve
+    as interface specification between objects, data and storage.
+    NxField inherit name, cls and registration_id attributes from Registrable.
+    NxField can be marked as index: index fields are featured in a schema's
+    index whereas other fields are columns (or column families in the case
+    of a multi-schema).
+    Additionally, the sequencer property specifies that a field
+    defines an order between records. This property is used for database
+    indexing, and there can be at most one sequencer index field per schema.
+    """
     __registry__ = '__nxfields__'
     __counter__ = count()
 
-    def __init__(self, index=False, name=None, cls=None):
-        super().__init__(name, cls)
+    def __init__(self, index=False, sequencer=False, name=None, cls=None,
+                 registration_id=None):
+        super().__init__(name, cls, registration_id)
+        self.sequencer = sequencer
         self.index = index
 
 
@@ -60,8 +74,9 @@ class Text(String):
 class Categorical(String):
     """Categorical field type, with string-defined categories."""
 
-    def __init__(self, categories, index=False, name=None, cls=None):
-        super().__init__(index, name, cls)
+    def __init__(self, categories, index=False, sequencer=False, name=None,
+                 cls=None, registration_id=None):
+        super().__init__(index, sequencer, name, cls, registration_id)
         self.categories = tuple(categories)
 
 
@@ -72,9 +87,11 @@ class State(Categorical):
     passed by string references.
     """
 
-    def __init__(self, archetype, index=False, name=None, cls=None):
+    def __init__(self, archetype, index=False, sequencer=False, name=None,
+                 cls=None, registration_id=None):
         self.state_type = archetype
-        super().__init__(archetype.sublabels, index, name, cls)
+        super().__init__(archetype.sublabels, index, sequencer, name, cls,
+                         registration_id)
 
 
 class EventType(Categorical):
@@ -84,9 +101,11 @@ class EventType(Categorical):
     passed by string references.
     """
 
-    def __init__(self, archetype, index=False, name=None, cls=None):
+    def __init__(self, archetype, index=False, sequencer=False, name=None,
+                 cls=None, registration_id=None):
         self.state_type = archetype
-        super().__init__(archetype.sublabels, index, name, cls)
+        super().__init__(archetype.sublabels, index, sequencer, name, cls,
+                         registration_id)
 
 
 class Date(NxField):
@@ -115,6 +134,7 @@ class ObjectID(Integer):
     Requires an object type at instantiation.
     """
 
-    def __init__(self, otype, index=False, name=None, cls=None):
-        super().__init__(index, name, cls)
+    def __init__(self, otype, index=False, sequencer=False, name=None,
+                 cls=None, registration_id=None):
+        super().__init__(index, sequencer, name, cls, registration_id)
         self.otype = otype
