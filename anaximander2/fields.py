@@ -11,6 +11,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
+from collections import Mapping
 from itertools import count
 
 from .meta.nxdescriptors import Registrable
@@ -44,6 +45,16 @@ class NxField(Registrable):
         super().__init__(name, cls, registration_id)
         self.sequencer = sequencer
         self.index = index
+
+    @classmethod
+    def match_type(cls, typemap):
+        """Returns the type corresponding to cls in a type map."""
+        for t in cls.__mro__:
+            try:
+                return typemap[t]
+            except KeyError:
+                continue
+        raise TypeError(f"Could find no matching type for {cls} in {typemap}.")
 
 
 class Numeric(NxField):
@@ -138,3 +149,30 @@ class ObjectID(Integer):
                  cls=None, registration_id=None):
         super().__init__(index, sequencer, name, cls, registration_id)
         self.otype = otype
+
+# =============================================================================
+# Type map class
+# =============================================================================
+
+
+class TypeMap(Mapping):
+    """A mapping of field types to another type system."""
+
+    def __init__(self, mapping):
+        self._mapping = dict(mapping)
+
+    def __getitem__(self, key):
+        return self._mapping[key]
+
+    def __iter__(self):
+        return self._mapping.__iter__()
+
+    def __len__(self):
+        return self._mapping.__len__()
+
+    def __call__(self, field):
+        """Matches a given field to a mapped type.
+
+        Field may be an NxField instance or type.
+        """
+        return field.match_type(self)

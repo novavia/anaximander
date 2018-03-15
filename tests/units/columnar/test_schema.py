@@ -21,9 +21,6 @@ from anaximander2.columnar import schema as sch
 # =============================================================================
 
 
-# TODO: test restrictions on sequencer index fields
-# Test sequencer, keys properties
-
 class MyFieldMap(sch.FieldMap):
     x = Integer()
     y = Text()
@@ -35,8 +32,8 @@ def test_field_map():
     assert isinstance(f['y'], Text)
 
 
-class MyIndex(sch.Index):
-    id = Integer()
+class MyIndex(sch.SchemaIndex):
+    id = Integer(sequencer=True)
 
     def rowkey(self, **record):
         return str(record['id'])
@@ -50,6 +47,8 @@ def test_index():
     assert my_index.id.index
     assert my_index.rowkey(id=3) == '3'
     assert my_index.rowloc('3') == (3,)
+    assert my_index.sequencer == my_index.id
+    assert my_index.keys == []
 
 
 class MySchema(sch.Schema):
@@ -138,6 +137,10 @@ def test_errors():
         class Schema(sch.Schema, index=MyIndex):
             x = Integer(index=True)
             y = Text()
+    with pytest.raises(sch.SchemaError):
+        class Index(sch.SchemaIndex):
+            a = Integer(index=True, sequencer=True)
+            b = Text(sequencer=True)
 
 
 if __name__ == '__main__':

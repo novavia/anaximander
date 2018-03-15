@@ -66,6 +66,8 @@ class FieldMap(Mapping, metaclass=FieldMapType):
     def __init__(self):
         self._fields = OrderedDict([(k, v.copy())
                                     for k, v in self.__nxfields__.items()])
+        for k, v in self._fields.items():
+            setattr(self, k, v)
         if not self._fields:
             msg = "Cannot instantiate field-less schema."
             raise SchemaError(msg)
@@ -80,26 +82,27 @@ class FieldMap(Mapping, metaclass=FieldMapType):
         return self._fields.__len__()
 
 
-class IndexType(FieldMapType):
-    """Metaclass for Index."""
+class SchemaIndexType(FieldMapType):
+    """Metaclass for SchemaIndex."""
 
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
         for field in cls.__nxfields__.values():
             field.index = True
         if len(cls.sequencer_fields) > 1:
-            msg = "An Index class can feature at most one sequencer field."
+            msg = "SchemaIndex classes feature at most one sequencer field."
             raise SchemaError(msg)
 
 
-class Index(FieldMap, metaclass=IndexType):
+class SchemaIndex(FieldMap, metaclass=SchemaIndexType):
     """A field map destined to serve as a schema index."""
 
     def __init__(self):
         super().__init__()
         sequencer_fields = type(self).sequencer_fields
         if sequencer_fields:
-            self._sequencer = list(sequencer_fields.values())[0]
+            sequencer = list(sequencer_fields.values())[0]
+            self._sequencer = self[sequencer.name]
             self._keys = [f for f in self.values() if f is not self._sequencer]
         else:
             self._sequencer = None
@@ -164,7 +167,7 @@ class SchemaBaseType(FieldMapType):
                 ns.update(ix_namespace)
                 return ns
 
-            cls.__index__ = types.new_class(ix_name, (Index,),
+            cls.__index__ = types.new_class(ix_name, (SchemaIndex,),
                                             exec_body=exec_body)
 
 
