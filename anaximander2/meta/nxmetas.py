@@ -58,6 +58,7 @@ class NxMeta(type):
     __basename__ = 'Nx'
     __archetype__ = None
     __typeattributes__ = OrderedDict()
+    __metamethods__ = OrderedDict()
 
     def __new__(met, name, bases, namespace, basename=None,
                 typeattributes=None):
@@ -69,17 +70,21 @@ class NxMeta(type):
         if basename is not None:
             mcl.__basename__ = basename
         # Binds and registers descriptors
-        nxd.MetaDescriptor.collect(mcl, namespace)
-        mcl.__typeattributes__ = OrderedDict()
+        nxd.TypeAttribute.collect(mcl, namespace)
+        nxd.MetaMethod.collect(mcl, namespace)
         if typeattributes is not None:
             for attr in typeattributes:
                 mcl.__typeattributes__[attr.name] = attr
+        # Reorder for consistency
+        tpattrs = sorted(mcl.__typeattributes__.items(),
+                         key=lambda i: i[1].registration_id)
+        mcl.__typeattributes__ = OrderedDict(tpattrs)
+        for attr in mcl.__typeattributes__.values():
                 attr.assign(mcl)
-        for name, attr in mcl.__metadescriptors__.items():
+        for meth in mcl.__metamethods__.values():
             # TypeAttributes are treated separately, they must be explicilty
             # declared
-            if not isinstance(attr, nxd.TypeAttribute):
-                attr.assign(mcl)
+            meth.assign(mcl)
         # Validates that there is at most one type parameter if it is covariant
         covariant = any(t.covariant for t in mcl.__typeattributes__.values())
         if covariant and len(mcl.typeparameters) > 1:
@@ -94,13 +99,21 @@ class NxMeta(type):
         """
         return nxd.NxDescriptor.retrieve(mcl, *types)
 
-    def nxm_metadescriptors(mcl, *types):
-        """Returns a mapping of metadescriptors filtered by types.
+    def nxm_metamethods(mcl, *types):
+        """Returns a mapping of metamethods filtered by types.
 
-        if no types are supplied, then all registered metadescriptors are
+        if no types are supplied, then all registered metamethods are
         returned.
         """
-        return nxd.MetaDescriptor.retrieve(mcl, *types)
+        return nxd.MetaMethod.retrieve(mcl, *types)
+
+    def nxm_typeattributes(mcl, *types):
+        """Returns a mapping of typeattributes filtered by types.
+
+        if no types are supplied, then all registered type attributes are
+        returned.
+        """
+        return nxd.TypeAttribute.retrieve(mcl, *types)
 
     @xprops.cachedproperty
     def typeattributes(mcl):
@@ -141,13 +154,14 @@ def nxmeta(basetype, basename=None):
     """
     # Collect and update type attributes
     basemeta = type(basetype)
-    metadescriptors = OrderedDict(getattr(basemeta, '__metadescriptors__', {}))
+    metamethods = OrderedDict(getattr(basemeta, '__metamethods__', {}))
     typeattributes = OrderedDict(getattr(basemeta, '__typeattributes__', {}))
-    if hasattr(basetype, '__metadescriptors__'):
-        for k, v in basetype.__metadescriptors__.items():
-            if isinstance(v, nxd.TypeAttribute):
-                typeattributes[k] = v
-            metadescriptors[k] = v
+    if hasattr(basetype, '__metamethods__'):
+        for k, v in basetype.__metamethods__.items():
+            metamethods[k] = v
+    if hasattr(basetype, '__typeattributes__'):
+        for k, v in basetype.__typeattributes__.items():
+            typeattributes[k] = v
     # If a type parameter is defined in the base type, we turn it into
     # a type attribute
     for k, v in typeattributes.copy().items():
@@ -163,7 +177,6 @@ def nxmeta(basetype, basename=None):
             # A bit of a hack, necessary to maintain consistent ordering
             # of metadescriptors
             attr.registration_id = v.registration_id
-            metadescriptors[k] = attr
             typeattributes[k] = attr
 
     # Assemble NxMeta arguments
@@ -171,7 +184,8 @@ def nxmeta(basetype, basename=None):
     name = basename + 'Type'
     bases = (basemeta,)
     namespace = getattr(basetype, 'Meta', {})
-    namespace.update(metadescriptors)
+    namespace.update(metamethods)
+    namespace.update(typeattributes)
     typeattributes = list(typeattributes.values())
     meta = NxMeta(name, bases, namespace, basename, typeattributes)
     # Assigns the caller's module to the new class by default.
@@ -220,25 +234,24 @@ class ArcheType(metaclass=ArchMeta):
             mcl.__metatype__.__archetype__ = archetype
             mcl.__archetype__ = archetype
             # Adds TypeAttributeProperties to basetype for type attributes
-            base_typeattributes = getattr(basetype, '__typeattributes__', {})
-            for k, v in mcl.__metadescriptors__.items():
+            base_typeattributes = getattr(type(basetype),
+                                          '__typeattributes__', {})
+            for k, v in mcl.__metamethods__.items():
+                try:
+                    delattr(basetype, k)
+                except AttributeError:
+                    pass
+            for k, v in mcl.__typeattributes__.items():
                 # This checks that the typeattribute isn't a carryover
                 # from a parent archetype, in which case this step is skipped.
-                if isinstance(v, nxd.TypeAttribute):
-                    if k in base_typeattributes:
-                        if base_typeattributes[k] is not v:
-                            # sets the type attribute to its default value
-                            getattr(archetype, k)
-                    else:
-                        v.set_instance_property(basetype)
+                if k in base_typeattributes:
+                    if base_typeattributes[k] is not v:
                         # sets the type attribute to its default value
                         getattr(archetype, k)
-                # Removes processed metadescriptors from the basetype.
                 else:
-                    try:
-                        delattr(basetype, k)
-                    except AttributeError:
-                        pass
+                    v.set_instance_property(basetype)
+                    # sets the type attribute to its default value
+                    getattr(archetype, k)
             return archetype
         else:
             cls = mcl.__metatype__(name, bases, namespace, **kwargs)
@@ -247,6 +260,7 @@ class ArcheType(metaclass=ArchMeta):
     def __init__(archetype, name, bases, namespace, **kwargs):
         archetype.__archetype__ = archetype
         basetype = archetype.__basetype__
+        archetype._is_pending_archetype = False
         # If basetype was itself registered with its own archetype,
         # an error is raised.
         try:
@@ -261,7 +275,7 @@ class ArcheType(metaclass=ArchMeta):
             raise NxMetaError(msg)
         archetype.nxregister(archetype)
         # Run type init methods in order
-        for k in type(archetype).nxm_metadescriptors(nxd.TypeInitMethod):
+        for k in type(archetype).nxm_metamethods(nxd.TypeInitMethod):
             method = getattr(type(archetype), k, None)
             if method:
                 method(archetype)

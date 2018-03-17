@@ -14,27 +14,19 @@ Copyright (C) Novavia Solutions, LLC.
 from abc import abstractproperty
 from datetime import timedelta
 
-from .meta import archetype, TypeParameter, typeproperty
-from .structures import Structure
+from .meta import archetype, TypeParameter, typeproperty, typenamemethod
+from .observations import NxObservation
 
 __all__ = ['HardEvent', 'SoftEvent']
 
 # =============================================================================
-# Structure base class
+# Event base classes
 # =============================================================================
 
 
-class EventBase(Structure):
-    """Abstract base class for events.
-
-    Params:
-        context (object): the context, typically a data model entity, to which
-            the event applies.
-    """
+class EventBase(NxObservation):
+    """Abstract base class for events."""
     label: str = TypeParameter(key=True)
-
-    def __init__(self, context=None):
-        self.context = context
 
     @abstractproperty
     def duration(self):
@@ -57,14 +49,25 @@ class EventBase(Structure):
     def sublabels(cls):
         return [c.label for c in cls.subtypes]
 
+    @typenamemethod
+    def name_type(mcl, basetype, *traits, **kwargs):
+        try:
+            return kwargs['label'].title() + mcl.__basename__
+        except (KeyError, AttributeError):
+            return mcl.__basename__
+
 
 @archetype
 class HardEvent(EventBase):
     """A duration-less event with a unique timestamp."""
 
-    def __init__(self, datetime, context=None):
-        super().__init__(context)
+    def __init__(self, datetime, object=None):
+        super().__init__(object)
         self.datetime = datetime
+
+    @property
+    def locus(self):
+        return self.datetime
 
     @property
     def duration(self):
@@ -79,10 +82,14 @@ class SoftEvent(EventBase):
     is closed on the start side and open on the stop side.
     """
 
-    def __init__(self, start, stop, context=None):
-        super().__init__(context)
+    def __init__(self, start, stop, object=None):
+        super().__init__(object)
         self.start = start
         self.stop = stop
+
+    @property
+    def locus(self):
+        return (self.start, self.stop)
 
     @property
     def duration(self):

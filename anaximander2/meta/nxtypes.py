@@ -12,9 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import ChainMap
-from inspect import getmodule
-import sys
+from collections import ChainMap, OrderedDict
 import types
 
 from ..utilities import functions as fun, xprops
@@ -35,12 +33,7 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
     @classmethod
     def __baptize__(mcl, basetype, traits=None, **kwargs):
         """Generates a name for a programatically generated type."""
-        try:
-            basename = kwargs.get('basename', basetype.__basename__)
-        except (IndexError, AttributeError):
-            msg = "Programmatic naming requires a base name."
-            raise NxMetaError(msg)
-        return basename
+        return mcl.__basename__
 
     def __new__(mcl, name, bases, namespace, traits=None, **kwargs):
         # Checks that at most the first base is an NxType
@@ -61,14 +54,16 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
                 raise NxMetaError(msg)
             bases = (base,) + bases[1:]
         # Set proto-class
-        cls = super().__new__(mcl, name, bases, namespace)
+        cls_namespace = OrderedDict((k, v) for k, v in namespace.items()
+                                    if not isinstance(v, nxd.MetaDescriptor))
+        cls = super().__new__(mcl, name, bases, cls_namespace)
         overtype = kwargs.get('overtype', False)
         cls.__overtype__ = overtype
         # Set the type attributes
         # They are either supplied by the namespace, kwargs or inheritance
         attrs = ChainMap(namespace, kwargs)
         for k, v in mcl.typeattributes.items():
-            if k in attrs:
+            if k in attrs and not isinstance(attrs[k], nxd.TypeAttribute):
                 setattr(cls, k, attrs[k])
             # Inherited attribute test
             else:
@@ -79,7 +74,7 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
                 else:
                     setattr(cls, k, value)
         # Run new type methods in order
-        for k in type(cls).nxm_metadescriptors(nxd.NewTypeMethod):
+        for k in type(cls).nxm_metamethods(nxd.NewTypeMethod):
             method = getattr(type(cls), k, None)
             if method:
                 cls = method(cls)
@@ -87,13 +82,18 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
 
     def __init__(cls, name, bases, namespace, **kwargs):
         # Processes metadescriptors and nxdescriptors declared in the namespace
-        nxd.MetaDescriptor.collect(cls, namespace)
+        nxd.MetaMethod.collect(cls, namespace)
+        nxd.TypeAttribute.collect(cls, namespace)
+        if any(isinstance(v, nxd.MetaDescriptor) for v in namespace.values()):
+            cls._is_pending_archetype = True
+        else:
+            cls._is_pending_archetype = False
         nxd.NxDescriptor.collect(cls, namespace)
         archetype = cls.archetype
         if archetype is not None:
             archetype.nxregister(cls, overtype=cls.__overtype__)
         # Run type init methods in order
-        for k in type(cls).nxm_metadescriptors(nxd.TypeInitMethod):
+        for k in type(cls).nxm_metamethods(nxd.TypeInitMethod):
             method = getattr(type(cls), k, None)
             if method:
                 method(cls)
@@ -105,14 +105,6 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
         returned.
         """
         return nxd.NxDescriptor.retrieve(cls, *types)
-
-    def metadescriptors(cls, *types):
-        """Returns a mapping of metadescriptors filtered by types.
-
-        if no types are supplied, then all registered metadescriptors are
-        returned.
-        """
-        return nxd.MetaDescriptor.retrieve(cls, *types)
 
     @property
     def archetype(cls):
@@ -157,15 +149,17 @@ class NxType(abc.ABCMeta, metaclass=NxMeta):
         unfilled = any([c is None for c in cls.typeparameters])
         return cls.is_pending_archetype or unfilled
 
-    @xprops.cachedproperty
+    @property
     def is_pending_archetype(cls):
         """True if there are unprocessed metadescriptors in namespace."""
-        return any([isinstance(getattr(cls, k, None), nxd.MetaDescriptor)
-                    for k in dir(cls)])
+        return cls._is_pending_archetype
 
     def subtype(cls, *traits, name=None, **kwargs):
         """Returns a subtype of cls with possible modifiers."""
         return nxtype(cls, *traits, name=name, **kwargs)
+
+    def __repr__(cls):
+        return f'<{type(cls).__name__} {cls.__name__}>'
 
 
 def nxtype(basetype, *traits, name=None, **kwargs):
@@ -183,11 +177,7 @@ def nxtype(basetype, *traits, name=None, **kwargs):
         kwargs.setdefault('traits', None)
     name = fun.get(name, metatype.__baptize__(basetype, **kwargs))
     cls = types.new_class(name, (basetype,), kwds=kwargs)
-    # Assigns the caller's module to the new class by default.
-    try:
-        cls.__module__ = getmodule(sys._getframe(1)).__name__
-    except AttributeError:  # Interactive mode
-        cls.__module__ = basetype.__module__
+    cls.__module__ = basetype.__module__
     return cls
 
 

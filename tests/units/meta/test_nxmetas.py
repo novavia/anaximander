@@ -86,7 +86,7 @@ class MyType(abc.ABCMeta, metaclass=nxm.NxMeta):
 class MyObject(metaclass=MyType):
     pass
 
-MyObject.__metadescriptors__ = OrderedDict([('x', x)])
+MyObject.__typeattributes__ = OrderedDict([('x', x)])
 
 
 def test_nxmeta():

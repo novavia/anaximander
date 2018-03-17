@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 from .meta import archetype
 from .meta.nxobjects import NxObject
 
-__all__ = ['Structure']
+__all__ = ['NxStructure']
 
 # =============================================================================
 # Structure base class
@@ -22,5 +22,5 @@ __all__ = ['Structure']
 
 
 @archetype
-class Structure(NxObject):
+class NxStructure(NxObject):
     pass

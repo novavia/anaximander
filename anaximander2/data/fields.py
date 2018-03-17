@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 from collections import Mapping
 from itertools import count
 
-from .meta.nxdescriptors import Registrable
+from ..meta.nxdescriptors import Registrable
 
 
 __all__ = []
@@ -46,15 +46,19 @@ class NxField(Registrable):
         self.sequencer = sequencer
         self.index = index
 
-    @classmethod
-    def match_type(cls, typemap):
-        """Returns the type corresponding to cls in a type map."""
-        for t in cls.__mro__:
+    def match_type(self, typemap):
+        """Returns the type corresponding to self in a type map."""
+        for t in type(self).__mro__:
             try:
-                return typemap[t]
+                match = typemap[t]
             except KeyError:
                 continue
-        raise TypeError(f"Could find no matching type for {cls} in {typemap}.")
+            else:
+                if isinstance(match, TypeMapper):
+                    return match(self)
+                else:
+                    return match
+        raise TypeError(f"Could not match {self} in {typemap}.")
 
 
 class Numeric(NxField):
@@ -83,12 +87,17 @@ class Text(String):
 
 
 class Categorical(String):
-    """Categorical field type, with string-defined categories."""
+    """Categorical field type, with string-defined categories.
 
-    def __init__(self, categories, index=False, sequencer=False, name=None,
-                 cls=None, registration_id=None):
+    The ordered flag specifies whether the categories define a natural sort
+    order.
+    """
+
+    def __init__(self, categories, ordered=False, index=False, sequencer=False,
+                 name=None, cls=None, registration_id=None):
         super().__init__(index, sequencer, name, cls, registration_id)
         self.categories = tuple(categories)
+        self.ordered = ordered
 
 
 class State(Categorical):
@@ -101,8 +110,8 @@ class State(Categorical):
     def __init__(self, archetype, index=False, sequencer=False, name=None,
                  cls=None, registration_id=None):
         self.state_type = archetype
-        super().__init__(archetype.sublabels, index, sequencer, name, cls,
-                         registration_id)
+        super().__init__(archetype.sublabels, False, index, sequencer, name,
+                         cls, registration_id)
 
 
 class EventType(Categorical):
@@ -115,21 +124,30 @@ class EventType(Categorical):
     def __init__(self, archetype, index=False, sequencer=False, name=None,
                  cls=None, registration_id=None):
         self.state_type = archetype
-        super().__init__(archetype.sublabels, index, sequencer, name, cls,
-                         registration_id)
+        super().__init__(archetype.sublabels, False, index, sequencer, name,
+                         cls, registration_id)
 
 
-class Date(NxField):
+class DateTimeBase(NxField):
+    """Base class for date & time fields."""
+
+    def __init__(self, tz=None, index=False, sequencer=False, name=None,
+                 cls=None, registration_id=None):
+        self.tz = tz
+        super().__init__(index, sequencer, name, cls, registration_id)
+
+
+class Date(DateTimeBase):
     """Date field type."""
     pass
 
 
-class Time(NxField):
+class Time(DateTimeBase):
     """Time field type."""
     pass
 
 
-class DateTime(NxField):
+class DateTime(DateTimeBase):
     """DateTime field type."""
     pass
 
@@ -155,6 +173,19 @@ class ObjectID(Integer):
 # =============================================================================
 
 
+class TypeMapper:
+    """A callable designed to map a field to a parametric type.
+
+    The supplied function should take a single field argument.
+    """
+
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, field):
+        return self.func(field)
+
+
 class TypeMap(Mapping):
     """A mapping of field types to another type system."""
 
@@ -171,8 +202,5 @@ class TypeMap(Mapping):
         return self._mapping.__len__()
 
     def __call__(self, field):
-        """Matches a given field to a mapped type.
-
-        Field may be an NxField instance or type.
-        """
+        """Matches a given field to a mapped type."""
         return field.match_type(self)

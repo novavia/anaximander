@@ -16,7 +16,7 @@ from collections import Mapping, OrderedDict
 import types
 
 from ..utilities import functions as fun
-from ..fields import NxField
+from .fields import NxField
 
 
 __all__ = []
@@ -119,12 +119,12 @@ class SchemaIndex(FieldMap, metaclass=SchemaIndexType):
     @abc.abstractmethod
     def rowkey(self, **record):
         """Method to compute the row key from index columns."""
-        return None
+        return ""
 
     @abc.abstractmethod
-    def rowloc(self, key):
+    def rowidx(self, key):
         """Method to compute index columns from key."""
-        return None
+        return ()
 
 
 class ColumnFamily(FieldMap, NxField):
@@ -160,8 +160,8 @@ class SchemaBaseType(FieldMapType):
             ix_namespace = cls.index_fields
             if hasattr(cls, 'rowkey'):
                 ix_namespace['rowkey'] = cls.rowkey
-            if hasattr(cls, 'rowloc'):
-                ix_namespace['rowloc'] = cls.rowloc
+            if hasattr(cls, 'rowidx'):
+                ix_namespace['rowidx'] = cls.rowidx
 
             def exec_body(ns):
                 ns.update(ix_namespace)

@@ -14,8 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 from datetime import datetime, timedelta
 import pytest
 
-from anaximander2.meta import archetype
-from anaximander2.states import State, statetype
+from anaximander2.states import NxState, statetype, StateTransition
 from anaximander2.events import HardEvent, SoftEvent
 
 # =============================================================================
@@ -23,16 +22,16 @@ from anaximander2.events import HardEvent, SoftEvent
 # =============================================================================
 
 
-class A_State(State):
+class A_State(NxState):
     label = 'A'
 
 
-class B_State(State):
+class B_State(NxState):
     label = 'B'
 
 
 @statetype
-class Activity(State):
+class Activity(NxState):
     pass
 
 
@@ -53,16 +52,47 @@ class Activity_A(Activity):
 
 
 def test_states():
-    assert State.sublabels == ['A', 'B']
+    assert NxState.sublabels == ['A', 'B']
     assert Activity.sublabels == ['null', 'idle', 'operating', 'churning', 'A']
     now = datetime.now()
-    transition = Activity.Transition['operating'](now)
-    phase = Activity.Phase['operating'](now, now + timedelta(60))
-    assert isinstance(transition, HardEvent)
+    phase = Activity.Phase[Operating](now, now + timedelta(60))
+    status = Activity.Status[Churning](now)
     assert isinstance(phase, SoftEvent)
-    assert isinstance(transition.state, Operating)
     assert isinstance(phase.state, Operating)
+    assert isinstance(status, Activity.Status[Operating])
+
+
+def test_transitions():
+    now = datetime.now()
+    transition = Activity.Transition[Operating](now)
+    assert isinstance(transition, HardEvent)
+    assert isinstance(transition.state, Operating)
+    transition = Churning.transition(now)
+    assert isinstance(transition, StateTransition)
+    assert isinstance(transition.state, Operating)
+    assert transition.label == 'churning'
+
+
+def test_phase():
+    now = datetime.now()
+    then = now + timedelta(60)
+    phase = Activity.Phase[Operating](now, then)
+    assert isinstance(phase, SoftEvent)
+    assert isinstance(phase.state, Operating)
+    phase = Activity.phase(now, then, label='idle')
+    assert phase.label == 'idle'
+
+
+def test_status():
+    now = datetime.now()
+    status = Activity.Status[Churning](now)
+    assert isinstance(status, Activity.Status[Operating])
+    assert isinstance(status.state, Churning)
+    assert status.label == 'churning'
+    status = Churning.status(now)
+    assert status.label == 'churning'
 
 
 if __name__ == '__main__':
-    pytest.main([__file__, '-x', '--pdb'])
+#    pytest.main([__file__, '-x', '--pdb'])
+    pass

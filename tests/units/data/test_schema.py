@@ -13,8 +13,8 @@ Copyright (C) Novavia Solutions, LLC.
 
 import pytest
 
-from anaximander2.fields import Integer, Text
-from anaximander2.columnar import schema as sch
+from anaximander2.data.fields import Integer, Text
+from anaximander2.data import schema as sch
 
 # =============================================================================
 # Tests
@@ -38,7 +38,7 @@ class MyIndex(sch.SchemaIndex):
     def rowkey(self, **record):
         return str(record['id'])
 
-    def rowloc(self, key):
+    def rowidx(self, key):
         return (int(key),)
 
 
@@ -46,7 +46,7 @@ def test_index():
     my_index = MyIndex()
     assert my_index.id.index
     assert my_index.rowkey(id=3) == '3'
-    assert my_index.rowloc('3') == (3,)
+    assert my_index.rowidx('3') == (3,)
     assert my_index.sequencer == my_index.id
     assert my_index.keys == []
 
@@ -58,7 +58,7 @@ class MySchema(sch.Schema):
     def rowkey(self, **record):
         return str(record['id'])
 
-    def rowloc(self, key):
+    def rowidx(self, key):
         return (int(key),)
 
 

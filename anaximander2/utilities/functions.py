@@ -104,17 +104,17 @@ def lformat(string):
     return string.format(**curlydict(caller_locals))
 
 
-def iformat(*attrs, cls=None):
+def iformat(*attrs, typename=None):
     """Returns standard instance formatter with supplied attributes.
 
     By default, the formatter uses the class' name. However a customized
     name can be assigned by keyword argument.
     """
     def formatter(inst):
-        nonlocal cls
-        cls = get(cls, type(inst).__name__)
+        nonlocal typename
+        typename = get(typename, type(inst).__name__)
         if not attrs:
-            return f"<{cls}>"
+            return f"<{typename}>"
         keyvals = {}
         for a in attrs:
             path = a.split('.')
@@ -123,7 +123,7 @@ def iformat(*attrs, cls=None):
                 obj = getattr(obj, link)
             keyvals[path[0]] = getattr(obj, path[-1])
         content = " ".join(f"{k}:{v}" for k, v in keyvals.items())
-        return f"<{cls} {content}>"
+        return f"<{typename} {content}>"
     return formatter
 
 

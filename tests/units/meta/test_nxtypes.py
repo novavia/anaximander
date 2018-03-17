@@ -51,7 +51,7 @@ def test_archetypes():
     class PhysicalObject(Object):
         y = nxd.TypeParameter()
 
-    assert list(PhysicalObject.__metadescriptors__) == ['x', 'y']
+    assert list(PhysicalObject.__typeattributes__) == ['x', 'y']
     assert PhysicalObject.x is PhysicalObject.__dict__['_x'] is None
     assert PhysicalObject.y is PhysicalObject.__dict__['_y'] is None
 
@@ -225,7 +225,13 @@ def test_complex_inheritance():
         @nxt.archetype
         class Z(G, y=3):
             pass
-
+    # This reverses order of type parameters
+    with pytest.raises(nxm.NxMetaError):     
+        @nxt.archetype
+        class Y(A):
+            y = nxd.TypeParameter()
+            x = nxd.TypeParameter()
+            z = nxd.TypeAttribute()
 
 class Param:
     pass
