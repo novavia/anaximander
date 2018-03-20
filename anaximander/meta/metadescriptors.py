@@ -124,7 +124,7 @@ class MetaDeclaration(abc.ABC):
     @xprops.singlesetproperty
     def name(self):
         """The declared name, set by NxType."""
-        return None    
+        return None
 
 
 @metaregistry('__metadescriptors__')
