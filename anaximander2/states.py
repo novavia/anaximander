@@ -120,12 +120,12 @@ class StateTransition(HardEvent, StateObservation):
     def set_label(cls):
         cls._label = cls.statetype.label
 
-#    @typenamemethod
-#    def name_type(mcl, basetype, *traits, **kwargs):
-#        try:
-#            return kwargs['statetype'].label.title() + mcl.__basename__
-#        except (KeyError, AttributeError):
-#            return mcl.__basename__
+    @typenamemethod
+    def name_type(mcl, basetype, *traits, **kwargs):
+        try:
+            return kwargs['statetype'].label.title() + mcl.__basename__
+        except (KeyError, AttributeError):
+            return mcl.__basename__
 
 
 class StatePhase(SoftEvent, StateObservation):
@@ -135,18 +135,18 @@ class StatePhase(SoftEvent, StateObservation):
     def set_label(cls):
         cls._label = cls.statetype.label
 
-#    @typenamemethod
-#    def name_type(mcl, basetype, *traits, **kwargs):
-#        try:
-#            return kwargs['statetype'].label.title() + mcl.__basename__
-#        except (KeyError, AttributeError):
-#            return mcl.__basename__
+    @typenamemethod
+    def name_type(mcl, basetype, *traits, **kwargs):
+        try:
+            return kwargs['statetype'].label.title() + mcl.__basename__
+        except (KeyError, AttributeError):
+            return mcl.__basename__
 
 
 class BaseStatus(NxObservation, StateObservation):
 
-    def __init__(self, datetime, object=None):
-        super().__init__(object)
+    def __init__(self, datetime, object=None, **params):
+        super().__init__(object, **params)
         self.datetime = datetime
 
     @property
@@ -157,12 +157,12 @@ class BaseStatus(NxObservation, StateObservation):
     def set_label(cls):
         cls._label = cls.statetype.label
 
-#    @typenamemethod
-#    def name_type(mcl, basetype, *traits, **kwargs):
-#        try:
-#            return kwargs['statetype'].label.title() + mcl.__basename__
-#        except (KeyError, AttributeError):
-#            return mcl.__basename__
+    @typenamemethod
+    def name_type(mcl, basetype, *traits, **kwargs):
+        try:
+            return kwargs['statetype'].label.title() + mcl.__basename__
+        except (KeyError, AttributeError):
+            return mcl.__basename__
 
 NxState.Transition = StateTransition
 NxState.Phase = StatePhase

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-This module defines basic field types used in data structures.
+This module defines basic column types used in data structures.
 
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
@@ -20,30 +20,29 @@ from ..meta.nxdescriptors import Registrable
 __all__ = []
 
 # =============================================================================
-# Field base types
+# Column base types
 # =============================================================================
 
 
-class NxField(Registrable):
-    """NxFields are schema descriptors.
+class NxColumn(Registrable):
+    """NxColumns are schema descriptors.
 
     The objects don't feature much functionality as they primarily serve
     as interface specification between objects, data and storage.
-    NxField inherit name, cls and registration_id attributes from Registrable.
-    NxField can be marked as index: index fields are featured in a schema's
-    index whereas other fields are columns (or column families in the case
-    of a multi-schema).
-    Additionally, the sequencer property specifies that a field
-    defines an order between records. This property is used for database
-    indexing, and there can be at most one sequencer index field per schema.
+    NxColumn inherit name, cls and registration_id attributes from Registrable.
+    NxColumn can be marked as index: index columns are featured in a schema's
+    index whereas other are simple columns (or column families in the case
+    of a multi-schema). Index columns come in two flavors: sequential or
+    nominal. A sequential index sets ordering between records that otherwise
+    share the same nominal index values. There can be at most one sequential
+    index column in a schema.
     """
     __registry__ = '__nxfields__'
     __counter__ = count()
 
-    def __init__(self, index=False, sequencer=False, name=None, cls=None,
+    def __init__(self, index=None, name=None, cls=None,
                  registration_id=None):
         super().__init__(name, cls, registration_id)
-        self.sequencer = sequencer
         self.index = index
 
     def match_type(self, typemap):
@@ -61,111 +60,111 @@ class NxField(Registrable):
         raise TypeError(f"Could not match {self} in {typemap}.")
 
 
-class Numeric(NxField):
+class Numeric(NxColumn):
     """Base class for numeric types."""
     pass
 
 
 class Integer(Numeric):
-    """Integer field type."""
+    """Integer column type."""
     pass
 
 
 class Float(Numeric):
-    """Float field type."""
+    """Float column type."""
     pass
 
 
-class String(NxField):
-    """Base class for text-based fields."""
+class String(NxColumn):
+    """Base class for text-based field columns."""
     pass
 
 
 class Text(String):
-    """Text field type."""
+    """Text column type."""
     pass
 
 
 class Categorical(String):
-    """Categorical field type, with string-defined categories.
+    """Categorical column type, with string-defined categories.
 
     The ordered flag specifies whether the categories define a natural sort
     order.
     """
 
-    def __init__(self, categories, ordered=False, index=False, sequencer=False,
+    def __init__(self, categories, ordered=False, index=None,
                  name=None, cls=None, registration_id=None):
-        super().__init__(index, sequencer, name, cls, registration_id)
+        super().__init__(index, name, cls, registration_id)
         self.categories = tuple(categories)
         self.ordered = ordered
 
 
 class State(Categorical):
-    """State field type, requiring a state archetype.
+    """State column type, requiring a state archetype.
 
     The admissible categories are the archetype's labels,
     passed by string references.
     """
 
-    def __init__(self, archetype, index=False, sequencer=False, name=None,
+    def __init__(self, archetype, index=None, name=None,
                  cls=None, registration_id=None):
         self.state_type = archetype
-        super().__init__(archetype.sublabels, False, index, sequencer, name,
+        super().__init__(archetype.sublabels, False, index, name,
                          cls, registration_id)
 
 
 class EventType(Categorical):
-    """Field specifying event type, requiring an event archetype.
+    """Column specifying event type, requiring an event archetype.
 
     The admissible categories are the archetype's labels,
     passed by string references.
     """
 
-    def __init__(self, archetype, index=False, sequencer=False, name=None,
+    def __init__(self, archetype, index=False, name=None,
                  cls=None, registration_id=None):
         self.state_type = archetype
-        super().__init__(archetype.sublabels, False, index, sequencer, name,
+        super().__init__(archetype.sublabels, False, index, name,
                          cls, registration_id)
 
 
-class DateTimeBase(NxField):
-    """Base class for date & time fields."""
+class DateTimeBase(NxColumn):
+    """Base class for date & time columns."""
 
-    def __init__(self, tz=None, index=False, sequencer=False, name=None,
+    def __init__(self, tz=None, index=False, name=None,
                  cls=None, registration_id=None):
         self.tz = tz
-        super().__init__(index, sequencer, name, cls, registration_id)
+        super().__init__(index, name, cls, registration_id)
 
 
 class Date(DateTimeBase):
-    """Date field type."""
+    """Date column type."""
     pass
 
 
 class Time(DateTimeBase):
-    """Time field type."""
+    """Time column type."""
     pass
 
 
 class DateTime(DateTimeBase):
-    """DateTime field type."""
+    """DateTime column type."""
     pass
 
 
 class Timestamp(Integer):
-    """Timestamp field type."""
+    """Timestamp column type."""
     pass
 
 
 class ObjectID(Integer):
-    """Field type for integer references to objects.
+    """Column type for integer references to objects.
 
     Requires an object type at instantiation.
     """
 
-    def __init__(self, otype, index=False, sequencer=False, name=None,
+    def __init__(self, otype, index=None, name=None,
                  cls=None, registration_id=None):
-        super().__init__(index, sequencer, name, cls, registration_id)
+        super().__init__(index, name, cls, registration_id)
         self.otype = otype
 
 # =============================================================================
@@ -174,20 +173,20 @@ class ObjectID(Integer):
 
 
 class TypeMapper:
-    """A callable designed to map a field to a parametric type.
+    """A callable designed to map a column to a parametric type.
 
-    The supplied function should take a single field argument.
+    The supplied function should take a single column argument.
     """
 
     def __init__(self, func):
         self.func = func
 
-    def __call__(self, field):
-        return self.func(field)
+    def __call__(self, column):
+        return self.func(column)
 
 
 class TypeMap(Mapping):
-    """A mapping of field types to another type system."""
+    """A mapping of column types to another type system."""
 
     def __init__(self, mapping):
         self._mapping = dict(mapping)
@@ -201,6 +200,6 @@ class TypeMap(Mapping):
     def __len__(self):
         return self._mapping.__len__()
 
-    def __call__(self, field):
-        """Matches a given field to a mapped type."""
-        return field.match_type(self)
+    def __call__(self, column):
+        """Matches a given column to a mapped type."""
+        return column.match_type(self)

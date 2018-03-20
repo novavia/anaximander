@@ -86,8 +86,7 @@ class NxMeta(type):
             # declared
             meth.assign(mcl)
         # Validates that there is at most one type parameter if it is covariant
-        covariant = any(t.covariant for t in mcl.__typeattributes__.values())
-        if covariant and len(mcl.typeparameters) > 1:
+        if mcl.covariant and len(mcl.typeparameters) > 1:
             msg = "A covariant typeparameter must be single."
             raise NxMetaError(msg)
 
@@ -140,6 +139,11 @@ class NxMeta(type):
         """Type parameters that aren't registration keys."""
         return OrderedDict([(k, v) for k, v in mcl.typeparameters.items()
                             if k not in mcl.typekeys])
+
+    @xprops.cachedproperty
+    def covariant(mcl):
+        """Indicates that the underlying archetype is covariant."""
+        return any(t.covariant for t in mcl.__typeattributes__.values())
 
 
 def nxmeta(basetype, basename=None):
@@ -261,6 +265,7 @@ class ArcheType(metaclass=ArchMeta):
         archetype.__archetype__ = archetype
         basetype = archetype.__basetype__
         archetype._is_pending_archetype = False
+        archetype._abstract = True
         # If basetype was itself registered with its own archetype,
         # an error is raised.
         try:

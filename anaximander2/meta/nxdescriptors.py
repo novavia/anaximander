@@ -58,13 +58,19 @@ class Registrable:
     code. This is not necessary in Python 3.6+ when using metaclasses, because
     class declarations are collected ordered. However there are cases where no
     metaclass may be involved and the creation id can be used instead.
-    Accordingly, Registrable implements rich comparisons based on the
-    descritptor id.
+    The strict_ordering class variable is set to True by default. It dictates
+    that a subclass that redfines registrables declared in a parent class
+    must redefine all of them to ensure consistent ordering. If the flag
+    is set to False the constraint is relaxed, at the expense of guarantees
+    on registration order when redefinition are declared in subclasses.
+    Howver that behavior is often desirable for methods when the order in
+    which methods is declared doesn't matter.
     """
     # Placeholder registry name for types that declare concrete registrables
     # In concrete subtypes, __counter__ needs to be a counter object
     __registry__ = None
     __counter__ = None
+    strict_ordering = True
 
     def __init__(self, name=None, cls=None, registration_id=None):
         if name is not None:
@@ -152,7 +158,8 @@ class Registrable:
         following rules are enforced:
             * if the namespace redefines registrables that are in the base
             class, it must redefine all of them -this is to ensure a
-            consistent order can be determined;
+            consistent order can be determined. That constraint is relaxed
+            if cls' strict_ordering flag is set to False.
             * while it is possible to interlace the order of registrables
             that were defined in base classes, the new order for the
             registrables defined in any single class must be the same
@@ -180,7 +187,7 @@ class Registrable:
                 c = descriptor()
 
         Note that it is up to the programmer to ensure that the restatements
-        are consistne with the registrables declared in the base classes. In
+        are consistent with the registrables declared in the base classes. In
         other words, while the collect function enforces consistent rules
         in the naming and sequence of descriptors through inheritance,
         the definition of the registrables themselves is not enforced.
@@ -200,7 +207,7 @@ class Registrable:
         # Either namespace redefines them, or it appends them
         ns_rgs_set = set(ns_rgs)
         base_rgs_set = set(base_rgs)
-        if ns_rgs_set & base_rgs_set:
+        if ns_rgs_set & base_rgs_set and cls.strict_ordering:
             if not base_rgs_set.issubset(ns_rgs_set):
                 msg = "A child class must redefine all or none of the " + \
                       "registrable attributes from its base class."
@@ -221,12 +228,16 @@ class Registrable:
                      for b in bases[1:]]
         # First we determine the key order, checking for duplication and
         # consistency
-        try:
-            keys = fun.merge(registrables.keys(),
-                             *[d.keys() for d in mixin_rgs])
-        except ValueError:
-            msg = "Registables ordering inconsistent with base class."
-            raise NxMetaError(msg)
+        if cls.strict_ordering:
+            try:
+                keys = fun.merge(registrables.keys(),
+                                 *[d.keys() for d in mixin_rgs])
+            except ValueError:
+                msg = "Registables ordering inconsistent with base class."
+                raise NxMetaError(msg)
+        else:
+            keys = fun.no_dup_list(registrables.keys(),
+                                   *[d.keys() for d in mixin_rgs])
         # Then we extract the values by building a chainmap
         rgchain = ChainMap(registrables, *mixin_rgs)
         registry = OrderedDict((k, rgchain[k]) for k in keys)
@@ -518,6 +529,7 @@ class MetaMethod(MetaDescriptor):
     """A wrapper for methods aimed at a metaclass derived from an archetype."""
     __registry__ = '__metamethods__'
     __counter__ = count()
+    strict_ordering = False
 
     def __init__(self, method, name=None, cls=None, registration_id=None):
         self.method = method

@@ -54,12 +54,6 @@ class Activity_A(Activity):
 def test_states():
     assert NxState.sublabels == ['A', 'B']
     assert Activity.sublabels == ['null', 'idle', 'operating', 'churning', 'A']
-    now = datetime.now()
-    phase = Activity.Phase[Operating](now, now + timedelta(60))
-    status = Activity.Status[Churning](now)
-    assert isinstance(phase, SoftEvent)
-    assert isinstance(phase.state, Operating)
-    assert isinstance(status, Activity.Status[Operating])
 
 
 def test_transitions():
@@ -94,5 +88,4 @@ def test_status():
 
 
 if __name__ == '__main__':
-#    pytest.main([__file__, '-x', '--pdb'])
-    pass
+    pytest.main([__file__, '-x', '--pdb'])

@@ -13,7 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import pytest
 
-from anaximander2.data.fields import Integer, Text
+from anaximander2.data.columns import Integer, Text
 from anaximander2.data import schema as sch
 
 # =============================================================================
@@ -21,19 +21,19 @@ from anaximander2.data import schema as sch
 # =============================================================================
 
 
-class MyFieldMap(sch.FieldMap):
+class MyColumnMap(sch.ColumnMap):
     x = Integer()
     y = Text()
 
 
-def test_field_map():
-    f = MyFieldMap()
+def test_column_map():
+    f = MyColumnMap()
     assert isinstance(f['x'], Integer)
     assert isinstance(f['y'], Text)
 
 
 class MyIndex(sch.SchemaIndex):
-    id = Integer(sequencer=True)
+    id = Integer(index='sequential')
 
     def rowkey(self, **record):
         return str(record['id'])
@@ -48,11 +48,11 @@ def test_index():
     assert my_index.rowkey(id=3) == '3'
     assert my_index.rowidx('3') == (3,)
     assert my_index.sequencer == my_index.id
-    assert my_index.keys == []
+    assert my_index.identifiers == []
 
 
 class MySchema(sch.Schema):
-    id = Integer(index=True)
+    id = Integer(index='nominal')
     x = Text()
 
     def rowkey(self, **record):
@@ -66,9 +66,9 @@ def test_schema():
     my_schema = MySchema()
     assert list(my_schema) == ['id', 'x']
     assert list(my_schema.index) == ['id']
-    assert list(my_schema.columns) == ['x']
+    assert list(my_schema.payload) == ['x']
     assert my_schema['id'] is my_schema.index['id']
-    assert my_schema['x'] is my_schema.columns['x']
+    assert my_schema['x'] is my_schema.payload['x']
 
 
 class MyInheritedSchema(MySchema):
@@ -80,7 +80,7 @@ def test_inherited_schema():
     assert isinstance(inherited_schema, MySchema)
     assert list(inherited_schema) == ['id', 'x', 'y']
     assert list(inherited_schema.index) == ['id']
-    assert list(inherited_schema.columns) == ['x', 'y']
+    assert list(inherited_schema.payload) == ['x', 'y']
 
 
 class MyAltSchema(sch.Schema, index=MyIndex):
@@ -91,9 +91,9 @@ def test_alt_schema():
     my_alt_schema = MyAltSchema()
     assert list(my_alt_schema) == ['id', 'x']
     assert list(my_alt_schema.index) == ['id']
-    assert list(my_alt_schema.columns) == ['x']
+    assert list(my_alt_schema.payload) == ['x']
     assert my_alt_schema['id'] is my_alt_schema.index['id']
-    assert my_alt_schema['x'] is my_alt_schema.columns['x']
+    assert my_alt_schema['x'] is my_alt_schema.payload['x']
 
 
 class MyFamily(sch.ColumnFamily):
@@ -117,7 +117,7 @@ def test_multi_schema():
 
 
 class OutOfOrderSchema(MySchema):
-    a = Integer(index=True)
+    a = Integer(index='nominal')
     b = Text()
 
 
@@ -125,22 +125,22 @@ def test_out_of_order_schema():
     schema = OutOfOrderSchema()
     assert list(schema) == ['id', 'a', 'x', 'b']
     assert list(schema.index) == ['id', 'a']
-    assert list(schema.columns) == ['x', 'b']
+    assert list(schema.payload) == ['x', 'b']
 
 
 def test_errors():
     with pytest.raises(sch.SchemaError):
-        class FieldMap(sch.FieldMap):
+        class ColMap(sch.ColumnMap):
             pass
-        FieldMap()
+        ColMap()
     with pytest.raises(sch.SchemaError):
         class Schema(sch.Schema, index=MyIndex):
-            x = Integer(index=True)
+            x = Integer(index='nominal')
             y = Text()
     with pytest.raises(sch.SchemaError):
         class Index(sch.SchemaIndex):
-            a = Integer(index=True, sequencer=True)
-            b = Text(sequencer=True)
+            a = Integer(index='sequential')
+            b = Text(index='sequential')
 
 
 if __name__ == '__main__':

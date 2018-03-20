@@ -32,6 +32,16 @@ class NxObject(metaclass=NxType):
             if cls.is_pending_archetype:
                 msg = f"Cannot instantiate pending archetype {cls}."
                 raise NxMetaError(msg)
+            if type(cls).covariant:
+                param = list(type(cls).typeparameters.values())[0]
+                try:
+                    val = kwargs.pop(param.name)
+                except KeyError:
+                    raise NxMetaError("Cannot instantiate an archetype " +
+                                      "without a full set of type parameters.")
+                else:
+                    klass = cls.archetype[val]
+                    return klass(*args, **kwargs)
             typeparameters = OrderedDict((k, getattr(cls, k))
                                          for k in type(cls).typeparameters)
             try:
@@ -39,8 +49,8 @@ class NxObject(metaclass=NxType):
                     if typeparameters[k] is None:
                         typeparameters[k] = kwargs.pop(k)
             except KeyError:
-                raise NxMetaError("Cannot instantiate an object without a " +
-                                  "full set of type parameters.")
+                raise NxMetaError("Cannot instantiate an archetype " +
+                                  "without a full set of type parameters.")
             key = tuple(typeparameters[k] for k in type(cls).typekeys)
             klass = cls.archetype[key]
             nonkeyparams = OrderedDict([(k, typeparameters[k])

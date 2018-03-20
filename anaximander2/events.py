@@ -61,8 +61,8 @@ class EventBase(NxObservation):
 class HardEvent(EventBase):
     """A duration-less event with a unique timestamp."""
 
-    def __init__(self, datetime, object=None):
-        super().__init__(object)
+    def __init__(self, datetime, object=None, **params):
+        super().__init__(object, **params)
         self.datetime = datetime
 
     @property
@@ -82,8 +82,8 @@ class SoftEvent(EventBase):
     is closed on the start side and open on the stop side.
     """
 
-    def __init__(self, start, stop, object=None):
-        super().__init__(object)
+    def __init__(self, start, stop, object=None, **params):
+        super().__init__(object, **params)
         self.start = start
         self.stop = stop
 

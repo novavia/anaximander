@@ -43,14 +43,13 @@ class NxObservation(NxStructure):
             possible as well. The specifics of what is included in the locus
             are specified by the observation type, through an abstract
             property.
-        * data: data that describes the observation, which is type-specific.
-        * metadata: dictionary of metadata, which may include information such
-            as units of measurement, measurement uncertainty, reference to the
-            data source, etc. Also type-dependent.
+        * params: data and metadata that describes the observation, which
+            is type-specific.
     """
 
-    def __init__(self, object=None):
+    def __init__(self, object=None, **params):
         self.object = object
+        self.params = params
 
     @xprops.weakproperty
     def object(self):
@@ -59,14 +58,6 @@ class NxObservation(NxStructure):
     @abstractproperty
     def locus(self):
         return None
-
-    @property
-    def data(self):
-        return None
-
-    @property
-    def metadata(self):
-        return {}
 
     def __repr__(self):
         return fun.iformat('object', 'locus')(self)
