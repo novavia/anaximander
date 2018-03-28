@@ -345,11 +345,14 @@ class Thresholder(Operator):
 
 class SessionMaker(Operator):
 
-    class Session(State):
+    class SessionState(State, abstract=True):
+        pass
+
+    class Session(SessionState):
         label = 'session'
         color = 'green'
 
-    class Idle(State):
+    class Idle(SessionState):
         label = 'idle'
         color = 'white'
 
@@ -495,7 +498,7 @@ class SessionMaker(Operator):
                 return None
 
         output = StateSequence(transitions, lower=lower, upper=upper,
-                               onstate=onstate, statetype=State)
+                               onstate=onstate, statetype=self.SessionState)
         if plot:
             self.__plot__(output)
         return output
