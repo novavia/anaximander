@@ -360,9 +360,20 @@ class Scalar(NxDataField):
 class Timestamp(NxField):
     """A field that deserializes to a pandas Timestamp."""
 
+    def __init__(self, default=pd.NaT, attribute=None, load_from=None,
+                 dump_to=None, error=None, validate=None, required=False,
+                 allow_none=True, load_only=False, dump_only=False,
+                 missing=msh.missing, error_messages=None, **metadata):
+            super().__init__(default=default, attribute=attribute,
+                             load_from=load_from, dump_to=dump_to, error=error,
+                             validate=validate, required=required,
+                             allow_none=allow_none, load_only=load_only,
+                             dump_only=dump_only, missing=missing,
+                             error_messages=error_messages, **metadata)
+
     def _serialize(self, value, attr, obj):
-        if value is None:
-            return msh.missing
+        if value in (None, pd.NaT, 'NaT'):
+            return 'NaT'
         if not isinstance(value, pd.Timestamp):
             self.fail('type')
         return str(value)

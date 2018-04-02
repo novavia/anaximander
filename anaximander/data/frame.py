@@ -232,7 +232,12 @@ class NxDataFrame(IndexedDataObject):
                         conversions[col] = dtype
                         if dtype is np.dtype('bool'):
                             df[col] = df[col].replace('False', 0)
+                        # Makes up for incorrect inference to timedelta
+                        if col_type == np.dtype('timedelta64[ns]'):
+                            if df[col].isnull().all():
+                                df[col] = [pd.NaT] * len(df)
             dataframe = df[columns]
+
         if conversions:
             try:
                 dataframe = dataframe.astype(conversions)

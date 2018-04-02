@@ -55,6 +55,7 @@ import math
 
 import marshmallow as msh
 from marshmallow.schema import SchemaMeta
+import pandas as pd
 
 from ..utilities.functions import monkeypatch
 from ..utilities.xprops import weakproperty, cachedproperty
@@ -142,7 +143,7 @@ class _SchemaMetaPatch:
                     "will use in lieu of missing. The offending field is " + \
                     "{0} in {1}"
                 raise SchemaError(msg.format(k, cls.__name__))
-            if v.key and (v.default is msh.missing):
+            if v.key and (v.default in (msh.missing, pd.NaT)):
                 v.required = True
             if required_flag is True:
                 if not v.required:
