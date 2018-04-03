@@ -23,7 +23,7 @@ import pandas as pd
 
 from .nxtime import datetime
 from . import nxattr, xprops
-from .functions import get, passthrough
+from .functions import get, passthrough, pairwise
 
 
 __all__ = ['float_interval', 'time_interval', 'string_interval', 'levels']
@@ -447,3 +447,15 @@ class MultiTimeInterval(MultiInterval):
             return pd.Timedelta(0)
         durations = pd.Series(i.length for i in self)
         return durations.sum()
+
+    @property
+    def gapspace(self):
+        gaps = type(self)([TimeInterval(a.upper, b.lower)
+                           for a, b in pairwise(self)])
+        return gaps.duration
+
+    @property
+    def compact(self):
+        if not self:
+            return None
+        return TimeInterval(self[0].lower, self[-1].upper)

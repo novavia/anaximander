@@ -153,5 +153,21 @@ class TestMultiInterval(TestCase):
             rge.MultiInterval([r1])
 
 
+def test_multi_time_interval():
+    t0 = '2018-4-3 12:00'
+    t1 = '2018-4-3 12:10'
+    t2 = '2018-4-3 11:50'
+    t3 = '2018-4-3 12:05'
+    t4 = '2018-4-3 12:15'
+    t5 = '2018-4-3 12:20'
+    i0 = rge.TimeInterval(t0, t1)
+    i1 = rge.TimeInterval(t2, t3)
+    i2 = rge.TimeInterval(t4, t5)
+    m = rge.MultiTimeInterval([i0, i1, i2])
+    assert m.duration == pd.Timedelta('25m')
+    assert m.gapspace == pd.Timedelta('5m')
+    assert m.compact == rge.TimeInterval(t2, t5)
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
