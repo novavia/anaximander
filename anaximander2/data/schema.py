@@ -15,7 +15,7 @@ import abc
 from collections import Mapping, OrderedDict
 import types
 
-from ..utilities import functions as fun
+from ..utilities import functions as fun, xprops
 from .columns import NxColumn
 
 
@@ -46,6 +46,11 @@ class ColumnMapType(abc.ABCMeta):
                                        cls.__nxcolumns__))
 
     @property
+    def identifier_columns(cls):
+        return OrderedDict(fun.vfilter(lambda f: f.index == 'nominal',
+                                       cls.__nxcolumns__))
+
+    @property
     def payload_columns(cls):
         columns = OrderedDict()
         for k, v in cls.__nxcolumns__.items():
@@ -64,8 +69,7 @@ class ColumnMapType(abc.ABCMeta):
 class ColumnMap(Mapping, metaclass=ColumnMapType):
 
     def __init__(self):
-        self._columns = OrderedDict([(k, v.copy())
-                                     for k, v in self.__nxcolumns__.items()])
+        self._columns = self.__nxcolumns__.copy()
         for k, v in self._columns.items():
             setattr(self, k, v)
         if not self._columns:
@@ -85,46 +89,129 @@ class ColumnMap(Mapping, metaclass=ColumnMapType):
 class SchemaIndexType(ColumnMapType):
     """Metaclass for SchemaIndex."""
 
+    def __new__(mcl, name, bases, namespace):
+        if bases[0] == ColumnMap:
+            return super().__new__(mcl, name, bases, namespace)
+        cmap = ColumnMapType(name, (), namespace)
+        identifier = bool(cmap.identifier_columns)
+        sequencer = bool(cmap.sequencer_columns)
+        if identifier and sequencer:
+            return DualSchemaIndexType(name, bases, namespace)
+        elif identifier:
+            return NominalSchemaIndexType(name, bases, namespace)
+        elif sequencer:
+            return SequentialSchemaIndexType(name, bases, namespace)
+        else:
+            return EmptySchemaIndexType(name, bases, namespace)
+
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
-        for col in cls.__nxcolumns__.values():
-            if col.index is None:
-                col.index = 'nominal'
+        if len(cls.identifier_columns) > 1:
+            msg = "SchemaIndex classes feature at most one identifier column."
+            raise SchemaError(msg)
         if len(cls.sequencer_columns) > 1:
             msg = "SchemaIndex classes feature at most one sequencer column."
             raise SchemaError(msg)
+        cls.rowkey = cls.__rowkey__
+        cls.rowidx = cls.__rowidx__
+
+
+class EmptySchemaIndexType(SchemaIndexType):
+    """A schema index with no columns."""
+
+    def __new__(mcl, name, bases, namespace):
+        return ColumnMapType.__new__(mcl, name, bases, namespace)
+
+    def __init__(cls, name, bases, namespace):
+        super().__init__(name, bases, namespace)
+        try:
+            assert not cls.identifier_columns
+            assert not cls.sequencer_columns
+        except AssertionError:
+            msg = "Incorrect index columns specification."
+            raise SchemaError(msg)
+        else:
+            cls._identifer = None
+            cls._sequencer = None
+
+
+class NominalSchemaIndexType(SchemaIndexType):
+    """A schema index with a single, nominal column."""
+
+    def __new__(mcl, name, bases, namespace):
+        return ColumnMapType.__new__(mcl, name, bases, namespace)
+
+    def __init__(cls, name, bases, namespace):
+        super().__init__(name, bases, namespace)
+        try:
+            assert cls.identifier_columns
+            assert not cls.sequencer_columns
+        except AssertionError:
+            msg = "Incorrect index columns specification."
+            raise SchemaError(msg)
+        else:
+            cls._identifier = list(cls.identifier_columns)[0]
+            cls._sequencer = None
+
+
+class SequentialSchemaIndexType(SchemaIndexType):
+    """A schema index with a single, sequential column."""
+
+    def __new__(mcl, name, bases, namespace):
+        return ColumnMapType.__new__(mcl, name, bases, namespace)
+
+    def __init__(cls, name, bases, namespace):
+        super().__init__(name, bases, namespace)
+        try:
+            assert not cls.identifier_columns
+            assert cls.sequencer_columns
+        except AssertionError:
+            msg = "Incorrect index columns specification."
+            raise SchemaError(msg)
+        else:
+            cls._identifier = None
+            cls._sequencer = list(cls.sequencer_columns)[0]
+
+
+class DualSchemaIndexType(SchemaIndexType):
+    """A schema index with a nominal and a sequential column."""
+
+    def __new__(mcl, name, bases, namespace):
+        return ColumnMapType.__new__(mcl, name, bases, namespace)
+
+    def __init__(cls, name, bases, namespace):
+        super().__init__(name, bases, namespace)
+        try:
+            assert cls.identifier_columns
+            assert cls.sequencer_columns
+        except AssertionError:
+            msg = "Incorrect index columns specification."
+            raise SchemaError(msg)
+        else:
+            cls._identifier = list(cls.identifier_columns)[0]
+            cls._sequencer = list(cls.sequencer_columns)[0]
 
 
 class SchemaIndex(ColumnMap, metaclass=SchemaIndexType):
-    """A column map destined to serve as a schema index."""
-
-    def __init__(self):
-        super().__init__()
-        sequencer_columns = type(self).sequencer_columns
-        if sequencer_columns:
-            sequencer = list(sequencer_columns.values())[0]
-            self._sequencer = self[sequencer.name]
-            self._identifiers = [f for f in self.values()
-                                 if f is not self._sequencer]
-        else:
-            self._sequencer = None
-            self._identifiers = list(self.values())
+    """Base class for SchemaIndex objects."""
+    _identifier = None
+    _sequencer = None
 
     @property
     def sequencer(self):
         return self._sequencer
 
     @property
-    def identifiers(self):
-        return self._identifiers
+    def identifier(self):
+        return self._identifier
 
     @abc.abstractmethod
-    def rowkey(self, **record):
-        """Method to compute the row key from index columns."""
+    def __rowkey__(self, index):
+        """Method to compute the row key from index tuple."""
         return ""
 
     @abc.abstractmethod
-    def rowidx(self, key):
+    def __rowidx__(self, key):
         """Method to compute index columns from key."""
         return ()
 
@@ -160,10 +247,10 @@ class SchemaBaseType(ColumnMapType):
         else:
             ix_name = name + 'Index'
             ix_namespace = cls.index_columns
-            if hasattr(cls, 'rowkey'):
-                ix_namespace['rowkey'] = cls.rowkey
-            if hasattr(cls, 'rowidx'):
-                ix_namespace['rowidx'] = cls.rowidx
+            if hasattr(cls, '__rowkey__'):
+                ix_namespace['__rowkey__'] = cls.rowkey
+            if hasattr(cls, '__rowidx__'):
+                ix_namespace['__rowidx__'] = cls.rowidx
 
             def exec_body(ns):
                 ns.update(ix_namespace)
@@ -185,8 +272,16 @@ class SchemaBase(ColumnMap, metaclass=SchemaBaseType):
         return self.index._sequencer
 
     @property
-    def identifiers(self):
-        return self.index._identifiers
+    def identifier(self):
+        return self.index._identifier
+
+    def rowkey(self, *idx):
+        """Method to compute the row key from index tuple."""
+        return self.index.rowkey(*idx)
+
+    def rowidx(self, key):
+        """Method to compute index columns from key."""
+        return self.index.rowidx(key)
 
 
 class SchemaType(SchemaBaseType):
@@ -224,6 +319,41 @@ class Schema(SchemaBase, metaclass=SchemaType):
         super().__init__()
         self.payload = self.__payload__()
         self._columns.update(self.payload._columns)
+
+
+class IndexedColumnType(SchemaBaseType):
+
+    def __new__(mcl, name, bases, namespace, index=None, column=None):
+        return super().__new__(mcl, name, bases, namespace, index=index)
+
+    def __init__(cls, name, bases, namespace, index=None, column=None):
+        super().__init__(name, bases, namespace, index=index)
+
+        if column is not None:
+            if cls.payload_columns:
+                msg = "An IndexedColumn type can either declare a column " + \
+                      "or be supplied with it but not both."
+                raise SchemaError(msg)
+            cls.__column__ = column
+        else:
+            try:
+                assert len(cls.payload_columns) == 1
+            except AssertionError:
+                if name == 'IndexedColumn':
+                    return
+                msg = "An IndexedColumn type features a single payload " + \
+                      "column."
+                raise SchemaError(msg)
+            cls.__column__ = list(cls.payload_columns.values())[0]
+
+
+class IndexedColumn(SchemaBase, metaclass=IndexedColumnType):
+    """A mini-schema comprising an index and a single column, for series."""
+
+    def __init__(self):
+        super().__init__()
+        self.column = self.__column__
+        self._columns[self.column.name] = self.column
 
 
 class MultiSchemaType(SchemaBaseType):

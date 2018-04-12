@@ -35,30 +35,30 @@ def test_column_map():
 class MyIndex(sch.SchemaIndex):
     id = Integer(index='sequential')
 
-    def rowkey(self, **record):
-        return str(record['id'])
+    def __rowkey__(self, idx):
+        return str(idx[0])
 
-    def rowidx(self, key):
+    def __rowidx__(self, key):
         return (int(key),)
 
 
 def test_index():
     my_index = MyIndex()
     assert my_index.id.index
-    assert my_index.rowkey(id=3) == '3'
+    assert my_index.rowkey((3,)) == '3'
     assert my_index.rowidx('3') == (3,)
-    assert my_index.sequencer == my_index.id
-    assert my_index.identifiers == []
+    assert my_index.sequencer == 'id'
+    assert my_index.identifier is None
 
 
 class MySchema(sch.Schema):
     id = Integer(index='nominal')
     x = Text()
 
-    def rowkey(self, **record):
-        return str(record['id'])
+    def __rowkey__(self, idx):
+        return str(idx[0])
 
-    def rowidx(self, key):
+    def __rowidx__(self, key):
         return (int(key),)
 
 
@@ -96,6 +96,30 @@ def test_alt_schema():
     assert my_alt_schema['x'] is my_alt_schema.payload['x']
 
 
+class MyIndexedColumn(sch.IndexedColumn, index=MyIndex):
+    x = Text()
+
+
+def test_indexed_column():
+    ixcol = MyIndexedColumn()
+    assert list(ixcol) == ['id', 'x']
+    assert list(ixcol.index) == ['id']
+    assert ixcol['id'] is ixcol.index['id']
+    assert ixcol['x'] is ixcol.column
+
+
+class MyAltIndexedColumn(sch.IndexedColumn, index=MyIndex, column=MySchema.x):
+    pass
+
+
+def test_alt_indexed_column():
+    ixcol = MyAltIndexedColumn()
+    assert list(ixcol) == ['id', 'x']
+    assert list(ixcol.index) == ['id']
+    assert ixcol['id'] is ixcol.index['id']
+    assert ixcol['x'] is ixcol.column
+
+
 class MyFamily(sch.ColumnFamily):
     x = Text()
     y = Text()
@@ -113,19 +137,7 @@ def test_multi_schema():
     assert list(multi_schema.families) == ['a', 'b']
     assert multi_schema['id'] is multi_schema.index['id']
     assert multi_schema['a'] is multi_schema.families['a']
-    assert multi_schema['a']['x'] != multi_schema['b']['x']
-
-
-class OutOfOrderSchema(MySchema):
-    a = Integer(index='nominal')
-    b = Text()
-
-
-def test_out_of_order_schema():
-    schema = OutOfOrderSchema()
-    assert list(schema) == ['id', 'a', 'x', 'b']
-    assert list(schema.index) == ['id', 'a']
-    assert list(schema.payload) == ['x', 'b']
+    assert multi_schema['a']['x'] == multi_schema['b']['x']
 
 
 def test_errors():

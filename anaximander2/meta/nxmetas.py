@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
-from collections import OrderedDict, Iterable
+from collections import OrderedDict
 import threading
 
 from ..utilities import functions as fun, xprops
@@ -24,7 +24,7 @@ from . import nxdescriptors as nxd
 __all__ = []
 
 # Global lock on programmatic subtype creation
-LOCK = threading.Lock()
+LOCK = threading.RLock()
 
 # =============================================================================
 # Metaprogramming infrastructure
@@ -310,24 +310,26 @@ class ArcheType(metaclass=ArchMeta):
 
         If not found, the subtype is opportunistically created.
         """
-        try:
-            subtype = type(archetype).registry[key]
-        except KeyError:
-            l = len(type(archetype).typekeys)
-            if l == 0:
-                raise
-            elif l == 1:
-                parameters = (key,)
-            elif l > 1:
-                parameters = key
-            kwargs = dict(zip(type(archetype).typekeys, parameters))
+        with LOCK:
             try:
-                subtype = archetype.subtype(**kwargs)
-                assert not subtype.abstract
-            except Exception as e:
-                msg = f"Could not create derived type with parameters {key}."
-                raise NxMetaError(msg)
-        return subtype
+                subtype = type(archetype).registry[key]
+            except KeyError:
+                l = len(type(archetype).typekeys)
+                if l == 0:
+                    raise
+                elif l == 1:
+                    parameters = (key,)
+                elif l > 1:
+                    parameters = key
+                kwargs = dict(zip(type(archetype).typekeys, parameters))
+                try:
+                    subtype = archetype.subtype(**kwargs)
+                    assert not subtype.abstract
+                except Exception as e:
+                    msg = f"Could not create derived type with " + \
+                          f"parameters {key}."
+                    raise NxMetaError(msg)
+            return subtype
 
     @property
     def clade(archetype):

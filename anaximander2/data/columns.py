@@ -37,7 +37,7 @@ class NxColumn(Registrable):
     share the same nominal index values. There can be at most one sequential
     index column in a schema.
     """
-    __registry__ = '__nxfields__'
+    __registry__ = '__nxcolumns__'
     __counter__ = count()
 
     def __init__(self, index=None, name=None, cls=None,
