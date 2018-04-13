@@ -13,9 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import pytest
 
-from anaximander2.utilities import nxattr as attr
-#from anaximander2.meta.nxobject import NxObject
-#from anaximander2.meta.nxtype import directory
+from anaximander3.utilities import nxattr as attr
 
 # =============================================================================
 # Test Cases

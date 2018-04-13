@@ -244,6 +244,12 @@ def merge(*iterables):
                 mark = ix
     return items
 
+
+def merge_setmaps(*setmaps):
+    """Merges mappings of iterables."""
+    keys = set.union(*[set(s.keys()) for s in setmaps])
+    return {k: set.union(*[s.get(k, set()) for s in setmaps]) for k in keys}
+
 # =============================================================================
 # Function decorators
 # =============================================================================

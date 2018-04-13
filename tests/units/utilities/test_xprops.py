@@ -13,7 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import pytest
 
-from anaximander2.utilities import xprops
+from anaximander3.utilities import xprops
 
 # =============================================================================
 # Test Cases

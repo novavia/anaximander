@@ -16,7 +16,7 @@ from unittest import TestCase
 
 import pytest
 
-from anaximander2.utilities import functions as fun
+from anaximander3.utilities import functions as fun
 
 # =============================================================================
 # Mock Item
@@ -123,6 +123,14 @@ def test_merge():
     l2 = ['f', 'd']
     with pytest.raises(ValueError):
         fun.merge(l0, l1, l2)
+
+
+def test_merge_setmaps():
+    m0 = {'a': {0, 1, 2}, 'b': {0}}
+    m1 = {'b': {0, 1}, 'c': {3}}
+    m2 = {'a': {}, 'b': {1}}
+    result = {'a': {0, 1, 2}, 'b': {0, 1}, 'c': {3}}
+    assert fun.merge_setmaps(m0, m1, m2) == result
 
 
 class TestDecorators(TestCase):

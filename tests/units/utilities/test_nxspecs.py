@@ -20,12 +20,12 @@ import time
 
 import pytest
 
-from anaximander2 import TESTDIR
-from anaximander2.utilities import nxspecs as nxs
+from anaximander3 import TESTDIR
+from anaximander3.utilities import nxspecs as nxs
 
 STORE_PATH = os.path.join(TESTDIR, 'data/specifications')
 PROJECT = 'anaximander-tests'
-BUCKET = 'specifications2'
+BUCKET = 'specifications3'
 
 # =============================================================================
 # Test Constants

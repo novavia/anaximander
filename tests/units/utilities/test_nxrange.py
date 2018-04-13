@@ -16,8 +16,8 @@ from unittest import TestCase
 import pandas as pd
 import pytest
 
-from anaximander2.utilities.nxtime import datetime
-from anaximander2.utilities import nxrange as rge
+from anaximander3.utilities.nxtime import datetime
+from anaximander3.utilities import nxrange as rge
 
 # =============================================================================
 # Test Cases

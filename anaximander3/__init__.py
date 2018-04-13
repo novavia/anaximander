@@ -49,7 +49,7 @@ def offline(assertion=None):
 
 
 from . import utilities
-from . import meta
+#from . import meta
 #from .structures import NxStructure
 #from .operators import NxOperator
 

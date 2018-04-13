@@ -17,8 +17,8 @@ import pandas as pd
 import pytest
 import pytz
 
-import anaximander2 as nx
-from anaximander2.utilities.nxtime import datetime, naify, tz_aware, tz_naive
+import anaximander3 as nx
+from anaximander3.utilities.nxtime import datetime, naify, tz_aware, tz_naive
 
 
 NXPATH = os.path.dirname(nx.__path__[0])
