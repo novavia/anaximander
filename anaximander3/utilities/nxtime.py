@@ -40,7 +40,7 @@ MAX_TIMESTAMP = MAX.timestamp()
 
 def datetime(value):
     """Equivalent to pd.Timestamp, but converts naive datetime to UTC."""
-    timestamp = pd.to_datetime(value)
+    timestamp = pd.to_datetime(value, utc=True)
     try:
         if not timestamp.tz:
             return timestamp.tz_localize(UTC)

@@ -29,6 +29,7 @@ FEATURELOG_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
 # Test Cases
 # =============================================================================
 
+
 @pytest.fixture(scope="module")
 def featurelog():
     """Returns a nominal dataframe."""
@@ -36,10 +37,11 @@ def featurelog():
     dataframe.timestamp = pd.to_datetime(dataframe.timestamp)
     return dataframe
 
+
 def test_datetime():
     naive = '2017-03-23 00:00:00'
     assert datetime(naive) == pd.Timestamp('2017-03-23 00:00:00 UTC')
-    aware = '2017-03-23 00:00:00 UTC' 
+    aware = '2017-03-23 00:00:00 UTC'
     assert datetime(aware) == pd.Timestamp('2017-03-23 00:00:00 UTC')
     aware = '2017-03-23 00:00:00-0700'
     assert datetime(aware) == pd.Timestamp('2017-03-23 00:00:00-0700')
@@ -48,10 +50,10 @@ def test_datetime():
 def test_naify():
     naive = '2017-03-23 00:00:00'
     assert naify(naive) == pd.Timestamp('2017-03-23 00:00:00')
-    aware = '2017-03-23 00:00:00 UTC' 
+    aware = '2017-03-23 00:00:00 UTC'
     assert naify(aware) == pd.Timestamp('2017-03-23 00:00:00')
     aware = '2017-03-23 00:00:00-0700'
-    assert naify(aware) == pd.Timestamp('2017-03-23 07:00:00')    
+    assert naify(aware) == pd.Timestamp('2017-03-23 07:00:00')
 
 
 def test_tz_aware(featurelog):
