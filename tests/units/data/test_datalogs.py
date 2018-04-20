@@ -38,6 +38,9 @@ FEATURELOG_SUPERFLUOUS_PATH = os.path.join(TEST_DATA_DIR,
                                            'featurelog_superfluous.csv')
 FEATURELOG_INVALID_PATH = os.path.join(TEST_DATA_DIR, 'featurelog_invalid.csv')
 
+FEATURE_IDS = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
+FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
+
 DUMP_PATH = os.path.join(TEST_DATA_DIR, 'dump.csv')
 
 MAC_PATTERN = re.compile('^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$')
@@ -132,18 +135,24 @@ class FeatureSchema(sch.SampleLogsSchema):
 def test_logs(featurelog, featurelog_partial, featurelog_no_device,
               featurelog_shuffled, featurelog_superfluous,
               featurelog_invalid):
-    log = dtl.DataLog(featurelog, schema=FeatureSchema)
+    log = dtl.DataLog(featurelog, schema=FeatureSchema,
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     assert log.data.equals(LOG)
     log = dtl.DataLog(featurelog_partial,
-                      schema=FeatureSchema('Feature_Value_0'))
+                      schema=FeatureSchema('Feature_Value_0'),
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     assert log.data.equals(LOG[['Feature_Value_0']])
     with pytest.raises(dtl.ConformityError):
-        dtl.DataLog(featurelog_no_device, schema=FeatureSchema)
-    log = dtl.DataLog(featurelog_shuffled, schema=FeatureSchema)
+        dtl.DataLog(featurelog_no_device, schema=FeatureSchema,
+                    id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+    log = dtl.DataLog(featurelog_shuffled, schema=FeatureSchema,
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     assert log.data.equals(LOG)
-    log = dtl.DataLog(featurelog_superfluous, schema=FeatureSchema)
+    log = dtl.DataLog(featurelog_superfluous, schema=FeatureSchema,
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     assert log.data.equals(LOG)
-    log = dtl.DataLog(featurelog_invalid, schema=FeatureSchema)
+    log = dtl.DataLog(featurelog_invalid, schema=FeatureSchema,
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     assert not log.validate()
 
 

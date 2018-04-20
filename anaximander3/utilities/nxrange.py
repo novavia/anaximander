@@ -13,23 +13,41 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections.abc import Set, Iterable, Sequence
+from functools import partial, wraps
 from itertools import chain
 from numbers import Number
 
+import attr
 from google.cloud.bigtable.row_filters import ValueRangeFilter, \
-    ColumnQualifierRegexFilter, RowFilterChain
+    ColumnQualifierRegexFilter, RowFilterChain, BlockAllFilter
 import numpy as np
 import pandas as pd
 
-from .nxtime import datetime
-from . import nxattr, xprops
-from .functions import get, passthrough
+from . import nxtime
+from .functions import get, passthrough, iformat
 
 
-__all__ = ['float_interval', 'time_interval', 'string_interval', 'levels']
+__all__ = ['FloatRange', 'FloatInterval', 'EmptyFloatInterval',
+           'FloatSingleton', 'TimeRange', 'TimeInterval', 'EmptyTimeInterval',
+           'TimeSingleton', 'Levels', 'Level', 'MultiFloatInterval',
+           'MultiTimeInterval', 'float_range', 'time_range',
+           'categorical_range', 'cat_range']
+
+
+def nonehandler(default):
+    """Conversion function decorator that handles None with a default."""
+    def decorator(converter):
+        @wraps(converter)
+        def decorated(value):
+            if value is None:
+                return default
+            else:
+                return converter(value)
+        return decorated
+    return decorator
 
 # =============================================================================
-# Class declarations
+# Abstract base classes
 # =============================================================================
 
 
@@ -42,7 +60,7 @@ class ContinuousRange(Range):
     pass
 
 
-class DiscreteRange(Range):
+class CategoricalRange(Range):
     """Abstract base class for Ranges in discrete data dimensions."""
     pass
 
@@ -60,29 +78,10 @@ def _sqlstring(val):
         return "'{0}'".format(val)
 
 
-@nxattr.s(init=False, these={'lower': nxattr.ib(), 'upper': nxattr.ib()})
 class Interval(ContinuousRange, Iterable):
-    """For now intervals are closed."""
-    __lower_convert__ = None
-    __upper_convert__ = None
-
-    def __init__(self, lower=None, upper=None):
-        self._lower_input = lower
-        self._lower = self.__lower_convert__(lower)
-        self._upper_input = upper
-        self._upper = self.__upper_convert__(upper)
-        if self.lower > self.upper:
-            msg = "Cannot set interval with lower bound greater " + \
-                "than upper bound."
-            raise ValueError(msg)
-
-    @xprops.cachedproperty
-    def lower(self):
-        return None
-
-    @xprops.cachedproperty
-    def upper(self):
-        return None
+    """For now intervals are closed on the left and open on the right."""
+    __zero__ = None  # zero-length value
+    __empty__ = None  # placeholder for empty interval, assigned ex-post
 
     @property
     def length(self):
@@ -99,28 +98,28 @@ class Interval(ContinuousRange, Iterable):
         if isinstance(item, Interval):
             return item.lower >= self.lower and item.upper <= self.upper
         else:
-            return item >= self.lower and item <= self.upper
+            return item >= self.lower and item < self.upper
 
-    def sql(self, attr):
+    def sql(self, attr_):
         """Returns a sql statement fragment making attr within self."""
-        if self._lower_input is not None:
-            lower = attr + " >= " + _sqlstring(self.lower)
-        else:
+        if self.lower == self.__min__:
             lower = None
-        if self._upper_input is not None:
-            upper = attr + " <= " + _sqlstring(self.upper)
         else:
+            lower = attr_ + " >= " + _sqlstring(self.lower)
+        if self.upper == self.__max__:
             upper = None
-        return " AND ".join((s for s in (lower, upper) if s is not None))
+        else:
+            upper = attr_ + " < " + _sqlstring(self.upper)
+        return " AND ".join([b for b in (lower, upper) if b is not None])
 
-    def btfilter(self, attr):
+    def btfilter(self, attr_):
         """Returns bigtable row filter applying self's range to target cell."""
-        colfilter = ColumnQualifierRegexFilter(attr.encode('utf-8'))
-        if self._lower_input is None:
+        colfilter = ColumnQualifierRegexFilter(attr_.encode('utf-8'))
+        if self.lower == self.__min__:
             lower = None
         else:
             lower = str(self.lower).encode('utf-8')
-        if self._upper_input is None:
+        if self.upper == self.__max__:
             upper = None
         else:
             upper = str(self.upper).encode('utf-8')
@@ -132,98 +131,82 @@ class Interval(ContinuousRange, Iterable):
     @classmethod
     def intersection(cls, a, b):
         """Returns an interval or None."""
+        if isinstance(a, EmptyInterval):
+            return cls.__empty__()
+        elif isinstance(b, EmptyInterval):
+            return cls.__empty__()
         lower = max([a.lower, b.lower])
         upper = min([a.upper, b.upper])
         if upper < lower:
-            return None
+            return cls.__empty__()
         return cls(lower, upper)
 
     def __and__(self, other):
         """Implements intersection at the instance level."""
         return self.intersection(self, other)
 
+    def __attrs_post_init__(self):
+        if self.lower > self.upper:
+            msg = f"Cannot construct interval with lower bound " + \
+                  f"{self.lower} greater than upper bound {self.upper}"
+            raise ValueError(msg)
 
-def _lower_float_convert(value):
-    if value is None:
-        return float('-inf')
-    else:
-        return float(value)
-
-
-def _upper_float_convert(value):
-    if value is None:
-        return float('inf')
-    else:
-        return float(value)
+    def __repr__(self):
+        return f"<{type(self).__name__} {self.lower}, {self.upper}>"
 
 
-class FloatInterval(Interval):
-    """An interval of floats."""
-    __lower_convert__ = staticmethod(_lower_float_convert)
-    __upper_convert__ = staticmethod(_upper_float_convert)
+class EmptyInterval(Interval):
+    lower = None
+    upper = None
 
-
-def _lower_time_convert(value):
-    if value is None:
-        return datetime.min
-    else:
-        return datetime(value)
-
-
-def _upper_time_convert(value):
-    if value is None:
-        return datetime.max
-    else:
-        return datetime(value)
-
-
-class TimeInterval(Interval):
-    """An interval of datetimes.
-
-    The arguments are automatically converted to pandas Timestamp if
-    possible, potentially raising an error if that is not possible.
-    Naive datetime values are also automatically converted to UTC.
-    Finally, None is an admissible value for either lower or upper, in
-    which case it will be converted to anaximander's absolute time bounds,
-    currently set at Jan. 1 1970, UTC and Jan. 1 2100, UTC.
-    """
-    __lower_convert__ = staticmethod(_lower_time_convert)
-    __upper_convert__ = staticmethod(_upper_time_convert)
-
-    def tz_convert(self, tzinfo):
-        return type(self)(self.lower.tz_convert(tzinfo),
-                          self.upper.tz_convert(tzinfo))
+    def __init__(self, *args, **kwargs):
+        pass
 
     @property
-    def duration(self):
-        return self.upper - self.lower
+    def length(self):
+        return self.__zero__
+
+    @property
+    def bounds(self):
+        return iter([])
+
+    def __contains__(self, item):
+        return False
+
+    def sql(self, attr_):
+        return "1 < 0"
+
+    def btfilter(self, attr_):
+        return RowFilterChain([BlockAllFilter])
+
+    @classmethod
+    def intersection(cls, a, b):
+        return cls()
+
+    def __repr__(self):
+        return iformat(self)
 
 
-def _lower_string_convert(value):
-    if value is None:
-        return ''
-    else:
-        return str(value)
+class Singleton(ContinuousRange):
+    """A degenerate continuous range at a single position."""
+
+    @property
+    def length(self):
+        return self.__zero__
+
+    @property
+    def bounds(self):
+        return (self.position, self.position)
+
+    def sql(self, attr):
+        """Returns a sql statement fragment making attr equals to self."""
+        return attr + " = " + _sqlstring(self.position)
+
+    def __repr__(self):
+        return f"<{type(self).__name__} {self.position}>"
 
 
-def _upper_string_convert(value):
-    if value is None:
-        # Maximum allowable argument to chr
-        # Technically a string that starts with this character would be
-        # greater than the purported max value created below, but that is
-        # about as likely as snow in the tropics.
-        return chr(1114111)
-    else:
-        return str(value)
-
-
-class StringInterval(Interval):
-    """An interval of strings."""
-    __lower_convert__ = staticmethod(_lower_string_convert)
-    __upper_convert__ = staticmethod(_upper_string_convert)
-
-
-class Levels(DiscreteRange, Set):
+class Levels(CategoricalRange, Set):
     """Holds a set of discrete levels."""
 
     def __init__(self, levels):
@@ -242,59 +225,143 @@ class Levels(DiscreteRange, Set):
         return self._levels == set(other)
 
     def __repr__(self):
-        return "Levels({0})".format(repr(self._levels))
+        return f"<{type(self).__name__} {self._levels}>"
 
     def sql(self, attr):
         """Returns a sql statement fragment making attr within self."""
         return attr + " IN (" + ", ".join(_sqlstring(l) for l in self) + ")"
 
 
-class Level(Levels):
+@attr.s(frozen=True, repr=False, cmp=False)
+class Level(CategoricalRange):
     """Holds a single level."""
-
-    def __init__(self, level):
-        super().__init__([level])
-        self._level = level
-
-    def __eq__(self, other):
-        return self._level.__eq__(other)
-
-    def __repr__(self):
-        return "Level({0})".format(repr(self._level))
+    level = attr.ib()
 
     def sql(self, attr):
         """Returns a sql statement fragment making attr equals to self."""
-        return attr + " = " + _sqlstring(self._level)
+        return attr + " = " + _sqlstring(self.level)
+
+    def __eq__(self, other):
+        return self.level.__eq__(other)
+
+    def __repr__(self):
+        return f"<{type(self).__name__} {self.level!r}>"
+
+
+# =============================================================================
+# Continuous range classes
+# =============================================================================
+
+
+class FloatRange(ContinuousRange):
+    __zero__ = 0.
+    __min__ = float('-inf')
+    __max__ = float('inf')
+
+
+@attr.s(frozen=True, repr=False)
+class FloatInterval(Interval, FloatRange):
+    """An interval of floats."""
+    lower = attr.ib(default=float('-inf'),
+                    convert=nonehandler(float('-inf'))(np.float_))
+    upper = attr.ib(default=float('inf'),
+                    convert=nonehandler(float('inf'))(np.float_))
+
+
+class EmptyFloatInterval(EmptyInterval, FloatInterval):
+    pass
+
+
+FloatInterval.__empty__ = EmptyFloatInterval
+
+
+@attr.s(frozen=True, repr=False)
+class FloatSingleton(Singleton, FloatRange):
+    position = attr.ib(convert=np.float_)
+
+
+class TimeRange(ContinuousRange):
+    __zero__ = pd.Timedelta(0)
+    __min__ = nxtime.MIN
+    __max__ = nxtime.MAX
+
+
+@attr.s(frozen=True, repr=False)
+class TimeInterval(Interval, TimeRange):
+    """An interval of datetimes.
+
+    The arguments are automatically converted to pandas Timestamp if
+    possible, potentially raising an error if that is not possible.
+    Naive datetime values are also automatically converted to UTC.
+    Finally, None is an admissible value for either lower or upper, in
+    which case it will be converted to anaximander's absolute time bounds,
+    currently set at Jan. 1 1970, UTC and Jan. 1 2100, UTC.
+    """
+    lower = attr.ib(nxtime.MIN, convert=nonehandler(nxtime.MIN)(
+        partial(pd.to_datetime, utc=True)))
+    upper = attr.ib(nxtime.MAX, convert=nonehandler(nxtime.MAX)(
+        partial(pd.to_datetime, utc=True)))
+
+    def tz_convert(self, tzinfo):
+        return type(self)(self.lower.tz_convert(tzinfo),
+                          self.upper.tz_convert(tzinfo))
+
+    @property
+    def duration(self):
+        return self.upper - self.lower
+
+
+class EmptyTimeInterval(EmptyInterval, TimeInterval):
+    pass
+
+
+TimeInterval.__empty__ = EmptyTimeInterval
+
+
+@attr.s(frozen=True, repr=False)
+class TimeSingleton(Singleton, TimeRange):
+    position = attr.ib(convert=partial(pd.to_datetime, utc=True))
+
+    def tz_convert(self, tzinfo):
+        return type(self)(self.position.tz_convert(tzinfo))
 
 # =============================================================================
 # Helper functions
 # =============================================================================
 
 
-@passthrough(FloatInterval)
-def float_interval(lower=None, upper=None):
-    """Creates or passes through a float interval from lower, upper bound."""
-    return FloatInterval(lower, upper)
+@passthrough(FloatInterval, FloatSingleton)
+def float_range(x, y=None):
+    """Creates or passes through a float range from one or two arguments."""
+    if y is None:
+        if isinstance(x, Iterable) and not isinstance(x, str):
+            return FloatInterval(*x)
+        else:
+            return FloatSingleton(x)
+    else:
+        return FloatInterval(x, y)
 
 
-@passthrough(TimeInterval)
-def time_interval(lower=None, upper=None):
-    """Creates or passes through a time interval from lower, upper bound."""
-    return TimeInterval(lower, upper)
-
-
-@passthrough(StringInterval)
-def string_interval(lower=None, upper=None):
-    """Creates or passes through a string interval from lower, upper bound."""
-    return StringInterval(lower, upper)
+@passthrough(TimeInterval, TimeSingleton)
+def time_range(t0, t1=None):
+    """Creates or passes through a time range from one or two arguments."""
+    if t1 is None:
+        if isinstance(t0, Iterable) and not isinstance(t0, str):
+            return TimeInterval(*t0)
+        else:
+            return TimeSingleton(t0)
+    else:
+        return TimeInterval(t0, t1)
 
 
 @passthrough(Level, Levels)
-def levels(arg):
+def categorical_range(arg):
     """Creates or passes through either a Level or Levels."""
     if isinstance(arg, Iterable) and not isinstance(arg, str):
         return Levels(arg)
     return Level(arg)
+
+cat_range = categorical_range
 
 
 # =============================================================================
@@ -334,13 +401,17 @@ class MultiInterval(MultiRange, Sequence):
         intervals = get(intervals, [])
         self._intervals = self.normalize(*intervals)
 
+    @property
+    def intervals(self):
+        return list(self._intervals)
+
     @classmethod
     def normalize(cls, *intervals):
         """Normalizes intervals into an ordered, non-overlapping set."""
-        intervals = list(intervals)
+        intervals = list(i for i in intervals
+                         if not isinstance(i, EmptyInterval))
         if not intervals:
             return []
-        itype = type(intervals[0])
         series = pd.Series((1, -1) * len(intervals),
                            index=chain(*[i.bounds for i in intervals]))
         series.sort_index(inplace=True)
@@ -359,7 +430,8 @@ class MultiInterval(MultiRange, Sequence):
             keepers = interior > cls.tolerance
             lowers = [lowest] + list(lowers[1:][keepers])
             uppers = list(uppers[:-1][keepers]) + [uppest]
-        return [itype(lower, upper) for lower, upper in zip(lowers, uppers)]
+        return [cls.itype(lower, upper)
+                for lower, upper in zip(lowers, uppers)]
 
     @classmethod
     def intersection(cls, a, b):
@@ -370,7 +442,6 @@ class MultiInterval(MultiRange, Sequence):
         """
         if not a:
             return cls()
-        itype = type(a._intervals[0])
         series_a = pd.Series((1, -1) * len(a),
                              index=chain(*[i.bounds for i in a]))
         series_b = pd.Series((1, -1) * len(b),
@@ -383,7 +454,7 @@ class MultiInterval(MultiRange, Sequence):
         is_lower = signature == 2.0
         lowers = signature.index[is_lower]
         uppers = signature.index[is_lower.shift().fillna(False)]
-        return cls([itype(l, u) for l, u in zip(lowers, uppers)])
+        return cls([cls.itype(l, u) for l, u in zip(lowers, uppers)])
 
     @classmethod
     def difference(cls, a, b):
@@ -394,7 +465,6 @@ class MultiInterval(MultiRange, Sequence):
         """
         if not a:
             return cls()
-        itype = type(a._intervals[0])
         series_a = pd.Series((1, -1) * len(a),
                              index=chain(*[i.bounds for i in a]))
         series_b = pd.Series((1, -1) * len(b),
@@ -408,7 +478,7 @@ class MultiInterval(MultiRange, Sequence):
         is_lower = signature == 1.0
         lowers = signature.index[is_lower]
         uppers = signature.index[is_lower.shift().fillna(False)]
-        return cls([itype(l, u) for l, u in zip(lowers, uppers)])
+        return cls([cls.itype(l, u) for l, u in zip(lowers, uppers)])
 
     @classmethod
     def union(cls, *instances):
@@ -435,10 +505,15 @@ class MultiInterval(MultiRange, Sequence):
         return self.union(self, other)
 
     def __repr__(self):
-        return "{0}({1})".format(type(self).__name__, self._intervals)
+        return iformat()(self)
+
+
+class MultiFloatInterval(MultiInterval):
+    itype = FloatInterval
 
 
 class MultiTimeInterval(MultiInterval):
+    itype = TimeInterval
     tolerance = pd.Timedelta(microseconds=1)
 
     @property
@@ -447,3 +522,6 @@ class MultiTimeInterval(MultiInterval):
             return pd.Timedelta(0)
         durations = pd.Series(i.length for i in self)
         return durations.sum()
+
+    def tz_convert(self, tzinfo):
+        return type(self)([i.tz_convert(tzinfo) for i in self._intervals])

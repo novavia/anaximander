@@ -122,7 +122,7 @@ def iformat(*attrs, typename=None):
             for link in path[:-1]:
                 obj = getattr(obj, link)
             keyvals[path[0]] = getattr(obj, path[-1])
-        content = " ".join(f"{k}:{v}" for k, v in keyvals.items())
+        content = " ".join(f"{k}:{v!r}" for k, v in keyvals.items())
         return f"<{typename} {content}>"
     return formatter
 

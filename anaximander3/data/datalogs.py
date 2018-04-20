@@ -14,15 +14,11 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import OrderedDict
 
-import numpy as np
 import pandas as pd
-from pandas.api.types import CategoricalDtype
-from pandas.core.dtypes.dtypes import DatetimeTZDtype
 
-from ..utilities import functions as fun, xprops
+from ..utilities import xprops, nxrange as rge
 from .exceptions import ConformityError
 from .base import DataObjectType
-from . import nxcolumns as cln
 from . import nxschema as sch
 
 
@@ -36,6 +32,8 @@ __all__ = []
 class DataLogsBase:
     """Base class for all data logs."""
     __schema__ = None  # placeholder for specialized type parameter
+    __id_range__ = None  # placeholder for expected id range type
+    __dt_range__ = None  # placeholder for expected time range type
 
     def __new__(cls, data, *, schema=None, id_range=None, dt_range=None,
                 cast=True, validate=False, **metadata):
@@ -68,8 +66,22 @@ class DataLogsBase:
             self._data = self.cast(data)
         else:
             self._data = data
-        self._id_range = id_range
-        self._sq_range = dt_range
+        self._id_range = rge.cat_range(id_range)
+        self._dt_range = rge.time_range(dt_range)
+        try:
+            assert isinstance(self._id_range, self.__id_range__)
+        except AssertionError:
+            msg = f"{type(self).__name__} expects a " + \
+                  f"{self.__id_range__.__name__} instance that could not " + \
+                  f"be cast from {id_range}"
+            raise ValueError(msg)
+        try:
+            assert isinstance(self._dt_range, self.__dt_range__)
+        except AssertionError:
+            msg = f"{type(self).__name__} expects a " + \
+                  f"{self.__dt_range__.__name__} instance that could not " + \
+                  f"be cast from {dt_range}"
+            raise ValueError(msg)
         self.metadata = metadata
         if validate:
             if not self.validate():
@@ -210,6 +222,8 @@ class ArrayType(DataObjectType):
 class DataLog(DataLogsBase, metaclass=LogType):
     """A doubly-index log -multiple ids and datetimes."""
     __schema__ = sch.LogsSchema
+    __id_range__ = rge.Levels
+    __dt_range__ = rge.TimeInterval
     _index_columns = ['id', 'datetime']
 
     @property
@@ -241,6 +255,8 @@ class DataLog(DataLogsBase, metaclass=LogType):
 class DataSequence(DataLogsBase, metaclass=SequenceType):
     """A single-id dataframe container, indexed by datetime."""
     __schema__ = sch.LogsSchema
+    __id_range__ = rge.Level
+    __dt_range__ = rge.TimeInterval
     _index_columns = ['datetime']
 
     @property
@@ -281,6 +297,8 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
 class DataArray(DataLogsBase, metaclass=ArrayType):
     """A single datetime dataframe container, indexed by id."""
     __schema__ = sch.LogsSchema
+    __id_range__ = rge.Levels
+    __dt_range__ = rge.TimeSingleton
     _index_columns = ['id']
 
     @property
