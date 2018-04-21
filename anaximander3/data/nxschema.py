@@ -14,10 +14,12 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import Mapping, OrderedDict, defaultdict
 import types
+import warnings
 
 import pandas as pd
 
 from ..utilities import functions as fun, nxtime
+from ..utilities.jsonmixin import JsonMixin
 from .exceptions import SchemaError
 from .nxcolumns import NxColumn, DateTime, Categorical, EventLabel, StateLabel
 
@@ -257,6 +259,7 @@ class ColumnFamily(ColumnMap, NxColumn):
 
 
 class SchemaBaseType(ColumnMapType):
+    __registry__ = dict()
 
     def __new__(mcl, name, bases, namespace, index=None):
         return super().__new__(mcl, name, bases, namespace)
@@ -313,7 +316,12 @@ class SchemaBase(ColumnMap, metaclass=SchemaBaseType):
 class SchemaType(SchemaBaseType):
 
     def __new__(mcl, name, bases, namespace, index=None, payload=None):
-        return super().__new__(mcl, name, bases, namespace, index=index)
+        cls = super().__new__(mcl, name, bases, namespace, index=index)
+        if name in mcl.__registry__:
+            msg = f"Overwriting Schema class with duplicate name {name}."
+            warnings.warn(msg)
+        mcl.__registry__[name] = cls
+        return cls
 
     def __init__(cls, name, bases, namespace, index=None, payload=None):
         super().__init__(name, bases, namespace, index=index)
@@ -339,12 +347,31 @@ class SchemaType(SchemaBaseType):
             raise SchemaError(msg)
 
 
-class Schema(SchemaBase, metaclass=SchemaType):
+class Schema(SchemaBase, JsonMixin, metaclass=SchemaType):
 
     def __init__(self, *columns, exclude=None):
         super().__init__()
         self.payload = self.__payload__(*columns, exclude=exclude)
         self._columns.update(self.payload._columns)
+
+    def to_dict(self):
+        return {'schematype': type(self).__name__,
+                'columns': list(self.payload)}
+
+    @classmethod
+    def from_dict(cls, dict_):
+        try:
+            type_name = dict_['schematype']
+            columns = dict_['columns']
+        except KeyError:
+            msg = f"Invalid mapping."
+            raise ValueError(msg)
+        try:
+            type_ = cls.__registry__[type_name]
+        except KeyError:
+            msg = f"Could not find a schema type named {type_name}."
+            raise TypeError(msg)
+        return type_(*columns)
 
 
 class IndexedColumnType(SchemaBaseType):

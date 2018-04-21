@@ -13,12 +13,14 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import OrderedDict
+import json
 
 import pandas as pd
 
-from ..utilities import xprops, nxrange as rge
+from ..utilities import xprops, nxrange as rge, jsonmixin
 from .exceptions import ConformityError
 from .base import DataObjectType
+from .records import Record
 from . import nxschema as sch
 
 
@@ -29,12 +31,14 @@ __all__ = []
 # =============================================================================
 
 
-class DataLogsBase:
+class DataLogsBase(jsonmixin.JsonMixin):
     """Base class for all data logs."""
     __schema__ = None  # placeholder for specialized type parameter
     __id_range__ = None  # placeholder for expected id range type
     __dt_range__ = None  # placeholder for expected time range type
 
+    #TODO: this should inspect the schema's inheritance to provide
+    # the highest-registered schemaed class
     def __new__(cls, data, *, schema=None, id_range=None, dt_range=None,
                 cast=True, validate=False, **metadata):
         if schema is not None:
@@ -83,6 +87,8 @@ class DataLogsBase:
                   f"be cast from {dt_range}"
             raise ValueError(msg)
         self.metadata = metadata
+        self.metadata.update({'id_range': self.id_range.serializable,
+                              'dt_range': self.dt_range.serializable})
         if validate:
             if not self.validate():
                 msg = "Validation failed with the following errors: " + \
@@ -205,6 +211,28 @@ class DataLogsBase:
     def validate(self):
         """Returns True or False whether the data validates or not."""
         return self._validate().empty
+
+    def to_dict(self):
+        return {'data': json.loads(self.tabulated.to_json(date_format='iso')),
+                'schema': self.schema.to_dict(),
+                'metadata': self.metadata}
+
+    @classmethod
+    def from_dict(cls, dict_):
+        try:
+            data_ = dict_['data']
+            schema_ = dict_['schema']
+            metadata = dict_['metadata']
+        except KeyError:
+            msg = f"Invalid mapping."
+            raise ValueError(msg)
+        data = pd.DataFrame.from_dict(data_)
+        schema = sch.Schema.from_dict(schema_)
+        id_range = rge.cat_range(metadata.pop('id_range', None))
+        dt_range = rge.time_range(metadata.pop('dt_range', None))
+        cls = archetype(id_range, dt_range)
+        return cls(data, schema=schema, id_range=id_range,
+                   dt_range=dt_range, **metadata)
 
 
 class LogType(DataObjectType):
@@ -336,6 +364,22 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
                      cast=False, schema=self.schema, **self.metadata)
 
 
+def archetype(id_range, dt_range):
+    """Selects an archetype based on the type of ranges supplied."""
+    if isinstance(id_range, rge.Level):
+        if isinstance(dt_range, rge.TimeSingleton):
+            return Record
+        elif isinstance(dt_range, rge.TimeInterval):
+            return DataSequence
+    elif isinstance(id_range, rge.Levels):
+        if isinstance(dt_range, rge.TimeSingleton):
+            return DataArray
+        elif isinstance(dt_range, rge.TimeInterval):
+            return DataLog
+    else:
+        raise TypeError
+
+
 # =============================================================================
 # Practical log types
 # =============================================================================
@@ -399,17 +443,3 @@ class StateArray(DataArray):
 
 class SummaryArray(DataArray):
     __schema__ = sch.SummaryLogsSchema
-
-# =============================================================================
-# Pandas mapping
-# =============================================================================
-
-
-def cast(series, dtype):
-    """Casts a data series to the supplied dtype."""
-    try:
-        if dtype.kind == 'M' and not series.dtype.kind == 'M':
-            series = pd.to_datetime(series)
-    except AttributeError:
-        pass
-    return series.astype(dtype)

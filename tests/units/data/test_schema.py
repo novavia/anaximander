@@ -74,6 +74,11 @@ def test_schema():
     assert my_schema['x'] is my_schema.payload['x']
 
 
+def test_json():
+    my_schema = MySchema()
+    assert MySchema.from_json(my_schema.to_json()) == my_schema
+
+
 class MyInheritedSchema(MySchema):
     y = Text()
 

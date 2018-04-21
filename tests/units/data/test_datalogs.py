@@ -156,5 +156,12 @@ def test_logs(featurelog, featurelog_partial, featurelog_no_device,
     assert not log.validate()
 
 
+def test_json_round_trip(featurelog):
+    log = dtl.DataLog(featurelog, schema=FeatureSchema,
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+    log = dtl.DataLog.json_loads(log.json_dumps())
+    assert log.data.equals(LOG)
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])

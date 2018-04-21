@@ -54,6 +54,10 @@ def nonehandler(default):
 class Range(abc.ABC):
     """Abstract base class for all Range objects."""
 
+    @property
+    def serializable(self):
+        return None
+
 
 class ContinuousRange(Range):
     """Abstract base class for Ranges in continuous data dimensions."""
@@ -126,8 +130,6 @@ class Interval(ContinuousRange, Iterable):
         rgefilter = ValueRangeFilter(lower, upper)
         return RowFilterChain([colfilter, rgefilter])
 
-    # XXX: A more robust implementation would involve creating an
-    # empty interval object.
     @classmethod
     def intersection(cls, a, b):
         """Returns an interval or None."""
@@ -166,10 +168,6 @@ class EmptyInterval(Interval):
     def length(self):
         return self.__zero__
 
-    @property
-    def bounds(self):
-        return iter([])
-
     def __contains__(self, item):
         return False
 
@@ -184,7 +182,7 @@ class EmptyInterval(Interval):
         return cls()
 
     def __repr__(self):
-        return iformat(self)
+        return iformat()(self)
 
 
 class Singleton(ContinuousRange):
@@ -209,7 +207,9 @@ class Singleton(ContinuousRange):
 class Levels(CategoricalRange, Set):
     """Holds a set of discrete levels."""
 
-    def __init__(self, levels):
+    def __init__(self, levels=None):
+        if levels is None:
+            levels = []
         self._levels = set(levels)
 
     def __contains__(self, item):
@@ -220,6 +220,10 @@ class Levels(CategoricalRange, Set):
 
     def __len__(self):
         return self._levels.__len__()
+
+    @property
+    def serializable(self):
+        return list(self._levels)
 
     def __eq__(self, other):
         return self._levels == set(other)
@@ -240,6 +244,10 @@ class Level(CategoricalRange):
     def sql(self, attr):
         """Returns a sql statement fragment making attr equals to self."""
         return attr + " = " + _sqlstring(self.level)
+
+    @property
+    def serializable(self):
+        return self.level
 
     def __eq__(self, other):
         return self.level.__eq__(other)
@@ -267,9 +275,16 @@ class FloatInterval(Interval, FloatRange):
     upper = attr.ib(default=float('inf'),
                     convert=nonehandler(float('inf'))(np.float_))
 
+    @property
+    def serializable(self):
+        return (self.lower, self.upper)
+
 
 class EmptyFloatInterval(EmptyInterval, FloatInterval):
-    pass
+
+    @property
+    def serializable(self):
+        return None
 
 
 FloatInterval.__empty__ = EmptyFloatInterval
@@ -278,6 +293,10 @@ FloatInterval.__empty__ = EmptyFloatInterval
 @attr.s(frozen=True, repr=False)
 class FloatSingleton(Singleton, FloatRange):
     position = attr.ib(convert=np.float_)
+
+    @property
+    def serializable(self):
+        return self.position
 
 
 class TimeRange(ContinuousRange):
@@ -310,9 +329,16 @@ class TimeInterval(Interval, TimeRange):
     def duration(self):
         return self.upper - self.lower
 
+    @property
+    def serializable(self):
+        return (str(self.lower), str(self.upper))
+
 
 class EmptyTimeInterval(EmptyInterval, TimeInterval):
-    pass
+
+    @property
+    def serializable(self):
+        return None
 
 
 TimeInterval.__empty__ = EmptyTimeInterval
@@ -325,14 +351,21 @@ class TimeSingleton(Singleton, TimeRange):
     def tz_convert(self, tzinfo):
         return type(self)(self.position.tz_convert(tzinfo))
 
+    @property
+    def serializable(self):
+        return str(self.position)
+
+
 # =============================================================================
 # Helper functions
 # =============================================================================
 
 
 @passthrough(FloatInterval, FloatSingleton)
-def float_range(x, y=None):
+def float_range(x=None, y=None):
     """Creates or passes through a float range from one or two arguments."""
+    if x is None:
+        return EmptyFloatInterval()
     if y is None:
         if isinstance(x, Iterable) and not isinstance(x, str):
             return FloatInterval(*x)
@@ -343,8 +376,10 @@ def float_range(x, y=None):
 
 
 @passthrough(TimeInterval, TimeSingleton)
-def time_range(t0, t1=None):
+def time_range(t0=None, t1=None):
     """Creates or passes through a time range from one or two arguments."""
+    if t0 is None:
+        return EmptyTimeInterval()
     if t1 is None:
         if isinstance(t0, Iterable) and not isinstance(t0, str):
             return TimeInterval(*t0)
@@ -355,8 +390,10 @@ def time_range(t0, t1=None):
 
 
 @passthrough(Level, Levels)
-def categorical_range(arg):
+def categorical_range(arg=None):
     """Creates or passes through either a Level or Levels."""
+    if arg is None:
+        return Levels([])
     if isinstance(arg, Iterable) and not isinstance(arg, str):
         return Levels(arg)
     return Level(arg)

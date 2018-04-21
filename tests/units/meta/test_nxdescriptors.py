@@ -48,7 +48,7 @@ def test_instantiation():
     assert C.x.name is 'x'
     with pytest.raises(AttributeError):
         C.x.name = 'x'
-    assert repr(C.x) == '<NxAttribute name:x>'
+    assert repr(C.x) == "<NxAttribute name:'x'>"
     assert list(C.__nxdescriptors__) == ['x', 'classname']
 
 
