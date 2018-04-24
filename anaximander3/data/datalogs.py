@@ -37,8 +37,6 @@ class DataLogsBase(jsonmixin.JsonMixin):
     __id_range__ = None  # placeholder for expected id range type
     __dt_range__ = None  # placeholder for expected time range type
 
-    #TODO: this should inspect the schema's inheritance to provide
-    # the highest-registered schemaed class
     def __new__(cls, data, *, schema=None, id_range=None, dt_range=None,
                 cast=True, validate=False, **metadata):
         if schema is not None:
@@ -47,8 +45,9 @@ class DataLogsBase(jsonmixin.JsonMixin):
             except KeyError:
                 pass
             else:
-                return type_(data, schema=schema, id_range=id_range,
-                             dt_range=dt_range, cast=cast,  **metadata)
+                if type_ != cls:
+                    return type_(data, schema=schema, id_range=id_range,
+                                 dt_range=dt_range, cast=cast,  **metadata)
         return super().__new__(cls)
 
     def __init__(self, data, *, schema=None, id_range=None, dt_range=None,
@@ -178,10 +177,24 @@ class DataLogsBase(jsonmixin.JsonMixin):
         """Returns a series of row keys, indexed by self's index."""
         return self.idx.apply(self.schema.rowkey).rename('key')
 
-    @abc.abstractmethod
+#    @abc.abstractmethod
+#    def __getitem__(self, key):
+#        """Slices the data per index properties."""
+#        return NotImplemented
+
     def __getitem__(self, key):
-        """Slices the data per index properties."""
-        return NotImplemented
+        if isinstance(key, tuple):
+            id_key, dt_key = key
+        else:
+            id_key, dt_key = key, self.dt_range
+        data = pd.DataFrame(self.data.loc[key])
+        id_range = rge.cat_range(id_key) & self.id_range
+        dt_range = rge.time_range(dt_key) & self.dt_range
+        metadata = self.metadata.copy()
+        metadata['id_range'] = id_range
+        metadata['dt_range'] = dt_range
+        archetype_ = archetype(id_range, dt_range)
+        return archetype_(data, cast=False, schema=self.schema, **metadata)
 
     @xprops.cachedproperty
     def errors(self):
@@ -258,26 +271,17 @@ class DataLog(DataLogsBase, metaclass=LogType):
     def idx(self):
         return pd.DataFrame({'idx': list(self.index)}, index=self.index).idx
 
-    def __getitem__(self, key):
-        if isinstance(key, tuple):
-            id_key, dt_key = key
-        else:
-            id_key, dt_key = key, self.dt_range
-        range_id = isinstance(id_key, (list, slice))
-        # XXX: must address the case where dt_key is a time interval
-        range_dt = isinstance(dt_key, (list, slice))
-        data = pd.DataFrame(self.data[key])
-        if range_id and range_dt:
-            type_ = type(self)
-        elif range_id:
-            type_ = DataArray[self.schema]
-        elif range_dt:
-            type_ = DataSequence[self.schema]
-        # TODO: Record case
-        else:
-            return data
-        return type_(data, id_range=id_key, dt_range=dt_key,
-                     cast=False, schema=self.schema, **self.metadata)
+#    def __getitem__(self, key):
+#        if isinstance(key, tuple):
+#            id_key, dt_key = key
+#        else:
+#            id_key, dt_key = key, self.dt_range
+#        data = pd.DataFrame(self.data[key])
+#        id_range = rge.cat_range(id_key) & self.id_range
+#        dt_range = rge.time_range(dt_key) & self.dt_range
+#        archetype_ = archetype(id_range, dt_range)
+#        return archetype_(data, id_range=id_key, dt_range=dt_key,
+#                          cast=False, schema=self.schema, **self.metadata)
 
 
 class DataSequence(DataLogsBase, metaclass=SequenceType):
@@ -310,16 +314,16 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         df['id'] = df['id'].astype('category')
         return df
 
-    def __getitem__(self, key):
-        range_dt = isinstance(key, (list, slice))
-        data = pd.DataFrame(self.data[key])
-        if range_dt:
-            type_ = type(self)
-        # TODO: Record case
-        else:
-            return data
-        return type_(data, id_range=self.id_range, dt_range=key,
-                     cast=False, schema=self.schema, **self.metadata)
+#    def __getitem__(self, key):
+#        range_dt = isinstance(key, (list, slice))
+#        data = pd.DataFrame(self.data[key])
+#        if range_dt:
+#            type_ = type(self)
+#        # TODO: Record case
+#        else:
+#            return data
+#        return type_(data, id_range=self.id_range, dt_range=key,
+#                     cast=False, schema=self.schema, **self.metadata)
 
 
 class DataArray(DataLogsBase, metaclass=ArrayType):
@@ -352,16 +356,16 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
         df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
         return df
 
-    def __getitem__(self, key):
-        range_id = isinstance(key, (list, slice))
-        data = pd.DataFrame(self.data[key])
-        if range_id:
-            type_ = type(self)
-        # TODO: Record case
-        else:
-            return data
-        return type_(data, id_range=key, dt_range=self.dt_range,
-                     cast=False, schema=self.schema, **self.metadata)
+#    def __getitem__(self, key):
+#        range_id = isinstance(key, (list, slice))
+#        data = pd.DataFrame(self.data[key])
+#        if range_id:
+#            type_ = type(self)
+#        # TODO: Record case
+#        else:
+#            return data
+#        return type_(data, id_range=key, dt_range=self.dt_range,
+#                     cast=False, schema=self.schema, **self.metadata)
 
 
 def archetype(id_range, dt_range):

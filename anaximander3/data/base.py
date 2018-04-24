@@ -25,14 +25,19 @@ class DataObjectType(abc.ABCMeta):
     _registry = dict()  # Type registry
 
     def __init__(cls, name, bases, namespace):
-        if 'schema' in namespace:
-            cls._registry[cls.schema] = cls
+        if '__schema__' in namespace:
+            cls._registry[cls.__schema__] = cls
 
     def __getitem__(cls, schema):
-        for stype in type(schema).__mro__:
+        if isinstance(schema, type):
+            schema_type = schema
+        else:
+            schema_type = type(schema)
+        for stype in schema_type.__mro__:
             try:
                 type_ = cls._registry[stype]
                 assert issubclass(type_, cls)
+                return type_
             except KeyError:
                 continue
             except AssertionError:

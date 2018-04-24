@@ -163,5 +163,12 @@ def test_json_round_trip(featurelog):
     assert log.data.equals(LOG)
 
 
+def test_slicing(featurelog):
+    log = dtl.DataLog(featurelog, schema=FeatureSchema,
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+    l0 = log['88:4A:EA:69:DF:A2']
+    assert isinstance(l0, dtl.DataSequence)
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])

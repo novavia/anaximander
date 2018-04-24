@@ -61,7 +61,9 @@ class Range(abc.ABC):
 
 class ContinuousRange(Range):
     """Abstract base class for Ranges in continuous data dimensions."""
-    pass
+    __zero__ = None  # zero-length value
+    __empty__ = None  # placeholder for empty interval, assigned ex-post
+    __multi__ = None  # placeholder for multi-interval type
 
 
 class CategoricalRange(Range):
@@ -84,8 +86,6 @@ def _sqlstring(val):
 
 class Interval(ContinuousRange, Iterable):
     """For now intervals are closed on the left and open on the right."""
-    __zero__ = None  # zero-length value
-    __empty__ = None  # placeholder for empty interval, assigned ex-post
 
     @property
     def length(self):
@@ -139,13 +139,33 @@ class Interval(ContinuousRange, Iterable):
             return cls.__empty__()
         lower = max([a.lower, b.lower])
         upper = min([a.upper, b.upper])
-        if upper < lower:
+        if upper <= lower:
             return cls.__empty__()
         return cls(lower, upper)
 
+    @classmethod
+    def union(cls, a, b):
+        """Returns either an interval or a multi-interval."""
+        if isinstance(a, EmptyInterval):
+            return b
+        elif isinstance(b, EmptyInterval):
+            return a
+        multi = cls.__multi__([a, b])
+        if len(multi) == 1:
+            return multi[0]
+        return multi
+
     def __and__(self, other):
         """Implements intersection at the instance level."""
+        if isinstance(other, Singleton):
+            return other if other.position in self else self.__empty__()
+        elif isinstance(other, MultiInterval):
+            return other.__and__(self)
         return self.intersection(self, other)
+
+    def __or__(self, other):
+        """Implements union at the instance level."""
+        return self.union(self, other)
 
     def __attrs_post_init__(self):
         if self.lower > self.upper:
@@ -200,6 +220,12 @@ class Singleton(ContinuousRange):
         """Returns a sql statement fragment making attr equals to self."""
         return attr + " = " + _sqlstring(self.position)
 
+    def __and__(self, other):
+        if isinstance(other, Singleton):
+            return self if self == other else self.__empty__()
+        else:
+            return other.__and__(self)
+
     def __repr__(self):
         return f"<{type(self).__name__} {self.position}>"
 
@@ -220,6 +246,12 @@ class Levels(CategoricalRange, Set):
 
     def __len__(self):
         return self._levels.__len__()
+
+    def __and__(self, other):
+        if isinstance(other, Level):
+            return other if other.level in self else Levels()
+        else:
+            return super().__and__(other)
 
     @property
     def serializable(self):
@@ -248,6 +280,12 @@ class Level(CategoricalRange):
     @property
     def serializable(self):
         return self.level
+
+    def __and__(self, other):
+        if isinstance(other, Level):
+            return self if self == other else Levels()
+        elif isinstance(other, Levels):
+            return self if self.level in other else Levels()
 
     def __eq__(self, other):
         return self.level.__eq__(other)
@@ -287,7 +325,7 @@ class EmptyFloatInterval(EmptyInterval, FloatInterval):
         return None
 
 
-FloatInterval.__empty__ = EmptyFloatInterval
+FloatRange.__empty__ = EmptyFloatInterval
 
 
 @attr.s(frozen=True, repr=False)
@@ -341,7 +379,7 @@ class EmptyTimeInterval(EmptyInterval, TimeInterval):
         return None
 
 
-TimeInterval.__empty__ = EmptyTimeInterval
+TimeRange.__empty__ = EmptyTimeInterval
 
 
 @attr.s(frozen=True, repr=False)
@@ -355,59 +393,12 @@ class TimeSingleton(Singleton, TimeRange):
     def serializable(self):
         return str(self.position)
 
-
-# =============================================================================
-# Helper functions
-# =============================================================================
-
-
-@passthrough(FloatInterval, FloatSingleton)
-def float_range(x=None, y=None):
-    """Creates or passes through a float range from one or two arguments."""
-    if x is None:
-        return EmptyFloatInterval()
-    if y is None:
-        if isinstance(x, Iterable) and not isinstance(x, str):
-            return FloatInterval(*x)
-        else:
-            return FloatSingleton(x)
-    else:
-        return FloatInterval(x, y)
-
-
-@passthrough(TimeInterval, TimeSingleton)
-def time_range(t0=None, t1=None):
-    """Creates or passes through a time range from one or two arguments."""
-    if t0 is None:
-        return EmptyTimeInterval()
-    if t1 is None:
-        if isinstance(t0, Iterable) and not isinstance(t0, str):
-            return TimeInterval(*t0)
-        else:
-            return TimeSingleton(t0)
-    else:
-        return TimeInterval(t0, t1)
-
-
-@passthrough(Level, Levels)
-def categorical_range(arg=None):
-    """Creates or passes through either a Level or Levels."""
-    if arg is None:
-        return Levels([])
-    if isinstance(arg, Iterable) and not isinstance(arg, str):
-        return Levels(arg)
-    return Level(arg)
-
-cat_range = categorical_range
-
-
 # =============================================================================
 # Multi-Interval object
 # =============================================================================
 
+
 # Utility classes for normalizing Multi-Intervals
-
-
 class Bound:
     """An interval's bound."""
 
@@ -428,6 +419,31 @@ class Upper(Bound):
 
 def bounds(interval):
     return Lower(interval, interval.lower), Upper(interval, interval.upper)
+
+
+def mcompare(method):
+    """Decorator for multi-interval comparison methods."""
+    @wraps(method)
+    def decorated(self, other):
+        cls = type(self)
+        if isinstance(other, Interval):
+            multi = method(self, cls([other]))
+        elif isinstance(other, MultiInterval):
+            multi = method(self, other)
+        elif isinstance(other, Singleton) and method.__name__ == '__and__':
+            if any(other.position in i for i in self):
+                return other
+            else:
+                return self.__empty__()
+        else:
+            raise NotImplementedError
+        if len(multi) == 0:
+            return self.__empty__()
+        elif len(multi) == 1:
+            return multi[0]
+        else:
+            return multi
+    return decorated
 
 
 class MultiInterval(MultiRange, Sequence):
@@ -532,12 +548,15 @@ class MultiInterval(MultiRange, Sequence):
     def __eq__(self, other):
         return self._intervals == list(other)
 
+    @mcompare
     def __and__(self, other):
         return self.intersection(self, other)
 
+    @mcompare
     def __sub__(self, other):
         return self.difference(self, other)
 
+    @mcompare
     def __or__(self, other):
         return self.union(self, other)
 
@@ -545,11 +564,14 @@ class MultiInterval(MultiRange, Sequence):
         return iformat()(self)
 
 
-class MultiFloatInterval(MultiInterval):
+class MultiFloatInterval(MultiInterval, FloatRange):
     itype = FloatInterval
 
 
-class MultiTimeInterval(MultiInterval):
+FloatRange.__multi__ = MultiFloatInterval
+
+
+class MultiTimeInterval(MultiInterval, TimeRange):
     itype = TimeInterval
     tolerance = pd.Timedelta(microseconds=1)
 
@@ -562,3 +584,54 @@ class MultiTimeInterval(MultiInterval):
 
     def tz_convert(self, tzinfo):
         return type(self)([i.tz_convert(tzinfo) for i in self._intervals])
+
+
+TimeRange.__multi__ = MultiTimeInterval
+
+# =============================================================================
+# Helper functions
+# =============================================================================
+
+
+@passthrough(MultiFloatInterval, FloatInterval, FloatSingleton)
+def float_range(x=None, y=None):
+    """Creates or passes through a float range from one or two arguments."""
+    if x is None:
+        return EmptyFloatInterval()
+    if y is None:
+        if isinstance(x, Iterable) and not isinstance(x, str):
+            return FloatInterval(*x)
+        elif isinstance(x, slice):
+            return FloatInterval(x.start, x.stop)
+        else:
+            return FloatSingleton(x)
+    else:
+        return FloatInterval(x, y)
+
+
+@passthrough(MultiTimeInterval, TimeInterval, TimeSingleton)
+def time_range(t0=None, t1=None):
+    """Creates or passes through a time range from one or two arguments."""
+    if t0 is None:
+        return EmptyTimeInterval()
+    if t1 is None:
+        if isinstance(t0, Iterable) and not isinstance(t0, str):
+            return TimeInterval(*t0)
+        elif isinstance(t0, slice):
+            return TimeInterval(t0.start, t0.stop)
+        else:
+            return TimeSingleton(t0)
+    else:
+        return TimeInterval(t0, t1)
+
+
+@passthrough(Level, Levels)
+def categorical_range(arg=None):
+    """Creates or passes through either a Level or Levels."""
+    if arg is None:
+        return Levels([])
+    if isinstance(arg, Iterable) and not isinstance(arg, str):
+        return Levels(arg)
+    return Level(arg)
+
+cat_range = categorical_range

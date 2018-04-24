@@ -31,6 +31,7 @@ class TestTimeInterval(TestCase):
         upper = '2017-3-21'
         interval = rge.time_range(lower, upper)
         assert interval.lower == datetime('2017-3-20')
+        assert rge.time_range(slice(lower, upper)) == interval
         interval = rge.TimeInterval('2017-3-20 12:00')
         assert interval.upper == datetime.max
         with pytest.raises(ValueError):
@@ -67,6 +68,37 @@ class TestTimeInterval(TestCase):
         sql = "x >= 0.0 AND x < 1.0"
         assert interval.sql('x') == sql
 
+    def test_intersection(self):
+        l0 = '2018-4-23 15:40'
+        u0 = '2018-4-23 16:00'
+        l1 = '2018-4-23 15:50'
+        u1 = '2018-4-23 16:05'
+        l2 = u0
+        u2 = u1
+        i0 = rge.time_range(l0, u0)
+        i1 = rge.time_range(l1, u1)
+        i2 = rge.time_range(l2, u2)
+        t0 = rge.time_range(l0)
+        assert i0 & i1 == rge.time_range(l1, u0)
+        assert i0 & i2 == rge.EmptyTimeInterval()
+        assert i0 & t0 == t0
+        assert t0 & i0 == t0
+        assert i1 & t0 == rge.EmptyTimeInterval()
+        assert t0 & i1 == rge.EmptyTimeInterval()
+
+    def test_union(self):
+        l0 = '2018-4-23 15:40'
+        u0 = '2018-4-23 15:45'
+        l1 = '2018-4-23 15:50'
+        u1 = '2018-4-23 16:05'
+        l2 = u0
+        u2 = u1
+        i0 = rge.time_range(l0, u0)
+        i1 = rge.time_range(l1, u1)
+        i2 = rge.time_range(l2, u2)
+        assert i0 | i1 == rge.MultiTimeInterval([i0, i1])
+        assert i0 | i2 == rge.time_range(l0, u1)
+
 
 class TestDiscreteRange(TestCase):
 
@@ -94,6 +126,21 @@ class TestDiscreteRange(TestCase):
         level = rge.Level('item')
         sql = "x = 'item'"
         assert level.sql('x') == sql
+
+    def test_intersection(self):
+        levels = rge.cat_range(['i0', 'i1', 'i2'])
+        others = rge.cat_range(['i0', 'i3'])
+        empty = rge.Levels()
+        l0 = rge.cat_range('i0')
+        l3 = rge.cat_range('i3')
+        assert levels & levels == levels
+        assert levels & others == rge.cat_range(['i0'])
+        assert l0 & levels == l0
+        assert levels & l0 == l0
+        assert l3 & l0 == empty
+        assert l0 & l0 == l0
+        assert empty & l0 == empty
+        assert l0 & empty == empty
 
 
 def test_singletons():
@@ -138,9 +185,16 @@ class TestMultiFloatInterval(TestCase):
         m2 = rge.MultiFloatInterval([i1])
         assert rge.MultiFloatInterval.intersection(m1, m2) == \
             rge.MultiFloatInterval([r0])
+        assert m1 & m2 == r0
         m2 = rge.MultiFloatInterval([i3])
         assert rge.MultiFloatInterval.intersection(m1, m2) == \
             rge.MultiFloatInterval([r1, r2])
+        assert m1 & i3 == rge.MultiFloatInterval([r1, r2])
+        assert i3 & m1 == rge.MultiFloatInterval([r1, r2])
+        assert rge.FloatSingleton(1) & m1 == rge.EmptyFloatInterval()
+        assert m1 & rge.FloatSingleton(1) == rge.EmptyFloatInterval()
+        assert rge.FloatSingleton(0.25) & m1 == rge.FloatSingleton(0.25)
+        assert m1 & rge.FloatSingleton(0.25) == rge.FloatSingleton(0.25)
 
     def test_difference(self):
         i0 = rge.FloatInterval(0, 1)
@@ -159,6 +213,7 @@ class TestMultiFloatInterval(TestCase):
         m2 = rge.MultiFloatInterval([i3])
         assert rge.MultiFloatInterval.difference(m1, m2) == \
             rge.MultiFloatInterval([r1])
+        assert m1 - m2 == r1
 
 
 if __name__ == '__main__':
