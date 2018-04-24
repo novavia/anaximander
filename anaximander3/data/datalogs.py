@@ -109,11 +109,45 @@ class DataLogsBase(jsonmixin.JsonMixin):
     @property
     def tabulated(self):
         """Returns a normalized, unindexed dataframe."""
+        if self.empty:
+            return self._conform(self._data)
         return self._data.reset_index()
 
     @property
     def columns(self):
         return OrderedDict(self.schema)
+
+    def _conform(self, data):
+        """Primitive for cast, returning a non-indexed dataframe."""
+        df = pd.DataFrame(data).reset_index()
+        missing_columns = []
+        mistyped_columns = []
+        for name, col in self.columns.items():
+            if name not in df:
+                if col.default is not None:
+                    df[name] = col.default
+                else:
+                    missing_columns.append(name)
+                    continue
+            if col.missing is not None:
+                df[name] = df[name].fillna(col.missing)
+            try:
+                assert df.dtypes[name] == col.dtype
+            except (AssertionError, TypeError):
+                try:
+                    df[name] = col.dcast(df[name])
+                except (ValueError, TypeError):
+                    mistyped_columns.append(name)
+        if missing_columns:
+            msg = f"Data is missing schema columns {missing_columns}."
+            raise ConformityError(msg)
+        if mistyped_columns:
+            dtypes = [c.dtype for c in
+                      [self.columns[n] for n in mistyped_columns]]
+            msg = f"Could not cast {mistyped_columns} to required " + \
+                  f"dtypes {dtypes}"
+            raise ConformityError(msg)
+        return df[list(self.columns)]
 
     def cast(self, data):
         """Casts supplied dataframe-like object to the object's schema.
@@ -126,41 +160,9 @@ class DataLogsBase(jsonmixin.JsonMixin):
         * recasts columns to the dtype specified in the schema if necessary;
         * reorders columns to match the schema if necessary.
         """
-        df = pd.DataFrame(data).reset_index()
-        missing_columns = []
-        mistyped_columns = []
-        if df.empty:
-            dataframe = pd.DataFrame(columns=self.columns)
-            dataframe.dtypes = [c.dtype for c in self.columns.values()]
-        else:
-            for name, col in self.columns.items():
-                if name not in df:
-                    if col.default is not None:
-                        df[name] = col.default
-                    else:
-                        missing_columns.append(name)
-                        continue
-                if col.missing is not None:
-                    df[name] = df[name].fillna(col.missing)
-                try:
-                    assert df.dtypes[name] == col.dtype
-                except (AssertionError, TypeError):
-                    try:
-                        df[name] = col.dcast(df[name])
-                    except (ValueError, TypeError):
-                        mistyped_columns.append(name)
-            if missing_columns:
-                msg = f"Data is missing schema columns {missing_columns}."
-                raise ConformityError(msg)
-            if mistyped_columns:
-                dtypes = [c.dtype for c in
-                          [self.columns[n] for n in mistyped_columns]]
-                msg = f"Could not cast {mistyped_columns} to required " + \
-                      f"dtypes {dtypes}"
-                raise ConformityError(msg)
-            dataframe = df[list(self.columns)]
-        dataframe.set_index(self._index_columns, drop=True, inplace=True)
-        return dataframe.sort_index()
+        df = self._conform(data)
+        df.set_index(self._index_columns, drop=True, inplace=True)
+        return df.sort_index()
 
     @property
     def index(self):
@@ -177,24 +179,43 @@ class DataLogsBase(jsonmixin.JsonMixin):
         """Returns a series of row keys, indexed by self's index."""
         return self.idx.apply(self.schema.rowkey).rename('key')
 
-#    @abc.abstractmethod
-#    def __getitem__(self, key):
-#        """Slices the data per index properties."""
-#        return NotImplemented
+    @property
+    def empty(self):
+        return self.data.empty
 
-    def __getitem__(self, key):
-        if isinstance(key, tuple):
-            id_key, dt_key = key
+    def _metaslice(self, data, id_slice=None, dt_slice=None):
+        """Primitive for __getitem__, adds metadata on top of data slice."""
+        if id_slice is None:
+            id_range = self.id_range
         else:
-            id_key, dt_key = key, self.dt_range
-        data = pd.DataFrame(self.data.loc[key])
-        id_range = rge.cat_range(id_key) & self.id_range
-        dt_range = rge.time_range(dt_key) & self.dt_range
+            id_range = rge.cat_range(id_slice, sliced=self.id_range)
+            id_range &= self.id_range
+        if dt_slice is None:
+            dt_range = self.dt_range
+        else:
+            dt_range = rge.time_range(dt_slice) & self.dt_range
         metadata = self.metadata.copy()
         metadata['id_range'] = id_range
         metadata['dt_range'] = dt_range
         archetype_ = archetype(id_range, dt_range)
-        return archetype_(data, cast=False, schema=self.schema, **metadata)
+        if isinstance(data, pd.DataFrame):
+            data.reset_index(inplace=True)
+            if archetype_ is Record:
+                data = data.iloc[0]
+        else:  # assumes Series
+            data['id'] = id_range.level
+            data['datetime'] = dt_range.position
+        return archetype_(data, schema=self.schema, **metadata)
+
+    @abc.abstractmethod
+    def __getitem__(self, key):
+        """Slices the data per index properties."""
+        return NotImplemented
+
+    def __eq__(self, other):
+        if type(self) != type(other):
+            return False
+        return self.data.equals(other.data) and self.metadata == other.metadata
 
     @xprops.cachedproperty
     def errors(self):
@@ -271,17 +292,13 @@ class DataLog(DataLogsBase, metaclass=LogType):
     def idx(self):
         return pd.DataFrame({'idx': list(self.index)}, index=self.index).idx
 
-#    def __getitem__(self, key):
-#        if isinstance(key, tuple):
-#            id_key, dt_key = key
-#        else:
-#            id_key, dt_key = key, self.dt_range
-#        data = pd.DataFrame(self.data[key])
-#        id_range = rge.cat_range(id_key) & self.id_range
-#        dt_range = rge.time_range(dt_key) & self.dt_range
-#        archetype_ = archetype(id_range, dt_range)
-#        return archetype_(data, id_range=id_key, dt_range=dt_key,
-#                          cast=False, schema=self.schema, **self.metadata)
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            id_slice, dt_slice = key
+        else:
+            id_slice, dt_slice = key, None
+        data = self.data.loc[key, :]
+        return self._metaslice(data, id_slice, dt_slice)
 
 
 class DataSequence(DataLogsBase, metaclass=SequenceType):
@@ -293,7 +310,7 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
 
     @property
     def id(self):
-        return self.id_range
+        return self.id_range.level
 
     @property
     def columns(self):
@@ -303,27 +320,20 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
 
     @property
     def idx(self):
-        idx_ = list(zip([self.id_range], self.index))
+        idx_ = list(zip([self.id_range.level], self.index))
         return pd.DataFrame({'idx': idx_}, index=self.index).idx
 
     @property
     def tabulated(self):
         """Returns a normalized, unindexed dataframe."""
         df = self._data.reset_index()
-        df.insert(0, 'id', self.id_range)
-        df['id'] = df['id'].astype('category')
+        df.insert(0, 'id', self.id_range.level)
         return df
 
-#    def __getitem__(self, key):
-#        range_dt = isinstance(key, (list, slice))
-#        data = pd.DataFrame(self.data[key])
-#        if range_dt:
-#            type_ = type(self)
-#        # TODO: Record case
-#        else:
-#            return data
-#        return type_(data, id_range=self.id_range, dt_range=key,
-#                     cast=False, schema=self.schema, **self.metadata)
+    def __getitem__(self, key):
+        dt_slice = key
+        data = self.data.loc[key]
+        return self._metaslice(data, dt_slice=dt_slice)
 
 
 class DataArray(DataLogsBase, metaclass=ArrayType):
@@ -335,7 +345,7 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
 
     @property
     def datetime(self):
-        return self.dt_range
+        return self.dt_range.position
 
     @property
     def columns(self):
@@ -345,27 +355,21 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
 
     @property
     def idx(self):
-        idx_ = list(zip(self.index, [self.dt_range]))
+        idx_ = list(zip(self.index, [self.dt_range.position]))
         return pd.DataFrame({'idx': idx_}, index=self.index).idx
 
     @property
     def tabulated(self):
         """Returns a normalized, unindexed dataframe."""
         df = self._data.reset_index()
-        df.insert(1, 'datetime', self.dt_range)
+        df.insert(1, 'datetime', self.dt_range.position)
         df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
         return df
 
-#    def __getitem__(self, key):
-#        range_id = isinstance(key, (list, slice))
-#        data = pd.DataFrame(self.data[key])
-#        if range_id:
-#            type_ = type(self)
-#        # TODO: Record case
-#        else:
-#            return data
-#        return type_(data, id_range=key, dt_range=self.dt_range,
-#                     cast=False, schema=self.schema, **self.metadata)
+    def __getitem__(self, key):
+        id_slice = key
+        data = self.data.loc[key]
+        return self._metaslice(data, id_slice=id_slice)
 
 
 def archetype(id_range, dt_range):

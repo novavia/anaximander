@@ -142,6 +142,20 @@ class TestDiscreteRange(TestCase):
         assert empty & l0 == empty
         assert l0 & empty == empty
 
+    def test_comparison(self):
+        levels = rge.cat_range(['i0', 'i1', 'i2'])
+        empty = rge.Levels()
+        l0 = rge.cat_range('i0')
+        l3 = rge.cat_range('i3')
+        assert levels == levels
+        assert levels != empty
+        assert empty != levels
+        assert l0 == l0
+        assert l0 != l3
+        assert l0 != empty
+        assert l0 != levels
+        assert levels != l0
+
 
 def test_singletons():
     f = rge.float_range(3.0)

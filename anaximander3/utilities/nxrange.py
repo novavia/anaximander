@@ -253,12 +253,36 @@ class Levels(CategoricalRange, Set):
         else:
             return super().__and__(other)
 
+    def _slice(self, slice_):
+        if slice_.stop is None:
+            return self
+        elif slice_.start is None:
+            return type(self)(l for l in self._levels if l < slice_.stop)
+        else:
+            return type(self)(l for l in self._levels if l < slice_.stop and
+                              l >= slice_.start)
+
+    def __getitem__(self, key):
+        """Levels slicer."""
+        if isinstance(key, str):
+            if key in self._levels:
+                return Level(key)
+            else:
+                raise KeyError
+        elif isinstance(key, Iterable):
+            return self & key
+        elif isinstance(key, slice):
+            return self._slice(key)
+
     @property
     def serializable(self):
         return list(self._levels)
 
     def __eq__(self, other):
-        return self._levels == set(other)
+        try:
+            return self._levels == set(other)
+        except TypeError:
+            return False
 
     def __repr__(self):
         return f"<{type(self).__name__} {self._levels}>"
@@ -281,6 +305,11 @@ class Level(CategoricalRange):
     def serializable(self):
         return self.level
 
+    @property
+    def _levels(self):
+        """Provided for unified interface with Levels."""
+        return {self.level}
+
     def __and__(self, other):
         if isinstance(other, Level):
             return self if self == other else Levels()
@@ -288,7 +317,12 @@ class Level(CategoricalRange):
             return self if self.level in other else Levels()
 
     def __eq__(self, other):
-        return self.level.__eq__(other)
+        if isinstance(other, Level):
+            return self.level == other.level
+        elif isinstance(self, Levels):
+            return False
+        else:
+            return self.level == other
 
     def __repr__(self):
         return f"<{type(self).__name__} {self.level!r}>"
@@ -626,12 +660,21 @@ def time_range(t0=None, t1=None):
 
 
 @passthrough(Level, Levels)
-def categorical_range(arg=None):
-    """Creates or passes through either a Level or Levels."""
+def categorical_range(arg=None, *, sliced=None):
+    """Creates or passes through either a Level or Levels.
+
+    Admits a slice argument if a Levels range is provided as kwarg 'sliced'.
+    """
     if arg is None:
         return Levels([])
     if isinstance(arg, Iterable) and not isinstance(arg, str):
         return Levels(arg)
+    elif isinstance(arg, slice):
+        if not isinstance(sliced, Levels):
+            msg = "Slice argument requires a range to be sliced."
+            raise TypeError(msg)
+        else:
+            return sliced[arg]
     return Level(arg)
 
 cat_range = categorical_range

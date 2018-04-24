@@ -56,7 +56,7 @@ def mac_validator(record, column, value):
 
 
 class FeatureSchema(sch.SampleLogsSchema):
-    id = cln.Categorical(index='nominal', validate=mac_validator)
+    id = cln.String(index='nominal', validate=mac_validator)
     datetime = cln.DateTime('UTC', index='sequential')
     Feature_Value_0 = cln.Float()
     Feature_Value_1 = cln.Float()

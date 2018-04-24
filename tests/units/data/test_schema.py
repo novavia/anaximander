@@ -76,7 +76,7 @@ def test_schema():
 
 def test_json():
     my_schema = MySchema()
-    assert MySchema.from_json(my_schema.to_json()) == my_schema
+    assert MySchema.json_loads(my_schema.json_dumps()) == my_schema
 
 
 class MyInheritedSchema(MySchema):

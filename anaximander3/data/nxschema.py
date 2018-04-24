@@ -21,7 +21,7 @@ import pandas as pd
 from ..utilities import functions as fun, nxtime
 from ..utilities.jsonmixin import JsonMixin
 from .exceptions import SchemaError
-from .nxcolumns import NxColumn, DateTime, Categorical, EventLabel, StateLabel
+from .nxcolumns import NxColumn, DateTime, String, EventLabel, StateLabel
 
 
 __all__ = []
@@ -524,7 +524,7 @@ class MultiSchema(SchemaBase, metaclass=MultiSchemaType):
 
 
 class TimeSeriesIndex(SchemaIndex):
-    id = Categorical(index='nominal')
+    id = String(index='nominal')
     datetime = DateTime(tz='UTC', index='sequential')
 
     def __rowkey__(self, index):

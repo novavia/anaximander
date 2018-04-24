@@ -41,7 +41,8 @@ class RecordBase:
             except KeyError:
                 pass
             else:
-                return type_(data, schema=schema, cast=cast, **metadata)
+                if type_ != cls:
+                    return type_(data, schema=schema, cast=cast, **metadata)
         return super().__new__(cls)
 
     def __init__(self, data, *, schema=None, cast=True, validate=False,
