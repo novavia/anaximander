@@ -1,5 +1,5 @@
 # Untracked directories
-#/.cache/**
+/.cache/**
 **/__pycache__/**
 /wiki/**
 
