@@ -171,16 +171,16 @@ class RedefinedSampleSchema(sch.SampleLogsSchema):
     temperature = Float()
 
 
-class SoftEventSchema(sch.SoftEventLogsSchema):
+class SessionSchema(sch.SessionLogsSchema):
     label = EventLabel(['a', 'b', 'c'])
 
 
 def test_redefined_schemas():
     schema = RedefinedSampleSchema()
     assert isinstance(schema.index, sch.TimeSeriesIndex)
-    schema = SoftEventSchema()
+    schema = SessionSchema()
     assert isinstance(schema.index, sch.TimeSeriesIndex)
-    assert list(schema) == ['id', 'datetime', 'end_time', 'label']
+    assert list(schema) == ['id', 'datetime', 'duration', 'label']
 
 
 if __name__ == '__main__':

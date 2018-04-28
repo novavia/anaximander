@@ -75,6 +75,7 @@ class NxColumn(Registrable):
         self.index = index
         if index:
             self.required = True
+            default = missing = None
         else:
             self.required = required
         self.default = default
@@ -108,13 +109,26 @@ class NxColumn(Registrable):
         """Wraps a schema method to add a validator."""
         self.validators.append(method)
 
-    def rcast(self, value):
+    def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
-        return self.rtype(value)
+        try:
+            return self.rtype(value)
+        except (TypeError, ValueError):
+            if force:
+                return self.missing
+            else:
+                raise
 
-    def dcast(self, series):
+    def dcast(self, series, force=False):
         """Casts a series to the appropriate type."""
-        return series.astype(self.dtype)
+        try:
+            return series.astype(self.dtype)
+        except (TypeError, ValueError):
+            if force:
+                return pd.Series([self.missing] * len(series),
+                                 index=series.index)
+            else:
+                raise
 
 
 class Numeric(NxColumn):
@@ -122,7 +136,7 @@ class Numeric(NxColumn):
     dtype = np.dtype('float64')
     rtype = np.float64
 
-    def __init__(self, *, index=None, required=False, default=np.nan,
+    def __init__(self, *, index=None, required=False, default=None,
                  missing=None, validate=None):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate)
@@ -165,6 +179,31 @@ class Bool(NxColumn):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate)
 
+    def rcast(self, value, force=False):
+        """Casts a scalar to the appropriate type."""
+        if isinstance(value, (bool, np.bool_)):
+            return np.bool_(value)
+        elif value in ('True', 'true', 'TRUE', 'T'):
+            return True
+        elif value in ('False', 'false', 'FALSE', 'F'):
+            return False
+        elif force:
+            return False
+        else:
+            raise ValueError
+
+    def dcast(self, series, force=False):
+        """Casts a series to the appropriate type."""
+        series.replace(['True', 'true', 'TRUE', 'T'], True, inplace=True)
+        series.replace(['False', 'false', 'FALSE', 'F'], False, inplace=True)
+        try:
+            return series.astype('bool')
+        except (TypeError, ValueError):
+            if force:
+                return pd.Series([False] * len(series), index=series.index)
+            else:
+                raise
+
 
 class Float(Numeric):
     """Float column type."""
@@ -177,14 +216,18 @@ class String(NxColumn):
     rtype = str
 
     def __init__(self, *, index=None, required=False, default=None,
-                 missing='', validate=None):
+                 missing=None, validate=None):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate)
 
 
 class Text(String):
     """Text column type."""
-    pass
+
+    def __init__(self, *, index=None, required=False, default='',
+                 missing=None, validate=None):
+        super().__init__(index=index, required=required,
+                         default=default, missing=missing, validate=validate)
 
 
 class Categorical(NxColumn):
@@ -206,8 +249,10 @@ class Categorical(NxColumn):
         else:
             self.categories = None
 
-    def rcast(self, value):
+    def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
+        if value in (None, np.nan):
+            return None
         if self.categories is not None:
             if value not in self.categories:
                 raise ValueError
@@ -232,6 +277,15 @@ class EventLabel(Categorical):
                          default=default, missing=missing, validate=validate)
 
 
+class SessionLabel(Categorical):
+    """Column specifying session label"""
+
+    def __init__(self, categories=None, ordered=False, *, index=None,
+                 required=True, default=None, missing=None, validate=None):
+        super().__init__(categories, ordered, index=index, required=required,
+                         default=default, missing=missing, validate=validate)
+
+
 class DateTimeBase(NxColumn):
     """Base class for tz-aware date & time columns."""
     dtype = np.dtype('datetime64[ns]')
@@ -244,14 +298,16 @@ class DateTimeBase(NxColumn):
         self.tz = tz
         self.dtype = DatetimeTZDtype(tz=tz, unit='ns')
 
-    def rcast(self, value):
+    def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
-        timestamp = pd.to_datetime(value, utc=True)
+        timestamp = pd.to_datetime(value, utc=True,
+                                   errors='coerce' if force else 'raise')
         return timestamp if self.tz == 'UTC' else timestamp.tz_convert(self.tz)
 
-    def dcast(self, series):
+    def dcast(self, series, force=False):
         """Casts a series to the appropriate type."""
-        series = pd.to_datetime(series, utc=True)
+        series = pd.to_datetime(series, utc=True,
+                                errors='coerce' if force else 'raise')
         return series if self.tz == 'UTC' else series.dt.tz_convert(self.tz)
 
 
@@ -280,20 +336,18 @@ class TimeDelta(NxColumn):
     dtype = np.dtype('timedelta64[ns]')
     rtype = pd.Timedelta
 
-    def __init__(self, tz=None, *, index=False, required=False,
+    def __init__(self, *, index=False, required=False,
                  default=None, missing=pd.NaT, validate=None):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate)
 
+    def rcast(self, value, force=False):
+        """Casts a scalar to the appropriate type."""
+        return pd.to_timedelta(value, errors='coerce' if force else 'raise')
 
-class Period(NxColumn):
-    """Base class for periodic datetimes, always a sequential index."""
-    dtype = 'datetime64[ns]'
-    rtype = pd.Period
-
-    def __init__(self, freq=None):
-        super().__init__(index='sequential')
-        self.freq = freq
+    def dcast(self, series, force=False):
+        """Casts a series to the appropriate type."""
+        return pd.to_timedelta(series, errors='coerce' if force else 'raise')
 
 
 class ObjectID(Integer):

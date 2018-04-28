@@ -12,7 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import OrderedDict
+from collections import Sequence, OrderedDict
 import json
 
 import pandas as pd
@@ -31,27 +31,23 @@ __all__ = []
 # =============================================================================
 
 
-class DataLogsBase(jsonmixin.JsonMixin):
+class DataLogsBase(Sequence, jsonmixin.JsonMixin):
     """Base class for all data logs."""
     __schema__ = None  # placeholder for specialized type parameter
     __id_range__ = None  # placeholder for expected id range type
     __dt_range__ = None  # placeholder for expected time range type
 
     def __new__(cls, data, *, schema=None, id_range=None, dt_range=None,
-                cast=True, validate=False, **metadata):
+                cast=True, validate=False, force=False, **metadata):
         if schema is not None:
             try:
                 type_ = cls[schema]
             except KeyError:
-                pass
-            else:
-                if type_ != cls:
-                    return type_(data, schema=schema, id_range=id_range,
-                                 dt_range=dt_range, cast=cast,  **metadata)
-        return super().__new__(cls)
+                type_ = cls
+        return super().__new__(type_)
 
     def __init__(self, data, *, schema=None, id_range=None, dt_range=None,
-                 cast=True, validate=False, **metadata):
+                 cast=True, validate=False, force=False, **metadata):
         if schema is not None:
             if isinstance(schema, type):
                 self.schema = schema()
@@ -66,7 +62,7 @@ class DataLogsBase(jsonmixin.JsonMixin):
                   f"It must be of type {self.__schema__.__name__}"
             raise ConformityError(msg)
         if cast:
-            self._data = self.cast(data)
+            self._data = self.cast(data, force=force)
         else:
             self._data = data
         self._id_range = rge.cat_range(id_range)
@@ -117,7 +113,7 @@ class DataLogsBase(jsonmixin.JsonMixin):
     def columns(self):
         return OrderedDict(self.schema)
 
-    def _conform(self, data):
+    def _conform(self, data, force=False):
         """Primitive for cast, returning a non-indexed dataframe."""
         df = pd.DataFrame(data).reset_index()
         missing_columns = []
@@ -135,7 +131,7 @@ class DataLogsBase(jsonmixin.JsonMixin):
                 assert df.dtypes[name] == col.dtype
             except (AssertionError, TypeError):
                 try:
-                    df[name] = col.dcast(df[name])
+                    df[name] = col.dcast(df[name], force=force)
                 except (ValueError, TypeError):
                     mistyped_columns.append(name)
         if missing_columns:
@@ -149,7 +145,7 @@ class DataLogsBase(jsonmixin.JsonMixin):
             raise ConformityError(msg)
         return df[list(self.columns)]
 
-    def cast(self, data):
+    def cast(self, data, force=False):
         """Casts supplied dataframe-like object to the object's schema.
 
         data must be a valid input to pandas.DataFrame.
@@ -159,8 +155,11 @@ class DataLogsBase(jsonmixin.JsonMixin):
         extra columns are simply removed.
         * recasts columns to the dtype specified in the schema if necessary;
         * reorders columns to match the schema if necessary.
+
+        The force flag will silently handle incorrect inputs, such as
+        unreadable datetime, and treat them as missing values.
         """
-        df = self._conform(data)
+        df = self._conform(data, force=force)
         df.set_index(self._index_columns, drop=True, inplace=True)
         return df.sort_index()
 
@@ -202,10 +201,18 @@ class DataLogsBase(jsonmixin.JsonMixin):
             data.reset_index(inplace=True)
             if archetype_ is Record:
                 data = data.iloc[0]
-        else:  # assumes Series
+        elif isinstance(data, pd.Series):
             data['id'] = id_range.level
             data['datetime'] = dt_range.position
+        else:  # Single index of single column
+            col_name = list(self.columns)[-1]
+            data = {'id': id_range.level,
+                    'datetime': dt_range.position,
+                    col_name: data}
         return archetype_(data, schema=self.schema, **metadata)
+
+    def __len__(self):
+        return len(self.data)
 
     @abc.abstractmethod
     def __getitem__(self, key):
@@ -215,7 +222,8 @@ class DataLogsBase(jsonmixin.JsonMixin):
     def __eq__(self, other):
         if type(self) != type(other):
             return False
-        return self.data.equals(other.data) and self.metadata == other.metadata
+        return self._data.equals(other._data) and \
+            self.metadata == other.metadata
 
     @xprops.cachedproperty
     def errors(self):
@@ -247,7 +255,14 @@ class DataLogsBase(jsonmixin.JsonMixin):
         return self._validate().empty
 
     def to_dict(self):
-        return {'data': json.loads(self.tabulated.to_json(date_format='iso')),
+#        return {'data': json.loads(self.tabulated.to_json(date_format='iso',
+#                                                          date_unit='ns')),
+#                'schema': self.schema.to_dict(),
+#                'metadata': self.metadata}
+#        return {'data': json.loads(self.tabulated.to_json(date_unit='ns')),
+#                'schema': self.schema.to_dict(),
+#                'metadata': self.metadata}
+        return {'data': self.tabulated.to_dict(),
                 'schema': self.schema.to_dict(),
                 'metadata': self.metadata}
 
@@ -267,6 +282,21 @@ class DataLogsBase(jsonmixin.JsonMixin):
         cls = archetype(id_range, dt_range)
         return cls(data, schema=schema, id_range=id_range,
                    dt_range=dt_range, **metadata)
+
+    @classmethod
+    def from_records(cls, records, id_range=None, dt_range=None,
+                     cast=True, validate=False, **metadata):
+        try:
+            schema_set = set(r.schema for r in records)
+            assert len(schema_set) == 1
+            schema = schema_set.pop()
+        except AssertionError:
+            msg = "All records must share the same schema."
+            raise ConformityError(msg)
+        rows = [r.to_dict() for r in records]
+        data = pd.DataFrame.from_records(rows)
+        return cls(data, schema=schema, id_range=id_range, dt_range=dt_range,
+                   cast=cast, validate=validate, **metadata)
 
 
 class LogType(DataObjectType):
@@ -293,6 +323,8 @@ class DataLog(DataLogsBase, metaclass=LogType):
         return pd.DataFrame({'idx': list(self.index)}, index=self.index).idx
 
     def __getitem__(self, key):
+        if isinstance(key, int):
+            key = self.index[key]
         if isinstance(key, tuple):
             id_slice, dt_slice = key
         else:
@@ -331,6 +363,8 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         return df
 
     def __getitem__(self, key):
+        if isinstance(key, int):
+            key = self.index[key]
         dt_slice = key
         data = self.data.loc[key]
         return self._metaslice(data, dt_slice=dt_slice)
@@ -367,6 +401,8 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
         return df
 
     def __getitem__(self, key):
+        if isinstance(key, int):
+            key = self.index[key]
         id_slice = key
         data = self.data.loc[key]
         return self._metaslice(data, id_slice=id_slice)
@@ -397,57 +433,57 @@ class SampleLog(DataLog):
     __schema__ = sch.SampleLogsSchema
 
 
-class SoftEventLog(DataLog):
-    __schema__ = sch.SoftEventLogsSchema
-
-
-class HardEventLog(DataLog):
-    __schema__ = sch.HardEventLogsSchema
+class EventLog(DataLog):
+    __schema__ = sch.EventLogsSchema
 
 
 class StateLog(DataLog):
     __schema__ = sch.StateLogsSchema
 
 
-class SummaryLog(DataLog):
-    __schema__ = sch.SummaryLogsSchema
+class SessionLog(DataLog):
+    __schema__ = sch.SessionLogsSchema
+
+
+class PeriodLog(DataLog):
+    __schema__ = sch.PeriodLogsSchema
 
 
 class SampleSequence(DataSequence):
     __schema__ = sch.SampleLogsSchema
 
 
-class SoftEventSequence(DataSequence):
-    __schema__ = sch.SoftEventLogsSchema
-
-
-class HardEventSequence(DataSequence):
-    __schema__ = sch.HardEventLogsSchema
+class EventSequence(DataSequence):
+    __schema__ = sch.EventLogsSchema
 
 
 class StateSequence(DataSequence):
     __schema__ = sch.StateLogsSchema
 
 
-class SummarySequence(DataSequence):
-    __schema__ = sch.SummaryLogsSchema
+class SessionSequence(DataSequence):
+    __schema__ = sch.SessionLogsSchema
+
+
+class PeriodSequence(DataSequence):
+    __schema__ = sch.PeriodLogsSchema
 
 
 class SampleArray(DataArray):
     __schema__ = sch.SampleLogsSchema
 
 
-class SoftEventArray(DataArray):
-    __schema__ = sch.SoftEventLogsSchema
-
-
-class HardEventArray(DataArray):
-    __schema__ = sch.HardEventLogsSchema
+class EventArray(DataArray):
+    __schema__ = sch.EventLogsSchema
 
 
 class StateArray(DataArray):
     __schema__ = sch.StateLogsSchema
 
 
-class SummaryArray(DataArray):
-    __schema__ = sch.SummaryLogsSchema
+class SessionArray(DataArray):
+    __schema__ = sch.SessionLogsSchema
+
+
+class PeriodArray(DataArray):
+    __schema__ = sch.PeriodLogsSchema

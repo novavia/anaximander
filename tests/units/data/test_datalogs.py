@@ -14,6 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import os
 import re
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -34,9 +35,28 @@ FEATURELOG_SHUFFLED_PATH = os.path.join(TEST_DATA_DIR,
 FEATURELOG_SUPERFLUOUS_PATH = os.path.join(TEST_DATA_DIR,
                                            'featurelog_superfluous.csv')
 FEATURELOG_INVALID_PATH = os.path.join(TEST_DATA_DIR, 'featurelog_invalid.csv')
+SAMPLES_PATH = os.path.join(TEST_DATA_DIR, 'samples.csv')
+EVENTS_PATH = os.path.join(TEST_DATA_DIR, 'events.csv')
+STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
+SESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'sessions.csv')
+PERIODS_PATH = os.path.join(TEST_DATA_DIR, 'periods.csv')
+
+SAMPLES = pd.read_csv(SAMPLES_PATH)
+EVENTS = pd.read_csv(EVENTS_PATH)
+STATES = pd.read_csv(STATES_PATH)
+SESSIONS = pd.read_csv(SESSIONS_PATH)
+PERIODS = pd.read_csv(PERIODS_PATH)
+
 
 FEATURE_IDS = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
+
+IDS = ['88:4A:EA:69:35:BD', '88:4A:EA:69:38:1A']
+SAMPLES_TME = ['2018-4-15 00:15:00', '2018-4-15 00:15:10']
+EVENTS_TME = ['2018-4-15 00:15:00', '2018-4-15 00:18:00']
+STATES_TME = ['2018-4-15 00:16:00', '2018-4-15 00:17:00']
+SESSIONS_TME = ['2018-4-15 00:15:00', '2018-4-15 00:18:00']
+PERIODS_TME = ['2018-4-14 00:00:00', '2018-4-15 00:15:00']
 
 DUMP_PATH = os.path.join(TEST_DATA_DIR, 'dump.csv')
 
@@ -129,6 +149,45 @@ class FeatureSchema(sch.SampleLogsSchema):
         return mac_validator(record, column, value)
 
 
+class SampleSchema(sch.SampleLogsSchema):
+    accel_energy_512 = cln.Float()
+    temperature = cln.Float()
+    charge = cln.Integer()
+
+
+class EventSchema(sch.EventLogsSchema):
+    label = cln.EventLabel(('heartbeat',))
+    message = cln.Text()
+    latency = cln.Float()
+
+
+class StateSchema(sch.StateLogsSchema):
+    label = cln.StateLabel(('Loading', 'Executing'))
+
+
+class SessionSchema(sch.SessionLogsSchema):
+    part_id = cln.Integer()
+
+
+def percent_validator(record, column, value):
+    if value is np.nan:
+        return True
+    elif value >= 0 and value <= 100:
+        return True
+    else:
+        return f"{value} is an invalid percentage."
+
+
+class PeriodSchema(sch.PeriodLogsSchema):
+    freq = '5T'
+    duration = cln.Float()
+    data_coverage = cln.Float(validate=percent_validator)
+    part_count = cln.Integer()
+    avg_cycle = cln.Float()
+    oee = cln.Float(validate=percent_validator)
+    quota = cln.Bool()
+
+
 def test_logs(featurelog, featurelog_partial, featurelog_no_device,
               featurelog_shuffled, featurelog_superfluous,
               featurelog_invalid):
@@ -215,6 +274,83 @@ def test_slicing(featurelog):
     assert isinstance(r, rec.SampleRecord)
     assert r.id == '68:9E:19:07:DE:C3'
     assert r.datetime == pd.to_datetime('2016-09-14 10:00:29.500', utc=True)
+    r = log[0]
+    assert isinstance(r, rec.SampleRecord)
+    assert r.id == '68:9E:19:07:DE:C3'
+    assert r.datetime == pd.to_datetime('2016-09-14 10:00:27.800', utc=True)
+    r = l1[-1]
+    assert isinstance(r, rec.SampleRecord)
+    assert r.id == '68:9E:19:07:DE:C3'
+    assert r.datetime == pd.to_datetime('2016-09-14 10:00:29.500', utc=True)
+    r = l4[0]
+    assert isinstance(r, rec.SampleRecord)
+    assert r.id == '68:9E:19:07:DE:C3'
+    assert r.datetime == pd.to_datetime('2016-09-14 10:00:29.500', utc=True)
+    log_from_records = dtl.DataLog.from_records(list(log),
+                                                id_range=FEATURE_IDS,
+                                                dt_range=FEATURE_TME)
+    assert log_from_records == log
+
+
+def test_samples():
+    log = dtl.DataLog(SAMPLES, schema=SampleSchema, id_range=IDS,
+                      dt_range=SAMPLES_TME)
+    assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    SAMPLES.loc[0, 'charge'] = None
+    log = dtl.DataLog(SAMPLES, schema=SampleSchema, id_range=IDS,
+                      dt_range=SAMPLES_TME)
+    assert log.data.charge.iloc[0] == 0
+    assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    r = log[0]
+    assert r.data['charge'] == 0
+
+
+def test_events():
+    log = dtl.DataLog(EVENTS, schema=EventSchema, id_range=IDS,
+                      dt_range=EVENTS_TME)
+    assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    EVENTS.loc[0, 'label'] = None
+    log = dtl.DataLog(EVENTS, schema=EventSchema, id_range=IDS,
+                      dt_range=EVENTS_TME)
+    assert log[2].data.label is None
+    assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    EVENTS.loc[0, 'label'] = ''
+    log = dtl.DataLog(EVENTS, schema=EventSchema, id_range=IDS,
+                      dt_range=EVENTS_TME)
+    assert log[2].data.label is None
+    assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    r = log[2]
+    seq = dtl.DataSequence.from_records([r],
+                                        id_range=r.id,
+                                        dt_range=(r.datetime,))
+    assert seq[0] == r
+
+
+def test_states():
+    log = dtl.DataLog(STATES, schema=StateSchema, id_range=IDS,
+                      dt_range=STATES_TME)
+    assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    states = STATES.copy()
+    states.loc[0, 'label'] = 'invalid_label'
+    log = dtl.DataLog(states, schema=StateSchema, id_range=IDS,
+                      dt_range=STATES_TME)
+    assert log['88:4A:EA:69:35:BD'][-1].label is None
+
+
+def test_sessions():
+    log = dtl.DataLog(SESSIONS, schema=SessionSchema, id_range=IDS,
+                      dt_range=SESSIONS_TME)
+    assert dtl.DataLog.json_loads(log.json_dumps()) == log
+
+
+def test_periods():
+    log = dtl.DataLog(PERIODS, schema=PeriodSchema, id_range=IDS,
+                      dt_range=PERIODS_TME)
+    assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    PERIODS['quota'] = PERIODS.quota.apply(lambda x: True if x else 'false')
+    log2 = dtl.DataLog(PERIODS, schema=PeriodSchema, id_range=IDS,
+                       dt_range=PERIODS_TME)
+    assert log == log2
 
 
 if __name__ == '__main__':

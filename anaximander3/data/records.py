@@ -39,11 +39,8 @@ class RecordBase:
             try:
                 type_ = cls[schema]
             except KeyError:
-                pass
-            else:
-                if type_ != cls:
-                    return type_(data, schema=schema, cast=cast, **metadata)
-        return super().__new__(cls)
+                type_ = cls
+        return super().__new__(type_)
 
     def __init__(self, data, *, schema=None, cast=True, validate=False,
                  **metadata):
@@ -87,6 +84,13 @@ class RecordBase:
     def columns(self):
         return OrderedDict(self.schema)
 
+    def __getattr__(self, name):
+        if name in self.columns:
+            return self.data[name]
+        else:
+            msg = f"'{type(self).__name__}' object has no attribute '{name}'"
+            raise AttributeError(msg)
+
     def cast(self, data):
         """Casts supplied dict-like object to the object's schema.
 
@@ -120,8 +124,9 @@ class RecordBase:
         elif mistyped_fields:
             types = [c.rtype for c in
                      [self.columns[n] for n in mistyped_fields]]
-            msg = f"Could not cast {mistyped_fields} to required types " + \
-                  f"{types}"
+            mistyped = list(mistyped_fields.items())
+            msg = f"Could not cast key-value pairs {mistyped} to required " + \
+                  f"types {types}"
             raise ConformityError(msg)
         return pd.Series(fields)
 
@@ -154,6 +159,15 @@ class RecordBase:
         """Returns True or False whether the data validates or not."""
         return not self._validate()
 
+    def to_dict(self):
+        return OrderedDict((c, getattr(self, c)) for c in self.columns)
+
+    def __eq__(self, other):
+        if type(self) != type(other):
+            return False
+        return self._data.equals(other._data) and \
+            self.metadata == other.metadata
+
 
 class RecordType(DataObjectType):
     _registry = dict()
@@ -172,17 +186,17 @@ class SampleRecord(Record):
     __schema__ = sch.SampleLogsSchema
 
 
-class SoftEventRecord(Record):
-    __schema__ = sch.SoftEventLogsSchema
-
-
-class HardEventRecord(Record):
-    __schema__ = sch.HardEventLogsSchema
+class EventRecord(Record):
+    __schema__ = sch.EventLogsSchema
 
 
 class StateRecord(Record):
     __schema__ = sch.StateLogsSchema
 
 
-class SummaryRecord(Record):
-    __schema__ = sch.SummaryLogsSchema
+class SessionRecord(Record):
+    __schema__ = sch.SessionLogsSchema
+
+
+class PeriodRecord(Record):
+    __schema__ = sch.PeriodLogsSchema

@@ -21,10 +21,13 @@ import pandas as pd
 from ..utilities import functions as fun, nxtime
 from ..utilities.jsonmixin import JsonMixin
 from .exceptions import SchemaError
-from .nxcolumns import NxColumn, DateTime, String, EventLabel, StateLabel
+from .nxcolumns import NxColumn, DateTime, TimeDelta, String, EventLabel, \
+    StateLabel, SessionLabel
 
 
-__all__ = []
+__all__ = ['Schema', 'MultiSchema', 'LogsSchema', 'SampleLogsSchema',
+           'EventLogsSchema', 'StateLogsSchema', 'SessionLogsSchema',
+           'PeriodLogsSchema']
 
 # =============================================================================
 # Base types
@@ -116,6 +119,12 @@ class ColumnMap(Mapping, metaclass=ColumnMapType):
     def __len__(self):
         return self._columns.__len__()
 
+    def __hash__(self):
+        return hash(tuple(self.values()))
+
+    def __eq__(self, other):
+        return tuple(self.values()) == tuple(other.values())
+
 
 class SchemaIndexType(ColumnMapType):
     """Metaclass for SchemaIndex."""
@@ -127,13 +136,18 @@ class SchemaIndexType(ColumnMapType):
         identifier = bool(cmap.identifier_columns)
         sequencer = bool(cmap.sequencer_columns)
         if identifier and sequencer:
-            return DualSchemaIndexType(name, bases, namespace)
+            metaclass = DualSchemaIndexType
         elif identifier:
-            return NominalSchemaIndexType(name, bases, namespace)
+            metaclass = NominalSchemaIndexType
         elif sequencer:
-            return SequentialSchemaIndexType(name, bases, namespace)
+            metaclass = SequentialSchemaIndexType
         else:
-            return EmptySchemaIndexType(name, bases, namespace)
+            metaclass = EmptySchemaIndexType
+        if not issubclass(metaclass, mcl):
+            msg = f"Cannot subclass {bases[0].__name__} into a different " + \
+                  f"index type {metaclass.__name__}"
+            raise SchemaError(msg)
+        return super().__new__(metaclass, name, bases, namespace)
 
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
@@ -149,9 +163,6 @@ class SchemaIndexType(ColumnMapType):
 
 class EmptySchemaIndexType(SchemaIndexType):
     """A schema index with no columns."""
-
-    def __new__(mcl, name, bases, namespace):
-        return ColumnMapType.__new__(mcl, name, bases, namespace)
 
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
@@ -169,9 +180,6 @@ class EmptySchemaIndexType(SchemaIndexType):
 class NominalSchemaIndexType(SchemaIndexType):
     """A schema index with a single, nominal column."""
 
-    def __new__(mcl, name, bases, namespace):
-        return ColumnMapType.__new__(mcl, name, bases, namespace)
-
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
         try:
@@ -188,9 +196,6 @@ class NominalSchemaIndexType(SchemaIndexType):
 class SequentialSchemaIndexType(SchemaIndexType):
     """A schema index with a single, sequential column."""
 
-    def __new__(mcl, name, bases, namespace):
-        return ColumnMapType.__new__(mcl, name, bases, namespace)
-
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
         try:
@@ -206,9 +211,6 @@ class SequentialSchemaIndexType(SchemaIndexType):
 
 class DualSchemaIndexType(SchemaIndexType):
     """A schema index with a nominal and a sequential column."""
-
-    def __new__(mcl, name, bases, namespace):
-        return ColumnMapType.__new__(mcl, name, bases, namespace)
 
     def __init__(cls, name, bases, namespace):
         super().__init__(name, bases, namespace)
@@ -227,6 +229,9 @@ class SchemaIndex(ColumnMap, metaclass=SchemaIndexType):
     """Base class for SchemaIndex objects."""
     _identifier = None
     _sequencer = None
+
+    def __init__(self):
+        super().__init__()
 
     @property
     def sequencer(self):
@@ -549,14 +554,8 @@ class SampleLogsSchema(LogsSchema):
     pass
 
 
-class SoftEventLogsSchema(LogsSchema):
-    """Schema for 'soft events' -featuring start and end times."""
-    end_time = DateTime(tz='utc')
-    label = EventLabel()
-
-
-class HardEventLogsSchema(LogsSchema):
-    """Schema for 'hard events' -featuring no end times."""
+class EventLogsSchema(LogsSchema):
+    """Schema for events."""
     label = EventLabel()
 
 
@@ -565,6 +564,12 @@ class StateLogsSchema(LogsSchema):
     label = StateLabel()
 
 
-class SummaryLogsSchema(LogsSchema):
+class SessionLogsSchema(LogsSchema):
+    """Schema for sessions -featuring a duration from the start datetime."""
+    duration = TimeDelta(required=True)
+    label = SessionLabel()
+
+
+class PeriodLogsSchema(LogsSchema):
     """Schema for periodic summaries."""
-    pass
+    freq = None  # Frequency
