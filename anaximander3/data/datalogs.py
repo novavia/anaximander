@@ -13,13 +13,13 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import Sequence, OrderedDict
-import json
 
 import pandas as pd
 
-from ..utilities import xprops, nxrange as rge, jsonmixin
+from ..utilities import xprops, nxrange as rge
+from ..utilities.jsonmixin import jsonio
 from .exceptions import ConformityError
-from .base import DataObjectType
+from .dataobject import DataObjectType, DataObject
 from .records import Record
 from . import nxschema as sch
 
@@ -31,40 +31,15 @@ __all__ = []
 # =============================================================================
 
 
-class DataLogsBase(Sequence, jsonmixin.JsonMixin):
+@jsonio
+class DataLogsBase(DataObject, Sequence):
     """Base class for all data logs."""
     __schema__ = None  # placeholder for specialized type parameter
     __id_range__ = None  # placeholder for expected id range type
     __dt_range__ = None  # placeholder for expected time range type
 
-    def __new__(cls, data, *, schema=None, id_range=None, dt_range=None,
-                cast=True, validate=False, force=False, **metadata):
-        if schema is not None:
-            try:
-                type_ = cls[schema]
-            except KeyError:
-                type_ = cls
-        return super().__new__(type_)
-
     def __init__(self, data, *, schema=None, id_range=None, dt_range=None,
                  cast=True, validate=False, force=False, **metadata):
-        if schema is not None:
-            if isinstance(schema, type):
-                self.schema = schema()
-            else:
-                self.schema = schema
-        else:
-            self.schema = self.__schema__()
-        try:
-            assert isinstance(self.schema, self.__schema__)
-        except AssertionError:
-            msg = f"Improper schema supplied to {type(self).__name__}. " + \
-                  f"It must be of type {self.__schema__.__name__}"
-            raise ConformityError(msg)
-        if cast:
-            self._data = self.cast(data, force=force)
-        else:
-            self._data = data
         self._id_range = rge.cat_range(id_range)
         self._dt_range = rge.time_range(dt_range)
         try:
@@ -81,18 +56,10 @@ class DataLogsBase(Sequence, jsonmixin.JsonMixin):
                   f"{self.__dt_range__.__name__} instance that could not " + \
                   f"be cast from {dt_range}"
             raise ValueError(msg)
-        self.metadata = metadata
-        self.metadata.update({'id_range': self.id_range.serializable,
-                              'dt_range': self.dt_range.serializable})
-        if validate:
-            if not self.validate():
-                msg = "Validation failed with the following errors: " + \
-                      "{self.errors}"
-                raise ConformityError(msg)
-
-    @property
-    def data(self):
-        return self._data.copy()
+        metadata.update({'id_range': self.id_range.serializable,
+                         'dt_range': self.dt_range.serializable})
+        super().__init__(data, schema=schema, cast=cast, validate=validate,
+                         **metadata)
 
     @property
     def id_range(self):
@@ -108,10 +75,6 @@ class DataLogsBase(Sequence, jsonmixin.JsonMixin):
         if self.empty:
             return self._conform(self._data)
         return self._data.reset_index()
-
-    @property
-    def columns(self):
-        return OrderedDict(self.schema)
 
     def _conform(self, data, force=False):
         """Primitive for cast, returning a non-indexed dataframe."""
@@ -254,20 +217,13 @@ class DataLogsBase(Sequence, jsonmixin.JsonMixin):
         """Returns True or False whether the data validates or not."""
         return self._validate().empty
 
-    def to_dict(self):
-#        return {'data': json.loads(self.tabulated.to_json(date_format='iso',
-#                                                          date_unit='ns')),
-#                'schema': self.schema.to_dict(),
-#                'metadata': self.metadata}
-#        return {'data': json.loads(self.tabulated.to_json(date_unit='ns')),
-#                'schema': self.schema.to_dict(),
-#                'metadata': self.metadata}
+    def to_dict(self, **kwargs):
         return {'data': self.tabulated.to_dict(),
                 'schema': self.schema.to_dict(),
                 'metadata': self.metadata}
 
     @classmethod
-    def from_dict(cls, dict_):
+    def from_dict(cls, dict_, **kwargs):
         try:
             data_ = dict_['data']
             schema_ = dict_['schema']
@@ -280,8 +236,9 @@ class DataLogsBase(Sequence, jsonmixin.JsonMixin):
         id_range = rge.cat_range(metadata.pop('id_range', None))
         dt_range = rge.time_range(metadata.pop('dt_range', None))
         cls = archetype(id_range, dt_range)
+        validate = kwargs.get('validate', False)
         return cls(data, schema=schema, id_range=id_range,
-                   dt_range=dt_range, **metadata)
+                   dt_range=dt_range, validate=validate, **metadata)
 
     @classmethod
     def from_records(cls, records, id_range=None, dt_range=None,
@@ -293,7 +250,7 @@ class DataLogsBase(Sequence, jsonmixin.JsonMixin):
         except AssertionError:
             msg = "All records must share the same schema."
             raise ConformityError(msg)
-        rows = [r.to_dict() for r in records]
+        rows = [r.tabulated for r in records]
         data = pd.DataFrame.from_records(rows)
         return cls(data, schema=schema, id_range=id_range, dt_range=dt_range,
                    cast=cast, validate=validate, **metadata)

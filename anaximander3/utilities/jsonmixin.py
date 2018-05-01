@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from functools import singledispatch
 import json
 
+from .functions import monkeypatch
+
 
 class JsonMixin:
     """Mixin class to provide comparison methods.
@@ -22,26 +24,27 @@ class JsonMixin:
     def json_dumps(self, **kwargs):
         """Serializes self to a json string."""
         kwargs.setdefault('default', serialize)
-        return json.dumps(self.to_dict(), **kwargs)
+        return json.dumps(self.to_dict(**kwargs), **kwargs)
 
     def json_dump(self, fp, **kwargs):
         """Serializes self to a json file."""
         kwargs.setdefault('default', serialize)
-        return json.dump(self.to_dict(), fp, **kwargs)
+        return json.dump(self.to_dict(**kwargs), fp, **kwargs)
 
     @classmethod
     def json_loads(cls, string, **kwargs):
         """Creates an instance from a serialized string."""
-        return cls.from_dict(json.loads(string, **kwargs))
+        return cls.from_dict(json.loads(string, **kwargs), **kwargs)
 
     @classmethod
     def json_load(cls, fp, **kwargs):
         """Creates an instance from a file path."""
-        return cls.from_dict(json.load(fp, **kwargs))
+        return cls.from_dict(json.load(fp, **kwargs), **kwargs)
 
 
 @singledispatch
 def serialize(val):
+    """Function to supply to the 'default' argumnent of json dump / dumps."""
     return str(val)
 
 
@@ -54,3 +57,14 @@ def serialize_datetime(t):
 def serialize_timedelta(d):
     """Serializes to nanoseconds."""
     return int(d.total_seconds() * 1e9)
+
+
+def jsonio(cls):
+    """Decorator to make a type json serializable."""
+    monkeypatch(cls, JsonMixin)
+
+    @serialize.register(cls)
+    def serialize_(val):
+        return json.dumps(val.to_dict())
+
+    return cls

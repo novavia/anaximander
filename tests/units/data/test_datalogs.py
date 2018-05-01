@@ -127,15 +127,8 @@ def featurelog_invalid():
     return dataframe
 
 
-def mac_validator(record, column, value):
-    if MAC_PATTERN.match(value):
-        return True
-    else:
-        return f"{value} does not match pattern {MAC_PATTERN.pattern}"
-
-
 class FeatureSchema(sch.SampleLogsSchema):
-    id = cln.String(index='nominal', validate=mac_validator)
+    id = cln.String(index='nominal', validate=cln.RegExValidator(MAC_PATTERN))
     datetime = cln.DateTime('UTC', index='sequential')
     Feature_Value_0 = cln.Float()
     Feature_Value_1 = cln.Float()
@@ -144,15 +137,20 @@ class FeatureSchema(sch.SampleLogsSchema):
     Feature_Value_4 = cln.Float()
     Feature_Value_5 = cln.Float()
 
-    @id.validator
-    def second_validation(record, column, value):
-        return mac_validator(record, column, value)
-
 
 class SampleSchema(sch.SampleLogsSchema):
+    id = cln.String(index='nominal')
+    datetime = cln.DateTime(tz='UTC', index='sequential')
     accel_energy_512 = cln.Float()
     temperature = cln.Float()
     charge = cln.Integer()
+
+    @id.validator
+    def mac_validator(record, column, value):
+        if MAC_PATTERN.match(value):
+            return True
+        else:
+            return f"{value} does not match pattern {MAC_PATTERN.pattern}"
 
 
 class EventSchema(sch.EventLogsSchema):
@@ -169,22 +167,13 @@ class SessionSchema(sch.SessionLogsSchema):
     part_id = cln.Integer()
 
 
-def percent_validator(record, column, value):
-    if value is np.nan:
-        return True
-    elif value >= 0 and value <= 100:
-        return True
-    else:
-        return f"{value} is an invalid percentage."
-
-
 class PeriodSchema(sch.PeriodLogsSchema):
     freq = '5T'
     duration = cln.Float()
-    data_coverage = cln.Float(validate=percent_validator)
+    data_coverage = cln.Percentage()
     part_count = cln.Integer()
     avg_cycle = cln.Float()
-    oee = cln.Float(validate=percent_validator)
+    oee = cln.Percentage()
     quota = cln.Bool()
 
 
@@ -221,7 +210,8 @@ def test_json_round_trip(featurelog):
 
 def test_slicing(featurelog):
     log = dtl.DataLog(featurelog, schema=FeatureSchema,
-                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME,
+                      validate=True)
     l0 = log['68:9E:19:07:DE:C3']
     assert isinstance(l0, dtl.DataSequence)
     assert len(l0.data) == 3
@@ -351,6 +341,12 @@ def test_periods():
     log2 = dtl.DataLog(PERIODS, schema=PeriodSchema, id_range=IDS,
                        dt_range=PERIODS_TME)
     assert log == log2
+    PERIODS['oee'][0] = np.nan
+    PERIODS['oee'][1] = 101
+    log3 = dtl.DataLog(PERIODS, schema=PeriodSchema, id_range=IDS,
+                       dt_range=PERIODS_TME)
+    assert log3[0].validate()
+    assert not log3[1].validate()
 
 
 if __name__ == '__main__':

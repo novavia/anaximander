@@ -73,7 +73,8 @@ class FeatureSchema(sch.SampleLogsSchema):
 def test_record(feature_record):
     record = rec.Record(feature_record, schema=FeatureSchema)
     assert record.data.equals(RECORD)
-    
+    assert rec.Record.json_loads(record.json_dumps()) == record
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])

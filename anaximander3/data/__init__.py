@@ -6,8 +6,3 @@ Init module to Anaximander's data package.
 This module is part of the Anaximander project.
 Copyright (C) Novavia Solutions, LLC.
 """
-
-
-class ConformityError(Exception):
-    """Raised if data supplied to a DataObject doesn't conform."""
-    pass

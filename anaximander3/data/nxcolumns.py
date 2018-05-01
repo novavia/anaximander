@@ -12,18 +12,133 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import Mapping, Iterable
+from copy import deepcopy
 from itertools import count
+import re
 
 import numpy as np
 import pandas as pd
 from pandas.api.types import CategoricalDtype
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
 
-from ..utilities import nxtime
 from ..meta.nxdescriptors import Registrable
 
 
 __all__ = []
+
+# =============================================================================
+# Validator types
+# =============================================================================
+
+
+class Validator:
+    """Validators are callables used to validate records.
+
+    To use a validator, pass an instance or list of instances to the
+    validate argument of NxColumn's constructor.
+    To define a new validator, write the __call__ function, which should
+    either return True or a diagnostic string.
+    if nullable is True, then the missing value of the column will pass
+    validation, else it fails.
+    Additional wildcards can be passed as an iterable, or by composing the
+    validator with the wildcard method. Wildcards always pass, whereas
+    the missing value only passes if nullable is True.
+    """
+
+    def __init__(self, nullable=True, wildcards=None):
+        self.nullable = nullable
+        if wildcards is not None:
+            self.wildcards = list(wildcards)
+        else:
+            self.wildcards = []
+
+    def __call__(self, record, column, value):
+        if self.nullable:
+            if value is column.missing or value == column.missing:
+                return True
+        if value in self.wildcards:
+            return True
+
+    def copy(self):
+        """Returns a copy of self -may need overwriting depending on init."""
+        copy_ = type(self)
+        copy_.__dict__ = deepcopy(self.__dict__)
+        return copy_
+
+    def wildcard(self, value):
+        """Returns a new instance with the wildcard added."""
+        copy_ = self.copy()
+        copy_.wildcards.append(value)
+        return copy_
+
+
+class RangeValidator(Validator):
+
+    def __init__(self, lower=None, upper=None, nullable=True, wildcards=None):
+        self.lower = lower
+        self.upper = upper
+        super().__init__(nullable, wildcards)
+
+    def _lower_bound_validator(self, record, column, value):
+        if value < self.lower:
+            return f"{value} is less than lower bound {self.lower}."
+        else:
+            return True
+
+    def _upper_bound_validator(self, record, column, value):
+        if value > self.upper:
+            return f"{value} is more than upper bound {self.upper}."
+        else:
+            return True
+
+    def _dual_bound_validator(self, record, column, value):
+        if value < self.lower or value > self.upper:
+            return f"{value} must lie between {self.lower} and {self.upper}."
+        else:
+            return True
+
+    def __call__(self, record, column, value):
+        if super().__call__(record, column, value) is True:
+            return True
+        if self.lower is None:
+            if self.upper is None:
+                return True
+            else:
+                return self._lower_bound_validator(record, column, value)
+        elif self.upper is None:
+            return self._upper_bound_validator(record, column, value)
+        else:
+            return self._dual_bound_validator(record, column, value)
+
+
+class MembershipValidator(Validator):
+
+    def __init__(self, enum, nullable=True, wildcards=None):
+        self.enum = list(enum)
+        super().__init__(nullable, wildcards)
+
+    def __call__(self, record, column, value):
+        if super().__call__(record, column, value) is True:
+            return True
+        if value in self.enum:
+            return True
+        else:
+            return f"{value} must be a member of {self.enum}."
+
+
+class RegExValidator(Validator):
+
+    def __init__(self, pattern, nullable=False, wildcards=None):
+        self.regex = re.compile(pattern)
+        super().__init__(nullable, wildcards)
+
+    def __call__(self, record, column, value):
+        if super().__call__(record, column, value) is True:
+            return True
+        if self.regex.match(value):
+            return True
+        else:
+            f"{value} does not match pattern {self.regex.pattern}."
 
 # =============================================================================
 # Column base types
@@ -133,13 +248,7 @@ class NxColumn(Registrable):
 
 class Numeric(NxColumn):
     """Base class for numeric types."""
-    dtype = np.dtype('float64')
-    rtype = np.float64
-
-    def __init__(self, *, index=None, required=False, default=None,
-                 missing=None, validate=None):
-        super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+    pass
 
 
 class Integer(Numeric):
@@ -153,12 +262,12 @@ class Integer(Numeric):
     rtype = np.int64
 
     def __init__(self, *, index=None, required=False, default=0,
-                 missing=None, validate=None):
+                 validate=None):
         if not isinstance(default, int):
             msg = "Integer column type can only accepts integers as default."
             raise TypeError(msg)
-        super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+        super().__init__(index=index, required=required, default=default,
+                         validate=validate)
 
 
 class Bool(NxColumn):
@@ -172,12 +281,12 @@ class Bool(NxColumn):
     rtype = np.bool_
 
     def __init__(self, *, index=None, required=False, default=False,
-                 missing=None, validate=None):
+                 validate=None):
         if not isinstance(default, bool):
             msg = "Boolean column type can only accepts booleans as default."
             raise TypeError(msg)
-        super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+        super().__init__(index=index, required=required, default=default,
+                         validate=validate)
 
     def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
@@ -206,8 +315,51 @@ class Bool(NxColumn):
 
 
 class Float(Numeric):
-    """Float column type."""
-    pass
+    """Float column type. Features optional decimals argument."""
+    dtype = np.dtype('float64')
+    rtype = np.float64
+
+    def __init__(self, decimals=None, *, index=None, required=False,
+                 default=None, validate=None):
+        super().__init__(index=index, required=required, default=default,
+                         missing=np.nan, validate=validate)
+        self.decimals = decimals
+
+    def rcast(self, value, force=False):
+        """Casts a scalar to the appropriate type."""
+        try:
+            if self.decimals is not None:
+                return np.around(value, self.decimals)
+            else:
+                return np.float64(value)
+        except (TypeError, ValueError):
+            if force:
+                return np.nan
+            else:
+                raise
+
+    def dcast(self, series, force=False):
+        """Casts a series to the appropriate type."""
+        try:
+            if self.decimals is not None:
+                return series.astype('float').round(self.decimals)
+            else:
+                return series.astype('float')
+        except (TypeError, ValueError):
+            if force:
+                return pd.Series([np.nan] * len(series), index=series.index)
+            else:
+                raise
+
+
+class Percentage(Float):
+    """Specialized percentage type."""
+
+    def __init__(self, decimals=1, *, index=None, required=False,
+                 default=None, validate=None):
+        super().__init__(decimals, index=index, required=required,
+                         default=default, validate=validate)
+        self.validator(RangeValidator(0., 100.))
 
 
 class String(NxColumn):
@@ -216,7 +368,7 @@ class String(NxColumn):
     rtype = str
 
     def __init__(self, *, index=None, required=False, default=None,
-                 missing=None, validate=None):
+                 missing=np.nan, validate=None):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate)
 
@@ -240,9 +392,9 @@ class Categorical(NxColumn):
     rtype = str
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=False, default=None, missing=None, validate=None):
+                 required=False, default=None, validate=None):
         super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+                         default=default, missing=np.nan, validate=validate)
         if categories is not None:
             self.categories = tuple(categories)
             self.dtype = CategoricalDtype(categories, ordered)
@@ -263,27 +415,27 @@ class StateLabel(Categorical):
     """State label column type."""
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, missing=None, validate=None):
+                 required=True, default=None, validate=None):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+                         default=default, validate=validate)
 
 
 class EventLabel(Categorical):
     """Column specifying event label"""
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, missing=None, validate=None):
+                 required=True, default=None, validate=None):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+                         default=default, validate=validate)
 
 
 class SessionLabel(Categorical):
     """Column specifying session label"""
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, missing=None, validate=None):
+                 required=True, default=None, validate=None):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+                         default=default, validate=validate)
 
 
 class DateTimeBase(NxColumn):
@@ -292,9 +444,9 @@ class DateTimeBase(NxColumn):
     rtype = pd.Timestamp
 
     def __init__(self, tz='UTC', *, index=False, required=False,
-                 default=None, missing=pd.NaT, validate=None):
-        super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+                 default=None, validate=None):
+        super().__init__(index=index, required=required, default=default,
+                         missing=pd.NaT, validate=validate)
         self.tz = tz
         self.dtype = DatetimeTZDtype(tz=tz, unit='ns')
 
@@ -336,10 +488,10 @@ class TimeDelta(NxColumn):
     dtype = np.dtype('timedelta64[ns]')
     rtype = pd.Timedelta
 
-    def __init__(self, *, index=False, required=False,
-                 default=None, missing=pd.NaT, validate=None):
-        super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+    def __init__(self, *, index=False, required=False, default=None,
+                 validate=None):
+        super().__init__(index=index, required=required, default=default,
+                         missing=pd.NaT, validate=validate)
 
     def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
@@ -357,9 +509,9 @@ class ObjectID(Integer):
     """
 
     def __init__(self, otype, *, index=None, required=False, default=0,
-                 missing=None, validate=None):
+                 validate=None):
         super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+                         default=default, validate=validate)
         self.otype = otype
 
 # =============================================================================

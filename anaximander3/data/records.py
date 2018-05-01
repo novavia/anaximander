@@ -11,13 +11,13 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
-import abc
 from collections import OrderedDict
 
 import pandas as pd
 
 from ..utilities import xprops
-from .base import DataObjectType
+from ..utilities.jsonmixin import jsonio
+from .dataobject import DataObjectType, DataObject
 from .exceptions import ConformityError
 from . import nxschema as sch
 
@@ -29,48 +29,10 @@ __all__ = []
 # =============================================================================
 
 
-class RecordBase:
+@jsonio
+class RecordBase(DataObject):
     """Base class for data records."""
     __schema__ = None  # placeholder for specialized type parameter
-
-    def __new__(cls, data, *, schema=None, cast=True, validate=False,
-                **metadata):
-        if schema is not None:
-            try:
-                type_ = cls[schema]
-            except KeyError:
-                type_ = cls
-        return super().__new__(type_)
-
-    def __init__(self, data, *, schema=None, cast=True, validate=False,
-                 **metadata):
-        if schema is not None:
-            if isinstance(schema, type):
-                self.schema = schema()
-            else:
-                self.schema = schema
-        else:
-            self.schema = self.__schema__()
-        try:
-            assert isinstance(self.schema, self.__schema__)
-        except AssertionError:
-            msg = f"Improper schema supplied to {type(self).__name__}. " + \
-                  f"It must be of type {self.__schema__.__name__}"
-            raise ConformityError(msg)
-        if cast:
-            self._data = self.cast(data)
-        else:
-            self._data = data
-        self.metadata = metadata
-        if validate:
-            if not self.validate():
-                msg = "Validation failed with the following errors: " + \
-                      "{self.errors}"
-                raise ConformityError(msg)
-
-    @property
-    def data(self):
-        return self._data.copy()
 
     @property
     def id(self):
@@ -79,17 +41,6 @@ class RecordBase:
     @property
     def datetime(self):
         return self._data.datetime
-
-    @property
-    def columns(self):
-        return OrderedDict(self.schema)
-
-    def __getattr__(self, name):
-        if name in self.columns:
-            return self.data[name]
-        else:
-            msg = f"'{type(self).__name__}' object has no attribute '{name}'"
-            raise AttributeError(msg)
 
     def cast(self, data):
         """Casts supplied dict-like object to the object's schema.
@@ -130,7 +81,7 @@ class RecordBase:
             raise ConformityError(msg)
         return pd.Series(fields)
 
-    @abc.abstractproperty
+    @property
     def idx(self):
         """Returns a series of indexing tuples."""
         return (self._data.id, self._data.datetime)
@@ -159,8 +110,28 @@ class RecordBase:
         """Returns True or False whether the data validates or not."""
         return not self._validate()
 
-    def to_dict(self):
+    @property
+    def tabulated(self):
+        """Returns a normalized, ordered dictionary."""
         return OrderedDict((c, getattr(self, c)) for c in self.columns)
+
+    def to_dict(self, **kwargs):
+        return {'data': self.tabulated,
+                'schema': self.schema.to_dict(),
+                'metadata': self.metadata}
+
+    @classmethod
+    def from_dict(cls, dict_, **kwargs):
+        try:
+            data_ = dict_['data']
+            schema_ = dict_['schema']
+            metadata = dict_['metadata']
+        except KeyError:
+            msg = f"Invalid mapping."
+            raise ValueError(msg)
+        schema = sch.Schema.from_dict(schema_)
+        validate = kwargs.get('validate', False)
+        return cls(data_, schema=schema, validate=validate, **metadata)
 
     def __eq__(self, other):
         if type(self) != type(other):
