@@ -176,6 +176,9 @@ class Interval(ContinuousRange, Iterable):
     def __repr__(self):
         return f"<{type(self).__name__} {self.lower}, {self.upper}>"
 
+    def __str__(self):
+        return f"[{str(self.lower)}:{str(self.upper)}["
+
 
 class EmptyInterval(Interval):
     lower = None
@@ -204,6 +207,9 @@ class EmptyInterval(Interval):
     def __repr__(self):
         return iformat()(self)
 
+    def __str__(self):
+        return "[]"
+
 
 class Singleton(ContinuousRange):
     """A degenerate continuous range at a single position."""
@@ -228,6 +234,9 @@ class Singleton(ContinuousRange):
 
     def __repr__(self):
         return f"<{type(self).__name__} {self.position}>"
+
+    def __str__(self):
+        return f"<{str(self.position)}>"
 
 
 class Levels(CategoricalRange, Set):
@@ -287,6 +296,9 @@ class Levels(CategoricalRange, Set):
     def __repr__(self):
         return f"<{type(self).__name__} {self._levels}>"
 
+    def __str__(self):
+        return f"{self._levels}"
+
     def sql(self, attr):
         """Returns a sql statement fragment making attr within self."""
         return attr + " IN (" + ", ".join(_sqlstring(l) for l in self) + ")"
@@ -327,6 +339,8 @@ class Level(CategoricalRange):
     def __repr__(self):
         return f"<{type(self).__name__} {self.level!r}>"
 
+    def __str__(self):
+        return f"<{self.level}>"
 
 # =============================================================================
 # Continuous range classes

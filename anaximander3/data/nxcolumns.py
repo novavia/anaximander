@@ -21,6 +21,7 @@ import pandas as pd
 from pandas.api.types import CategoricalDtype
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
 
+from ..utilities.jsonmixin import jsonio
 from ..meta.nxdescriptors import Registrable
 
 
@@ -145,6 +146,7 @@ class RegExValidator(Validator):
 # =============================================================================
 
 
+@jsonio
 class NxColumn(Registrable):
     """NxColumns are schema descriptors.
 
@@ -183,9 +185,11 @@ class NxColumn(Registrable):
     dtype = None
     rtype = None
     strict_ordering = False
+    ctype = 'column'  # type name used in serialization
+    _serial_attrs = []  # attributes to include in serialization
 
     def __init__(self, *, index=None, required=False, default=None,
-                 missing=None, validate=None):
+                 missing=None, validate=None, **metadata):
         super().__init__()
         self.index = index
         if index:
@@ -205,6 +209,7 @@ class NxColumn(Registrable):
                 self.validators = [validate]
         else:
             self.validators = []
+        self.metadata = metadata
 
     def match_type(self, typemap):
         """Returns the type corresponding to self in a type map."""
@@ -245,6 +250,15 @@ class NxColumn(Registrable):
             else:
                 raise
 
+    def to_dict(self, **kwargs):
+        """Serialization format (one-way only)."""
+        dict_ = {'ctype': self.ctype}
+        if self.index:
+            dict_['index'] = self.index
+        dict_.update({k: getattr(self, k, None) for k in self._serial_attrs})
+        dict_.update(self.metadata)
+        return dict_
+
 
 class Numeric(NxColumn):
     """Base class for numeric types."""
@@ -260,14 +274,15 @@ class Integer(Numeric):
     """
     dtype = np.dtype('int64')
     rtype = np.int64
+    ctype = 'int'
 
     def __init__(self, *, index=None, required=False, default=0,
-                 validate=None):
+                 validate=None, **metadata):
         if not isinstance(default, int):
             msg = "Integer column type can only accepts integers as default."
             raise TypeError(msg)
         super().__init__(index=index, required=required, default=default,
-                         validate=validate)
+                         validate=validate, **metadata)
 
 
 class Bool(NxColumn):
@@ -279,14 +294,15 @@ class Bool(NxColumn):
     """
     dtype = np.dtype('bool')
     rtype = np.bool_
+    ctype = 'bool'
 
     def __init__(self, *, index=None, required=False, default=False,
-                 validate=None):
+                 validate=None, **metadata):
         if not isinstance(default, bool):
             msg = "Boolean column type can only accepts booleans as default."
             raise TypeError(msg)
         super().__init__(index=index, required=required, default=default,
-                         validate=validate)
+                         validate=validate, **metadata)
 
     def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
@@ -318,11 +334,13 @@ class Float(Numeric):
     """Float column type. Features optional decimals argument."""
     dtype = np.dtype('float64')
     rtype = np.float64
+    ctype = 'float'
+    _serial_attrs = ['decimals']
 
     def __init__(self, decimals=None, *, index=None, required=False,
-                 default=None, validate=None):
+                 default=None, validate=None, **metadata):
         super().__init__(index=index, required=required, default=default,
-                         missing=np.nan, validate=validate)
+                         missing=np.nan, validate=validate, **metadata)
         self.decimals = decimals
 
     def rcast(self, value, force=False):
@@ -352,13 +370,26 @@ class Float(Numeric):
                 raise
 
 
+class Measurement(Float):
+    """Specialized float for physical measurements."""
+    ctype = 'measurement'
+    _serial_attrs = ['decimals', 'units']
+
+    def __init__(self, decimals=None, units=None, *, index=None,
+                 required=False, default=None, validate=None, **metadata):
+        super().__init__(decimals=decimals, index=index, required=required,
+                         default=default, validate=validate, **metadata)
+        self.units = units
+
+
 class Percentage(Float):
     """Specialized percentage type."""
+    ctype = 'percentage'
 
     def __init__(self, decimals=1, *, index=None, required=False,
-                 default=None, validate=None):
+                 default=None, validate=None, **metadata):
         super().__init__(decimals, index=index, required=required,
-                         default=default, validate=validate)
+                         default=default, validate=validate, **metadata)
         self.validator(RangeValidator(0., 100.))
 
 
@@ -366,20 +397,24 @@ class String(NxColumn):
     """Base class for text-based field columns."""
     dtype = np.dtype('object')
     rtype = str
+    ctype = 'str'
 
     def __init__(self, *, index=None, required=False, default=None,
-                 missing=np.nan, validate=None):
+                 missing=np.nan, validate=None, **metadata):
         super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+                         default=default, missing=missing, validate=validate,
+                         **metadata)
 
 
 class Text(String):
     """Text column type."""
+    ctype = 'text'
 
     def __init__(self, *, index=None, required=False, default='',
-                 missing=None, validate=None):
+                 missing=None, validate=None, **metadata):
         super().__init__(index=index, required=required,
-                         default=default, missing=missing, validate=validate)
+                         default=default, missing=missing, validate=validate,
+                         **metadata)
 
 
 class Categorical(NxColumn):
@@ -390,11 +425,13 @@ class Categorical(NxColumn):
     """
     dtype = 'category'
     rtype = str
+    ctype = 'category'
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=False, default=None, validate=None):
+                 required=False, default=None, validate=None, **metadata):
         super().__init__(index=index, required=required,
-                         default=default, missing=np.nan, validate=validate)
+                         default=default, missing=np.nan, validate=validate,
+                         **metadata)
         if categories is not None:
             self.categories = tuple(categories)
             self.dtype = CategoricalDtype(categories, ordered)
@@ -413,29 +450,32 @@ class Categorical(NxColumn):
 
 class StateLabel(Categorical):
     """State label column type."""
+    ctype = 'state'
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, validate=None):
+                 required=True, default=None, validate=None, **metadata):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, validate=validate)
+                         default=default, validate=validate, **metadata)
 
 
 class EventLabel(Categorical):
     """Column specifying event label"""
+    ctype = 'event'
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, validate=None):
+                 required=True, default=None, validate=None, **metadata):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, validate=validate)
+                         default=default, validate=validate, **metadata)
 
 
 class SessionLabel(Categorical):
     """Column specifying session label"""
+    ctype = 'session'
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, validate=None):
+                 required=True, default=None, validate=None, **metadata):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, validate=validate)
+                         default=default, validate=validate, **metadata)
 
 
 class DateTimeBase(NxColumn):
@@ -444,9 +484,9 @@ class DateTimeBase(NxColumn):
     rtype = pd.Timestamp
 
     def __init__(self, tz='UTC', *, index=False, required=False,
-                 default=None, validate=None):
+                 default=None, validate=None, **metadata):
         super().__init__(index=index, required=required, default=default,
-                         missing=pd.NaT, validate=validate)
+                         missing=pd.NaT, validate=validate, **metadata)
         self.tz = tz
         self.dtype = DatetimeTZDtype(tz=tz, unit='ns')
 
@@ -465,33 +505,34 @@ class DateTimeBase(NxColumn):
 
 class Date(DateTimeBase):
     """Date column type."""
-    pass
+    ctype = 'date'
 
 
 class Time(DateTimeBase):
     """Time column type."""
-    pass
+    ctype = 'time'
 
 
 class DateTime(DateTimeBase):
     """DateTime column type."""
-    pass
+    ctype = 'datetime'
 
 
 class Timestamp(Integer):
     """Timestamp column type."""
-    pass
+    ctype = 'timestamp'
 
 
 class TimeDelta(NxColumn):
     """Time delta column type."""
     dtype = np.dtype('timedelta64[ns]')
     rtype = pd.Timedelta
+    ctype = 'timedelta'
 
     def __init__(self, *, index=False, required=False, default=None,
-                 validate=None):
+                 validate=None, **metadata):
         super().__init__(index=index, required=required, default=default,
-                         missing=pd.NaT, validate=validate)
+                         missing=pd.NaT, validate=validate, **metadata)
 
     def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
@@ -507,11 +548,12 @@ class ObjectID(Integer):
 
     Requires an object type at instantiation.
     """
+    ctype = 'object'
 
     def __init__(self, otype, *, index=None, required=False, default=0,
-                 validate=None):
+                 validate=None, **metadata):
         super().__init__(index=index, required=required,
-                         default=default, validate=validate)
+                         default=default, validate=validate, **metadata)
         self.otype = otype
 
 # =============================================================================

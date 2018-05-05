@@ -15,7 +15,7 @@ from collections import OrderedDict
 
 import pandas as pd
 
-from ..utilities import xprops
+from ..utilities import xprops, functions as fun
 from ..utilities.jsonmixin import jsonio
 from .dataobject import DataObjectType, DataObject
 from .exceptions import ConformityError
@@ -147,6 +147,9 @@ class RecordType(DataObjectType):
 class Record(RecordBase, metaclass=RecordType):
     __schema__ = sch.LogsSchema
 
+    def __repr__(self):
+        return f"<{type(self).__name__} id:{self.id} " + \
+               f"datetime:{str(self.datetime)}>"
 
 # =============================================================================
 # Practical record types
@@ -160,13 +163,35 @@ class SampleRecord(Record):
 class EventRecord(Record):
     __schema__ = sch.EventLogsSchema
 
+    def __repr__(self):
+        return f"<{type(self).__name__} id:{self.id} " + \
+               f"datetime:{str(self.datetime)} label:{self.label}>"
+
 
 class StateRecord(Record):
     __schema__ = sch.StateLogsSchema
 
+    def __repr__(self):
+        return f"<{type(self).__name__} id:{self.id} " + \
+               f"datetime:{str(self.datetime)} label:{self.label}>"
+
 
 class SessionRecord(Record):
     __schema__ = sch.SessionLogsSchema
+
+    @property
+    def start(self):
+        """Start times of sessions."""
+        return self.datetime
+
+    @property
+    def stop(self):
+        """Stop times of sessions."""
+        return self.datetime + self.duration
+
+    def __repr__(self):
+        return f"<{type(self).__name__} id:{self.id} " + \
+               f"datetime:{str(self.datetime)} label:{self.label}>"
 
 
 class PeriodRecord(Record):

@@ -124,6 +124,11 @@ class ColumnMap(Mapping, metaclass=ColumnMapType):
     def __eq__(self, other):
         return tuple(self.values()) == tuple(other.values())
 
+    def __repr__(self):
+        typename = type(self).__name__
+        colnames = list(self._columns)
+        return f"<{typename} {colnames}>"
+
 
 class SchemaIndexType(ColumnMapType):
     """Metaclass for SchemaIndex."""
@@ -353,6 +358,7 @@ class SchemaType(SchemaBaseType):
 
 @jsonio
 class Schema(SchemaBase, metaclass=SchemaType):
+    supertype = None
 
     def __init__(self, *columns, exclude=None):
         super().__init__()
@@ -360,13 +366,14 @@ class Schema(SchemaBase, metaclass=SchemaType):
         self._columns.update(self.payload._columns)
 
     def to_dict(self, **kwargs):
-        return {'schematype': type(self).regkey,
+        return {'class': type(self).regkey,
+                'supertype': type(self).supertype,
                 'columns': list(self.payload)}
 
     @classmethod
     def from_dict(cls, dict_, **kwargs):
         try:
-            regkey = dict_['schematype']
+            regkey = dict_['class']
             columns = dict_['columns']
         except KeyError:
             msg = f"Invalid mapping."
@@ -546,30 +553,37 @@ class TimeSeriesIndex(SchemaIndex):
 
 class LogsSchema(Schema, index=TimeSeriesIndex):
     """Base schema for time series."""
-    pass
+    xindex = False  # xindex requires a previous record lookup in range queries
 
 
 class SampleLogsSchema(LogsSchema):
     """Schema for data samples accumulation."""
-    pass
+    supertype = 'sample'
 
 
 class EventLogsSchema(LogsSchema):
     """Schema for events."""
+    supertype = 'event'
     label = EventLabel()
 
 
 class StateLogsSchema(LogsSchema):
     """Schema for state transitions."""
+    supertype = 'state'
+    xindex = True
     label = StateLabel()
 
 
 class SessionLogsSchema(LogsSchema):
     """Schema for sessions -featuring a duration from the start datetime."""
+    supertype = 'session'
+    xindex = True
     duration = TimeDelta(required=True)
     label = SessionLabel()
 
 
 class PeriodLogsSchema(LogsSchema):
     """Schema for periodic summaries."""
+    supertype = 'period'
+    xindex = True
     freq = None  # Frequency

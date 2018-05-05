@@ -145,8 +145,8 @@ class DataLogsBase(DataObject, Sequence):
     def empty(self):
         return self.data.empty
 
-    def _metaslice(self, data, id_slice=None, dt_slice=None):
-        """Primitive for __getitem__, adds metadata on top of data slice."""
+    def _metaslice(self, id_slice=None, dt_slice=None):
+        """Primitive for __getitem__, providing metadata."""
         if id_slice is None:
             id_range = self.id_range
         else:
@@ -159,6 +159,16 @@ class DataLogsBase(DataObject, Sequence):
         metadata = self.metadata.copy()
         metadata['id_range'] = id_range
         metadata['dt_range'] = dt_range
+        return metadata
+
+    def _dataslice(self, key, id_range, dt_range):
+        """Data slicer."""
+        return self.data.loc[key, :]
+
+    def _slice(self, data, metadata):
+        """Returns a dataobject slice from data and metadata."""
+        id_range = metadata['id_range']
+        dt_range = metadata['dt_range']
         archetype_ = archetype(id_range, dt_range)
         if isinstance(data, pd.DataFrame):
             data.reset_index(inplace=True)
@@ -255,6 +265,10 @@ class DataLogsBase(DataObject, Sequence):
         return cls(data, schema=schema, id_range=id_range, dt_range=dt_range,
                    cast=cast, validate=validate, **metadata)
 
+    def __repr__(self):
+        return f"<{type(self).__name__} id_range:{str(self.id_range)} " + \
+               f"dt_range:{str(self.dt_range)}>"
+
 
 class LogType(DataObjectType):
     _registry = dict()
@@ -279,15 +293,75 @@ class DataLog(DataLogsBase, metaclass=LogType):
     def idx(self):
         return pd.DataFrame({'idx': list(self.index)}, index=self.index).idx
 
+    @property
+    def id(self):
+        return self._data.index.get_level_values(0).copy()
+
+    @property
+    def datetime(self):
+        return self._data.index.get_level_values(1).copy()
+
+    def _xdataslice(self, key, id_range, dt_range):
+        if isinstance(id_range, rge.Level):
+            id = id_range.level
+            if isinstance(dt_range, rge.TimeInterval):
+                lower = self._previous(id, dt_range.lower)
+                upper = dt_range.upper
+                key = (id, slice(lower, upper))
+                return self.data.loc[key, :]
+            elif isinstance(dt_range, rge.TimeSingleton):
+                position = self._previous(id, dt_range.position)
+                if position is None:
+                    raise KeyError
+                else:
+                    key = (id, position)
+                    return self.data.loc[key, :]
+        elif isinstance(id_range, rge.Levels):
+            if isinstance(dt_range, rge.TimeInterval):
+                lowers = {id: self._previous(id, dt_range.lower)
+                          for id in id_range}
+                upper = dt_range.upper
+                dataframes = [self.data.loc[(id, slice(lower, upper)), :]
+                              for id, lower in lowers.items()]
+                return pd.concat(dataframes)
+            elif isinstance(dt_range, rge.TimeSingleton):
+                positions = {id: self._previous(id, dt_range.position)
+                             for id in id_range}
+                locs = [(k, v) for k, v in positions.items() if v is not None]
+                return self.data.loc[locs, :]
+
+    def _dataslice(self, key, id_range, dt_range):
+        if self.schema.xindex:
+            return self._xdataslice(key, id_range, dt_range)
+        return self.data.loc[key, :]
+
     def __getitem__(self, key):
         if isinstance(key, int):
             key = self.index[key]
         if isinstance(key, tuple):
             id_slice, dt_slice = key
+        elif isinstance(key, slice):
+            id_slice, dt_slice = None, key
+            key = (slice(None), dt_slice)
         else:
             id_slice, dt_slice = key, None
-        data = self.data.loc[key, :]
-        return self._metaslice(data, id_slice, dt_slice)
+        metadata = self._metaslice(id_slice, dt_slice)
+        id_range = metadata['id_range']
+        dt_range = metadata['dt_range']
+        data = self._dataslice(key, id_range, dt_range)
+        return self._slice(data, metadata)
+
+    def _previous(self, id, dt):
+        """Returns immediately previous datetime in index for id, or None."""
+        mindex = self._data.index
+        dt_index = mindex[mindex.get_loc(id)].get_level_values(1)
+        if dt in dt_index:
+            return dt
+        dt_ix = dt_index.searchsorted(dt)
+        if dt_ix > 0:
+            return dt_index[dt_ix - 1]
+        else:
+            return None
 
 
 class DataSequence(DataLogsBase, metaclass=SequenceType):
@@ -300,6 +374,10 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
     @property
     def id(self):
         return self.id_range.level
+
+    @property
+    def datetime(self):
+        return self._data.index.copy()
 
     @property
     def columns(self):
@@ -319,12 +397,43 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         df.insert(0, 'id', self.id_range.level)
         return df
 
+    def _xdataslice(self, key, dt_range):
+        if isinstance(dt_range, rge.TimeInterval):
+            lower = self._previous(dt_range.lower)
+            upper = dt_range.upper
+            key = slice(lower, upper)
+        elif isinstance(dt_range, rge.TimeSingleton):
+            position = self._previous(dt_range.position)
+            if position is None:
+                raise KeyError
+            else:
+                key = position
+        return self.data.loc[key]
+
+    def _dataslice(self, key, dt_range):
+        if self.schema.xindex:
+            return self._xdataslice(key, dt_range)
+        return self.data.loc[key]
+
     def __getitem__(self, key):
         if isinstance(key, int):
             key = self.index[key]
         dt_slice = key
-        data = self.data.loc[key]
-        return self._metaslice(data, dt_slice=dt_slice)
+        metadata = self._metaslice(dt_slice=dt_slice)
+        dt_range = metadata['dt_range']
+        data = self._dataslice(key, dt_range)
+        return self._slice(data, metadata)
+
+    def _previous(self, dt):
+        """Returns the immediately previous datetime in the index, or None."""
+        index = self._data.index
+        if dt in index:
+            return dt
+        dt_ix = index.searchsorted(dt)
+        if dt_ix > 0:
+            return index[dt_ix - 1]
+        else:
+            return None
 
 
 class DataArray(DataLogsBase, metaclass=ArrayType):
@@ -333,6 +442,10 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
     __id_range__ = rge.Levels
     __dt_range__ = rge.TimeSingleton
     _index_columns = ['id']
+
+    @property
+    def id(self):
+        return self._data.index.copy()
 
     @property
     def datetime(self):
@@ -361,8 +474,9 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
         if isinstance(key, int):
             key = self.index[key]
         id_slice = key
+        metadata = self._metaslice(id_slice=id_slice)
         data = self.data.loc[key]
-        return self._metaslice(data, id_slice=id_slice)
+        return self._slice(data, metadata)
 
 
 def archetype(id_range, dt_range):
@@ -401,6 +515,16 @@ class StateLog(DataLog):
 class SessionLog(DataLog):
     __schema__ = sch.SessionLogsSchema
 
+    @property
+    def start(self):
+        """Start times of sessions."""
+        return pd.Series(self.datetime, self.index)
+
+    @property
+    def stop(self):
+        """Stop times of sessions."""
+        return self.start + self.duration
+
 
 class PeriodLog(DataLog):
     __schema__ = sch.PeriodLogsSchema
@@ -421,6 +545,16 @@ class StateSequence(DataSequence):
 class SessionSequence(DataSequence):
     __schema__ = sch.SessionLogsSchema
 
+    @property
+    def start(self):
+        """Start times of sessions."""
+        return pd.Series(self.datetime, self.index)
+
+    @property
+    def stop(self):
+        """Stop times of sessions."""
+        return self.start + self.duration
+
 
 class PeriodSequence(DataSequence):
     __schema__ = sch.PeriodLogsSchema
@@ -440,6 +574,16 @@ class StateArray(DataArray):
 
 class SessionArray(DataArray):
     __schema__ = sch.SessionLogsSchema
+
+    @property
+    def start(self):
+        """Start times of sessions."""
+        return pd.Series(self.datetime, self.index)
+
+    @property
+    def stop(self):
+        """Stop times of sessions."""
+        return self.start + self.duration
 
 
 class PeriodArray(DataArray):

@@ -241,21 +241,11 @@ def test_slicing(featurelog):
     assert l5 == log
     with pytest.raises(KeyError):
         log[slice(None), '2016-09-14 10:00:29.600']
-    l6 = log[slice(None), '2016-09-14 10:10:00':'2016-9-14 10:11:00']
+    l6 = log['2016-09-14 10:10:00':'2016-9-14 10:11:00']
     assert isinstance(l6, dtl.DataLog)
     assert l6.id_range == FEATURE_IDS
     assert l6.dt_range == rge.EmptyTimeInterval()
     assert l6.empty
-    l7 = log['68':'78']
-    assert isinstance(l7, dtl.DataLog)
-    assert l7.id_range == {'68:9E:19:07:DE:C3'}
-    assert l7.dt_range == rge.time_range(*FEATURE_TME)
-    assert l7.tabulated.equals(l0.tabulated)
-    l8 = log['90':'xx', slice(None)]
-    assert isinstance(l8, dtl.DataLog)
-    assert l8.id_range == {}
-    assert l8.dt_range == rge.time_range(*FEATURE_TME)
-    assert l8.empty
     r = log['68:9E:19:07:DE:C3', '2016-09-14 10:01:32.990000+00:00']
     assert isinstance(r, rec.SampleRecord)
     assert r.id == '68:9E:19:07:DE:C3'
@@ -325,6 +315,16 @@ def test_states():
     log = dtl.DataLog(states, schema=StateSchema, id_range=IDS,
                       dt_range=STATES_TME)
     assert log['88:4A:EA:69:35:BD'][-1].label is None
+    assert log['88:4A:EA:69:35:BD']['2018-4-15 00:16:10'].label == 'Loading'
+    t0 = '2018-4-15 00:16:10'
+    t1 = '2018-4-15 00:16:30'
+    assert len(log['88:4A:EA:69:35:BD'][t0:t1]) == 5
+    logslice = log[t0:t1]
+    assert isinstance(logslice, dtl.DataLog)
+    assert len(logslice) == 7
+    logarray = log[slice(None), t0]
+    assert isinstance(logarray, dtl.DataArray)
+    assert len(logarray) == 2
 
 
 def test_sessions():
