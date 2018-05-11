@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import Sequence, OrderedDict
+from itertools import cycle
 
 import pandas as pd
 
@@ -21,7 +22,8 @@ from ..utilities.jsonmixin import jsonio
 from .exceptions import ConformityError
 from .dataobject import DataObjectType, DataObject
 from .records import Record
-from . import nxschema as sch
+from . import nxschema as sch, nxcolumns as cln
+from . import plot
 
 
 __all__ = []
@@ -198,6 +200,19 @@ class DataLogsBase(DataObject, Sequence):
         return self._data.equals(other._data) and \
             self.metadata == other.metadata
 
+    def __call__(self, *columns, exclude=None):
+        """Returns a subset of self with regards to columns."""
+        selfcols = set(self.schema.payload)
+        if not columns:
+            columns = selfcols
+        else:
+            columns = set(columns)
+            if columns - selfcols:
+                raise ValueError(f"Unknown columns in {columns}.")
+            columns &= selfcols
+        schema = type(self.schema)(*columns, exclude=exclude)
+        return type(self)(self.data, schema=schema, **self.metadata)
+
     @xprops.cachedproperty
     def errors(self):
         return self._validate()
@@ -301,7 +316,15 @@ class DataLog(DataLogsBase, metaclass=LogType):
     def datetime(self):
         return self._data.index.get_level_values(1).copy()
 
+    @property
+    def _empty(self):
+        """Returns an empty but conform dataframe."""
+        index = pd.MultiIndex([[], []], [[], []], names=['id', 'datetime'])
+        return pd.DataFrame(columns=self.schema.payload, index=index)
+
     def _xdataslice(self, key, id_range, dt_range):
+        if not id_range or not dt_range:
+            return self._empty
         if isinstance(id_range, rge.Level):
             id = id_range.level
             if isinstance(dt_range, rge.TimeInterval):
@@ -323,7 +346,10 @@ class DataLog(DataLogsBase, metaclass=LogType):
                 upper = dt_range.upper
                 dataframes = [self.data.loc[(id, slice(lower, upper)), :]
                               for id, lower in lowers.items()]
-                return pd.concat(dataframes)
+                if dataframes:
+                    return pd.concat(dataframes)
+                else:
+                    return self._empty
             elif isinstance(dt_range, rge.TimeSingleton):
                 positions = {id: self._previous(id, dt_range.position)
                              for id in id_range}
@@ -336,20 +362,23 @@ class DataLog(DataLogsBase, metaclass=LogType):
         return self.data.loc[key, :]
 
     def __getitem__(self, key):
-        if isinstance(key, int):
-            key = self.index[key]
-        if isinstance(key, tuple):
-            id_slice, dt_slice = key
-        elif isinstance(key, slice):
-            id_slice, dt_slice = None, key
-            key = (slice(None), dt_slice)
-        else:
-            id_slice, dt_slice = key, None
-        metadata = self._metaslice(id_slice, dt_slice)
-        id_range = metadata['id_range']
-        dt_range = metadata['dt_range']
-        data = self._dataslice(key, id_range, dt_range)
-        return self._slice(data, metadata)
+        try:
+            if isinstance(key, int):
+                key = self.index[key]
+            if isinstance(key, tuple):
+                id_slice, dt_slice = key
+            elif isinstance(key, slice):
+                id_slice, dt_slice = None, key
+                key = (slice(None), dt_slice)
+            else:
+                id_slice, dt_slice = key, None
+            metadata = self._metaslice(id_slice, dt_slice)
+            id_range = metadata['id_range']
+            dt_range = metadata['dt_range']
+            data = self._dataslice(key, id_range, dt_range)
+            return self._slice(data, metadata)
+        except (ValueError, KeyError):
+            raise KeyError(str(key))
 
     def _previous(self, id, dt):
         """Returns immediately previous datetime in index for id, or None."""
@@ -397,6 +426,12 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         df.insert(0, 'id', self.id_range.level)
         return df
 
+    @property
+    def _empty(self):
+        """Returns an empty but conform dataframe."""
+        index = pd.DatetimeIndex([], name='datetime')
+        return pd.DataFrame(columns=self.schema.payload, index=index)
+
     def _xdataslice(self, key, dt_range):
         if isinstance(dt_range, rge.TimeInterval):
             lower = self._previous(dt_range.lower)
@@ -413,16 +448,23 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
     def _dataslice(self, key, dt_range):
         if self.schema.xindex:
             return self._xdataslice(key, dt_range)
+        if isinstance(key, slice):
+            start, stop = key.start, key.stop
+            key = slice(pd.to_datetime(start, utc=True),
+                        pd.to_datetime(stop, utc=True))
         return self.data.loc[key]
 
     def __getitem__(self, key):
-        if isinstance(key, int):
-            key = self.index[key]
-        dt_slice = key
-        metadata = self._metaslice(dt_slice=dt_slice)
-        dt_range = metadata['dt_range']
-        data = self._dataslice(key, dt_range)
-        return self._slice(data, metadata)
+        try:
+            if isinstance(key, int):
+                key = self.index[key]
+            dt_slice = key
+            metadata = self._metaslice(dt_slice=dt_slice)
+            dt_range = metadata['dt_range']
+            data = self._dataslice(key, dt_range)
+            return self._slice(data, metadata)
+        except (ValueError, KeyError):
+            raise KeyError(str(key))
 
     def _previous(self, dt):
         """Returns the immediately previous datetime in the index, or None."""
@@ -434,6 +476,22 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
             return index[dt_ix - 1]
         else:
             return None
+
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        pass
+
+    def plot(self, staff=None, tz=None, **kwargs):
+        if staff is None:
+            score = plot.SimpleScore(tz=tz)
+            staff = score.staves[0]
+            rval = score
+        else:
+            rval = None
+        self._plot(staff, **kwargs)
+        if rval is None and tz is not None:
+            staff.score.tz = tz
+        return rval
 
 
 class DataArray(DataLogsBase, metaclass=ArrayType):
@@ -470,13 +528,22 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
         df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
         return df
 
+    @property
+    def _empty(self):
+        """Returns an empty but conform dataframe."""
+        index = pd.Index([], name='id')
+        return pd.DataFrame(columns=self.schema.payload, index=index)
+
     def __getitem__(self, key):
-        if isinstance(key, int):
-            key = self.index[key]
-        id_slice = key
-        metadata = self._metaslice(id_slice=id_slice)
-        data = self.data.loc[key]
-        return self._slice(data, metadata)
+        try:
+            if isinstance(key, int):
+                key = self.index[key]
+            id_slice = key
+            metadata = self._metaslice(id_slice=id_slice)
+            data = self.data.loc[key]
+            return self._slice(data, metadata)
+        except (ValueError, KeyError):
+            raise KeyError(str(key))
 
 
 def archetype(id_range, dt_range):
@@ -533,13 +600,58 @@ class PeriodLog(DataLog):
 class SampleSequence(DataSequence):
     __schema__ = sch.SampleLogsSchema
 
+    def _plot(self, staff, column, **kwargs):
+        """Plot primitive, type-dependent."""
+        staff.plot_sample_sequence(self, column, **kwargs)
+
+    def plot(self, *staves, columns=None, tz=None, **kwargs):
+        if columns is None:
+            columns = [k for k, v in self.columns.items()
+                       if isinstance(v, cln.Float)]
+        if not staves:
+            score = plot.RowScore(len(columns), tz=tz)
+            staves = score.staves
+            rval = score
+        else:
+            rval = None
+        for col, staff in zip(columns, cycle(staves)):
+            self._plot(staff, col, **kwargs)
+        if rval is None and tz is not None:
+            for s in staves:
+                s.score.tz = tz
+        return rval
+
 
 class EventSequence(DataSequence):
     __schema__ = sch.EventLogsSchema
 
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        staff.plot_event_sequence(self, **kwargs)
+
 
 class StateSequence(DataSequence):
     __schema__ = sch.StateLogsSchema
+
+    @property
+    def spans(self):
+        """A dataframe of state spans.
+
+        Adds a duration column for each state, and inserts dt_range
+        metadata as needed.
+        """
+        df = self.data
+        onsets = pd.Series(df.index)
+        outsets = onsets.shift(-1)
+        onsets.iloc[0] = max(onsets.iloc[0], self.dt_range.lower)
+        outsets.iloc[-1] = self.dt_range.upper
+        df.index = onsets
+        df['duration'] = pd.Series((outsets - onsets).values, df.index)
+        return df
+
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        staff.plot_state_sequence(self, **kwargs)
 
 
 class SessionSequence(DataSequence):
@@ -555,9 +667,17 @@ class SessionSequence(DataSequence):
         """Stop times of sessions."""
         return self.start + self.duration
 
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        staff.plot_session_sequence(self, **kwargs)
+
 
 class PeriodSequence(DataSequence):
     __schema__ = sch.PeriodLogsSchema
+
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        pass
 
 
 class SampleArray(DataArray):

@@ -155,6 +155,16 @@ class Interval(ContinuousRange, Iterable):
             return multi[0]
         return multi
 
+    @classmethod
+    def compact(cls, a, b):
+        """Joins a and b into a single interval."""
+        if isinstance(a, EmptyInterval):
+            return b
+        elif isinstance(b, EmptyInterval):
+            return a
+        multi = cls.__multi__([a, b])
+        return multi.compact
+
     def __and__(self, other):
         """Implements intersection at the instance level."""
         if isinstance(other, Singleton):
@@ -209,6 +219,9 @@ class EmptyInterval(Interval):
 
     def __str__(self):
         return "[]"
+
+    def __bool__(self):
+        return False
 
 
 class Singleton(ContinuousRange):
@@ -586,6 +599,16 @@ class MultiInterval(MultiRange, Sequence):
         """Returns the union of MultiIntervals, as a MultiInterval."""
         intervals = chain(*(i._intervals for i in instances))
         return cls(intervals)
+
+    @property
+    def compact(self):
+        """Returns the minimal interval that covers all component intervals."""
+        if not self:
+            return self.__empty__()
+        else:
+            lower = min(i.lower for i in self)
+            upper = max(i.upper for i in self)
+            return type(self[0])(lower, upper)
 
     def __getitem__(self, ix):
         return self._intervals.__getitem__(ix)

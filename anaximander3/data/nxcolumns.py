@@ -259,6 +259,10 @@ class NxColumn(Registrable):
         dict_.update(self.metadata)
         return dict_
 
+    @property
+    def label(self):
+        return self.name
+
 
 class Numeric(NxColumn):
     """Base class for numeric types."""
@@ -380,6 +384,13 @@ class Measurement(Float):
         super().__init__(decimals=decimals, index=index, required=required,
                          default=default, validate=validate, **metadata)
         self.units = units
+
+    @property
+    def label(self):
+        if self.units:
+            return f"{self.name} ({self.units})"
+        else:
+            return self.name
 
 
 class Percentage(Float):

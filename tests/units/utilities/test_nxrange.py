@@ -99,6 +99,15 @@ class TestTimeInterval(TestCase):
         assert i0 | i1 == rge.MultiTimeInterval([i0, i1])
         assert i0 | i2 == rge.time_range(l0, u1)
 
+    def test_compact(self):
+        l0 = '2018-4-23 15:40'
+        u0 = '2018-4-23 15:45'
+        l1 = '2018-4-23 15:50'
+        u1 = '2018-4-23 16:05'
+        i0 = rge.time_range(l0, u0)
+        i1 = rge.time_range(l1, u1)
+        assert rge.TimeInterval.compact(i0, i1) == rge.time_range(l0, u1)
+
 
 class TestDiscreteRange(TestCase):
 

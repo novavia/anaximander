@@ -21,7 +21,7 @@ import pytest
 import anaximander3 as nx
 from anaximander3.utilities import nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
-    datalogs as dtl, records as rec
+    datalogs as dtl, records as rec, plot
 
 
 NXPATH = os.path.dirname(nx.__path__[0])
@@ -212,6 +212,10 @@ def test_slicing(featurelog):
     log = dtl.DataLog(featurelog, schema=FeatureSchema,
                       id_range=FEATURE_IDS, dt_range=FEATURE_TME,
                       validate=True)
+    assert log() == log
+    assert len(log('Feature_Value_0').columns) == 3
+    with pytest.raises(ValueError):
+        log('xyz')
     l0 = log['68:9E:19:07:DE:C3']
     assert isinstance(l0, dtl.DataSequence)
     assert len(l0.data) == 3
@@ -270,6 +274,15 @@ def test_slicing(featurelog):
                                                 id_range=FEATURE_IDS,
                                                 dt_range=FEATURE_TME)
     assert log_from_records == log
+    with pytest.raises(KeyError):
+        log['xyz']
+    with pytest.raises(KeyError):
+        l1['xyz']
+    assert log['2016-9-15':'2016-9-15'].empty
+    assert l1['2016-9-15':'2016-9-15'].empty
+    assert not l1['2016-9-15':'2018-4-15'].dt_range
+    assert l1['2016-9-14 10:00:00':'2016-9-14 10:00:15'].empty
+    assert l1['2016-9-14 10:00:00':'2016-9-14 10:00:15'].dt_range
 
 
 def test_samples():
@@ -325,6 +338,9 @@ def test_states():
     logarray = log[slice(None), t0]
     assert isinstance(logarray, dtl.DataArray)
     assert len(logarray) == 2
+    assert log['2018-4-13':'2018-4-14'].empty
+    assert len(log['2018-4-15 00:16:59.999':'2018-4-17']) == 2
+    assert log['2018-4-16':'2018-4-17'].empty
 
 
 def test_sessions():
@@ -349,5 +365,36 @@ def test_periods():
     assert not log3[1].validate()
 
 
+def plots():
+    samples = dtl.DataLog(SAMPLES, schema=SampleSchema, id_range=IDS,
+                          dt_range=SAMPLES_TME)
+    samples['88:4A:EA:69:35:BD'].plot()
+    score = samples['88:4A:EA:69:35:BD'].plot(columns=['accel_energy_512', ])
+    score.staves[0].plot_sample_sequence(samples['88:4A:EA:69:35:BD'],
+                                         'temperature',
+                                         twinx=True)
+    empty_sequence = samples['88:4A:EA:69:35:BD']['2018-4-15 00:15:00':
+                                                  '2018-4-15 00:15:00.250']
+    empty_sequence.plot()
+
+    events = dtl.DataLog(EVENTS, schema=EventSchema, id_range=IDS,
+                         dt_range=EVENTS_TME)['88:4A:EA:69:35:BD']
+    events._data.loc[events.index[0], 'label'] = None
+    events.plot()
+
+    sessions = dtl.DataLog(SESSIONS, schema=SessionSchema, id_range=IDS,
+                           dt_range=SESSIONS_TME)
+    sessions['88:4A:EA:69:35:BD'].plot(tz='Asia/Kolkata', ymin=0.25, ymax=0.75)
+
+    states = dtl.DataLog(STATES, schema=StateSchema, id_range=IDS,
+                         dt_range=STATES_TME)
+    score = states['88:4A:EA:69:35:BD'].plot(ymin=0.5, ymax=1.)
+    states['88:4A:EA:69:38:1A'].plot(score.staves[0],
+                                     color={'Loading': 'grey',
+                                            'Executing': 'green'},
+                                     ymin=0., ymax=0.5)
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
+    plots()

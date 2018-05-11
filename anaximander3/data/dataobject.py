@@ -105,5 +105,3 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
         else:
             msg = f"'{type(self).__name__}' object has no attribute '{name}'"
             raise AttributeError(msg)
-
-        
