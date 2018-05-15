@@ -41,7 +41,8 @@ class DataLogsBase(DataObject, Sequence):
     __dt_range__ = None  # placeholder for expected time range type
 
     def __init__(self, data, *, schema=None, id_range=None, dt_range=None,
-                 cast=True, validate=False, force=False, **metadata):
+                 cast=True, flex=True, validate=False, force=False,
+                 **metadata):
         self._id_range = rge.cat_range(id_range)
         self._dt_range = rge.time_range(dt_range)
         try:
@@ -60,8 +61,8 @@ class DataLogsBase(DataObject, Sequence):
             raise ValueError(msg)
         metadata.update({'id_range': self.id_range.serializable,
                          'dt_range': self.dt_range.serializable})
-        super().__init__(data, schema=schema, cast=cast, validate=validate,
-                         **metadata)
+        super().__init__(data, schema=schema, cast=cast, flex=flex,
+                         validate=validate, **metadata)
 
     @property
     def id_range(self):
@@ -78,7 +79,14 @@ class DataLogsBase(DataObject, Sequence):
             return self._conform(self._data)
         return self._data.reset_index()
 
-    def _conform(self, data, force=False):
+    @property
+    def payload(self):
+        """An unindexed dataframe of payload columns."""
+        if self.empty:
+            return pd.DataFrame(columns=self.schema.payload)
+        return self._data.reset_index(drop=True)
+
+    def _conform(self, data, flex=True, force=False):
         """Primitive for cast, returning a non-indexed dataframe."""
         df = pd.DataFrame(data).reset_index()
         missing_columns = []
@@ -100,8 +108,18 @@ class DataLogsBase(DataObject, Sequence):
                 except (ValueError, TypeError):
                     mistyped_columns.append(name)
         if missing_columns:
-            msg = f"Data is missing schema columns {missing_columns}."
-            raise ConformityError(msg)
+            missing_idxcols = [c for c in missing_columns
+                               if c in self.schema.index]
+            if missing_idxcols:
+                msg = f"Data is missing index columns {missing_idxcols}."
+                raise ConformityError(msg)
+            if flex:
+                schema = type(self.schema)(*self.schema.payload,
+                                           exclude=missing_columns)
+                self.schema = schema
+            else:
+                msg = f"Data is missing schema columns {missing_columns}."
+                raise ConformityError(msg)
         if mistyped_columns:
             dtypes = [c.dtype for c in
                       [self.columns[n] for n in mistyped_columns]]
@@ -110,21 +128,24 @@ class DataLogsBase(DataObject, Sequence):
             raise ConformityError(msg)
         return df[list(self.columns)]
 
-    def cast(self, data, force=False):
+    def cast(self, data, flex=True, force=False):
         """Casts supplied dataframe-like object to the object's schema.
 
         data must be a valid input to pandas.DataFrame.
         The method performs the following functions:
         * raises PandasError if data cannot be cast to a DataFrame
-        * raises ConformityError if the data misses schema columns;
-        extra columns are simply removed.
+        * if flex is False, raises ConformityError if the data misses schema
+        columns; extra columns are simply removed. If flex is True and
+        columns are missing, a new schema instance will be created and
+        replace self.schema -which may raise an error if mandatory columns
+        are missing;
         * recasts columns to the dtype specified in the schema if necessary;
         * reorders columns to match the schema if necessary.
 
         The force flag will silently handle incorrect inputs, such as
         unreadable datetime, and treat them as missing values.
         """
-        df = self._conform(data, force=force)
+        df = self._conform(data, flex=flex, force=force)
         df.set_index(self._index_columns, drop=True, inplace=True)
         return df.sort_index()
 
@@ -200,19 +221,6 @@ class DataLogsBase(DataObject, Sequence):
         return self._data.equals(other._data) and \
             self.metadata == other.metadata
 
-    def __call__(self, *columns, exclude=None):
-        """Returns a subset of self with regards to columns."""
-        selfcols = set(self.schema.payload)
-        if not columns:
-            columns = selfcols
-        else:
-            columns = set(columns)
-            if columns - selfcols:
-                raise ValueError(f"Unknown columns in {columns}.")
-            columns &= selfcols
-        schema = type(self.schema)(*columns, exclude=exclude)
-        return type(self)(self.data, schema=schema, **self.metadata)
-
     @xprops.cachedproperty
     def errors(self):
         return self._validate()
@@ -243,20 +251,28 @@ class DataLogsBase(DataObject, Sequence):
         return self._validate().empty
 
     def to_dict(self, **kwargs):
-        return {'data': self.tabulated.to_dict(),
+        return {'index': list(self.index),
+                'data': self.payload.to_dict('list'),
                 'schema': self.schema.to_dict(),
                 'metadata': self.metadata}
 
     @classmethod
     def from_dict(cls, dict_, **kwargs):
         try:
+            index_ = dict_['index']
             data_ = dict_['data']
             schema_ = dict_['schema']
             metadata = dict_['metadata']
         except KeyError:
             msg = f"Invalid mapping."
             raise ValueError(msg)
+        if index_:
+            id_, datetime = zip(*index_)
+        else:
+            id_, datetime = [], []
         data = pd.DataFrame.from_dict(data_)
+        data['id'] = id_
+        data['datetime'] = datetime
         schema = sch.Schema.from_dict(schema_)
         id_range = rge.cat_range(metadata.pop('id_range', None))
         dt_range = rge.time_range(metadata.pop('dt_range', None))
@@ -551,12 +567,12 @@ def archetype(id_range, dt_range):
     if isinstance(id_range, rge.Level):
         if isinstance(dt_range, rge.TimeSingleton):
             return Record
-        elif isinstance(dt_range, rge.TimeInterval):
+        elif isinstance(dt_range, rge.TimeInterval) or dt_range is None:
             return DataSequence
-    elif isinstance(id_range, rge.Levels):
+    elif isinstance(id_range, rge.Levels) or id_range is None:
         if isinstance(dt_range, rge.TimeSingleton):
             return DataArray
-        elif isinstance(dt_range, rge.TimeInterval):
+        elif isinstance(dt_range, rge.TimeInterval) or dt_range is None:
             return DataLog
     else:
         raise TypeError

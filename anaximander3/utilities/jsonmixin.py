@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from functools import singledispatch
 import json
 
+import numpy as np
+
 from .functions import monkeypatch
 
 
@@ -57,6 +59,16 @@ def serialize_datetime(t):
 def serialize_timedelta(d):
     """Serializes to nanoseconds."""
     return int(d.total_seconds() * 1e9)
+
+
+@serialize.register(np.int_)
+def serialize_npint(i):
+    return int(i)
+
+
+@serialize.register(np.bool_)
+def serialize_npbool(b):
+    return bool(b)
 
 
 def jsonio(cls):

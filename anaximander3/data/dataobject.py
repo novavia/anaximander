@@ -56,8 +56,8 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
     """Base class for data objects."""
     __schema__ = None  # placeholder for specialized type parameter
 
-    def __new__(cls, data, *, schema=None, cast=True, validate=False,
-                **metadata):
+    def __new__(cls, data, *, schema=None, cast=True, flex=True,
+                validate=False, **metadata):
         if schema is not None:
             try:
                 type_ = cls[schema]
@@ -65,8 +65,8 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
                 type_ = cls
         return super().__new__(type_)
 
-    def __init__(self, data, *, schema=None, cast=True, validate=False,
-                 **metadata):
+    def __init__(self, data, *, schema=None, cast=True, flex=True,
+                 validate=False, **metadata):
         if schema is not None:
             if isinstance(schema, type):
                 self.schema = schema()
@@ -81,7 +81,7 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
                   f"It must be of type {self.__schema__.__name__}"
             raise ConformityError(msg)
         if cast:
-            self._data = self.cast(data)
+            self._data = self.cast(data, flex=flex)
         else:
             self._data = data
         self.metadata = metadata
@@ -105,3 +105,16 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
         else:
             msg = f"'{type(self).__name__}' object has no attribute '{name}'"
             raise AttributeError(msg)
+
+    def __call__(self, *columns, exclude=None):
+        """Returns a subset of self with regards to columns."""
+        selfcols = set(self.schema.payload)
+        if not columns:
+            columns = selfcols
+        else:
+            columns = set(columns)
+            if columns - selfcols:
+                raise ValueError(f"Unknown columns in {columns}.")
+            columns &= selfcols
+        schema = type(self.schema)(*columns, exclude=exclude)
+        return type(self)(self.data, schema=schema, **self.metadata)

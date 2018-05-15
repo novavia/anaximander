@@ -21,6 +21,7 @@ import pandas as pd
 from pandas.api.types import CategoricalDtype
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
 
+from ..utilities import nxrange
 from ..utilities.jsonmixin import jsonio
 from ..meta.nxdescriptors import Registrable
 
@@ -187,6 +188,7 @@ class NxColumn(Registrable):
     strict_ordering = False
     ctype = 'column'  # type name used in serialization
     _serial_attrs = []  # attributes to include in serialization
+    data_range = None  # placeholder for a range function from nxrange
 
     def __init__(self, *, index=None, required=False, default=None,
                  missing=None, validate=None, **metadata):
@@ -266,7 +268,7 @@ class NxColumn(Registrable):
 
 class Numeric(NxColumn):
     """Base class for numeric types."""
-    pass
+    data_range = staticmethod(nxrange.float_range)
 
 
 class Integer(Numeric):
@@ -409,6 +411,7 @@ class String(NxColumn):
     dtype = np.dtype('object')
     rtype = str
     ctype = 'str'
+    data_range = staticmethod(nxrange.cat_range)
 
     def __init__(self, *, index=None, required=False, default=None,
                  missing=np.nan, validate=None, **metadata):
@@ -437,6 +440,7 @@ class Categorical(NxColumn):
     dtype = 'category'
     rtype = str
     ctype = 'category'
+    data_range = staticmethod(nxrange.cat_range)
 
     def __init__(self, categories=None, ordered=False, *, index=None,
                  required=False, default=None, validate=None, **metadata):
@@ -493,6 +497,7 @@ class DateTimeBase(NxColumn):
     """Base class for tz-aware date & time columns."""
     dtype = np.dtype('datetime64[ns]')
     rtype = pd.Timestamp
+    data_range = staticmethod(nxrange.time_range)
 
     def __init__(self, tz='UTC', *, index=False, required=False,
                  default=None, validate=None, **metadata):
@@ -539,6 +544,7 @@ class TimeDelta(NxColumn):
     dtype = np.dtype('timedelta64[ns]')
     rtype = pd.Timedelta
     ctype = 'timedelta'
+    data_range = staticmethod(nxrange.float_range)
 
     def __init__(self, *, index=False, required=False, default=None,
                  validate=None, **metadata):
@@ -560,6 +566,7 @@ class ObjectID(Integer):
     Requires an object type at instantiation.
     """
     ctype = 'object'
+    data_range = staticmethod(nxrange.cat_range)
 
     def __init__(self, otype, *, index=None, required=False, default=0,
                  validate=None, **metadata):

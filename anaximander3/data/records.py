@@ -11,11 +11,11 @@ Copyright (C) Novavia Solutions, LLC.
 # Import statements
 # =============================================================================
 
-from collections import OrderedDict
+from collections import OrderedDict, Sequence
 
 import pandas as pd
 
-from ..utilities import xprops, functions as fun
+from ..utilities import xprops
 from ..utilities.jsonmixin import jsonio
 from .dataobject import DataObjectType, DataObject
 from .exceptions import ConformityError
@@ -42,20 +42,25 @@ class RecordBase(DataObject):
     def datetime(self):
         return self._data.datetime
 
-    def cast(self, data):
+    def cast(self, data, flex=True):
         """Casts supplied dict-like object to the object's schema.
 
         data must be a valid input to pandas.Series.
         The method performs the following functions:
         * raises PandasError if data cannot be cast to a Series
-        * raises ConformityError if the data misses schema columns;
-        extra columns are simply removed.
+        * if flex is False, raises ConformityError if the data misses schema
+        columns; extra columns are simply removed. If flex is True and
+        columns are missing, a new schema instance will be created and
+        replace self.schema -which may raise an error if mandatory columns
+        are missing;
         * recasts columns to the dtype specified in the schema if necessary;
         * reorders columns to match the schema if necessary.
         """
         fields = OrderedDict()
         missing_fields = []
         mistyped_fields = OrderedDict()
+        if isinstance(data, Sequence):
+            data = dict(zip(self.schema, data))
         for name, col in self.columns.items():
             try:
                 val = data[name]
@@ -70,8 +75,18 @@ class RecordBase(DataObject):
                 except (TypeError, ValueError):
                     mistyped_fields[name] = val
         if missing_fields:
-            msg = f"Data is missing schema fields {missing_fields}."
-            raise ConformityError(msg)
+            missing_idxflds = [c for c in missing_fields
+                               if c in self.schema.index]
+            if missing_idxflds:
+                msg = f"Data is missing index fields {missing_idxflds}."
+                raise ConformityError(msg)
+            if flex:
+                schema = type(self.schema)(*self.schema.payload,
+                                           exclude=missing_fields)
+                self.schema = schema
+            else:
+                msg = f"Data is missing schema fields {missing_fields}."
+                raise ConformityError(msg)
         elif mistyped_fields:
             types = [c.rtype for c in
                      [self.columns[n] for n in mistyped_fields]]
@@ -115,14 +130,21 @@ class RecordBase(DataObject):
         """Returns a normalized, ordered dictionary."""
         return OrderedDict((c, getattr(self, c)) for c in self.columns)
 
+    @property
+    def payload(self):
+        """Returns a normalized, ordered dictionary with paylod columns."""
+        return OrderedDict((c, getattr(self, c)) for c in self.schema.payload)
+
     def to_dict(self, **kwargs):
-        return {'data': self.tabulated,
+        return {'index': self.idx,
+                'data': self.payload,
                 'schema': self.schema.to_dict(),
                 'metadata': self.metadata}
 
     @classmethod
     def from_dict(cls, dict_, **kwargs):
         try:
+            index_ = dict_['index']
             data_ = dict_['data']
             schema_ = dict_['schema']
             metadata = dict_['metadata']
@@ -131,6 +153,7 @@ class RecordBase(DataObject):
             raise ValueError(msg)
         schema = sch.Schema.from_dict(schema_)
         validate = kwargs.get('validate', False)
+        data_['id'], data_['datetime'] = index_
         return cls(data_, schema=schema, validate=validate, **metadata)
 
     def __eq__(self, other):

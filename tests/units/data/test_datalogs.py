@@ -187,6 +187,14 @@ def test_logs(featurelog, featurelog_partial, featurelog_no_device,
                       schema=FeatureSchema('Feature_Value_0'),
                       id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     assert log.data.equals(LOG[['Feature_Value_0']])
+    log = dtl.DataLog(featurelog_partial,
+                      schema=FeatureSchema,
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+    assert log.data.equals(LOG[['Feature_Value_0']])
+    with pytest.raises(dtl.ConformityError):
+        log = dtl.DataLog(featurelog_partial,
+                          schema=FeatureSchema, flex=False,
+                          id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     with pytest.raises(dtl.ConformityError):
         dtl.DataLog(featurelog_no_device, schema=FeatureSchema,
                     id_range=FEATURE_IDS, dt_range=FEATURE_TME)
@@ -397,4 +405,4 @@ def plots():
 
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
-    plots()
+#    plots()
