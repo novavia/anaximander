@@ -147,11 +147,14 @@ class RecordBase(DataObject):
             index_ = dict_['index']
             data_ = dict_['data']
             schema_ = dict_['schema']
-            metadata = dict_['metadata']
+            metadata = dict_.get('metadata', {})
         except KeyError:
             msg = f"Invalid mapping."
             raise ValueError(msg)
-        schema = sch.Schema.from_dict(schema_)
+        if isinstance(schema_, sch.Schema):
+            schema = schema_
+        else:
+            schema = sch.Schema.from_dict(schema_)
         validate = kwargs.get('validate', False)
         data_['id'], data_['datetime'] = index_
         return cls(data_, schema=schema, validate=validate, **metadata)

@@ -273,7 +273,10 @@ class DataLogsBase(DataObject, Sequence):
         data = pd.DataFrame.from_dict(data_)
         data['id'] = id_
         data['datetime'] = datetime
-        schema = sch.Schema.from_dict(schema_)
+        if isinstance(schema_, sch.Schema):
+            schema = schema_
+        else:
+            schema = sch.Schema.from_dict(schema_)
         id_range = rge.cat_range(metadata.pop('id_range', None))
         dt_range = rge.time_range(metadata.pop('dt_range', None))
         cls = archetype(id_range, dt_range)
@@ -332,11 +335,18 @@ class DataLog(DataLogsBase, metaclass=LogType):
     def datetime(self):
         return self._data.index.get_level_values(1).copy()
 
+    @classmethod
+    def empty_frame(cls, schema=None):
+        """Returns an empty but conform dataframe."""
+        if schema is None:
+            schema = cls.__schema__()
+        index = pd.MultiIndex([[], []], [[], []], names=['id', 'datetime'])
+        return pd.DataFrame(columns=schema.payload, index=index)
+
     @property
     def _empty(self):
         """Returns an empty but conform dataframe."""
-        index = pd.MultiIndex([[], []], [[], []], names=['id', 'datetime'])
-        return pd.DataFrame(columns=self.schema.payload, index=index)
+        return self.empty_frame(self.schema)
 
     def _xdataslice(self, key, id_range, dt_range):
         if not id_range or not dt_range:
@@ -442,11 +452,18 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         df.insert(0, 'id', self.id_range.level)
         return df
 
+    @classmethod
+    def empty_frame(cls, schema=None):
+        """Returns an empty but conform dataframe."""
+        if schema is None:
+            schema = cls.__schema__()
+        index = pd.DatetimeIndex([], name='datetime')
+        return pd.DataFrame(columns=schema.payload, index=index)
+
     @property
     def _empty(self):
         """Returns an empty but conform dataframe."""
-        index = pd.DatetimeIndex([], name='datetime')
-        return pd.DataFrame(columns=self.schema.payload, index=index)
+        return self.empty_frame(self.schema)
 
     def _xdataslice(self, key, dt_range):
         if isinstance(dt_range, rge.TimeInterval):
@@ -544,11 +561,18 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
         df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
         return df
 
+    @classmethod
+    def empty_frame(cls, schema=None):
+        """Returns an empty but conform dataframe."""
+        if schema is None:
+            schema = cls.__schema__()
+        index = pd.Index([], name='id')
+        return pd.DataFrame(columns=schema.payload, index=index)
+
     @property
     def _empty(self):
         """Returns an empty but conform dataframe."""
-        index = pd.Index([], name='id')
-        return pd.DataFrame(columns=self.schema.payload, index=index)
+        return self.empty_frame(self.schema)
 
     def __getitem__(self, key):
         try:

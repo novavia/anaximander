@@ -275,15 +275,16 @@ class SchemaBaseType(ColumnMapType):
 
     def __init__(cls, name, bases, namespace, index=None):
         super().__init__(name, bases, namespace)
-
         base_index = fun.get(index, getattr(cls, '__index__', SchemaIndex))
-        if any(c.cls is cls for c in cls.index_columns.values()):
+        ixcols = any(c.cls is cls for c in cls.index_columns.values())
+        keydef = any(a in namespace for a in ['__rowkey__', '__rowidx__'])
+        if ixcols or keydef:
             ix_name = name + 'Index'
             ix_namespace = cls.index_columns
             if hasattr(cls, '__rowkey__'):
-                ix_namespace['__rowkey__'] = cls.rowkey
+                ix_namespace['__rowkey__'] = cls.__rowkey__
             if hasattr(cls, '__rowidx__'):
-                ix_namespace['__rowidx__'] = cls.rowidx
+                ix_namespace['__rowidx__'] = cls.__rowidx__
 
             def exec_body(ns):
                 ns.update(ix_namespace)
@@ -313,9 +314,9 @@ class SchemaBase(ColumnMap, metaclass=SchemaBaseType):
     def identifier(self):
         return self.index._identifier
 
-    def rowkey(self, *idx):
+    def rowkey(self, idx):
         """Method to compute the row key from index tuple."""
-        return self.index.rowkey(*idx)
+        return self.index.rowkey(idx)
 
     def rowidx(self, key):
         """Method to compute index columns from key."""
