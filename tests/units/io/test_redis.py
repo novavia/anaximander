@@ -12,25 +12,21 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import os.path
-import time
 
 import pandas as pd
 import pytest
-
-from google.cloud import bigtable as bt
-from grpc._channel import _Rendezvous
 
 import anaximander3 as nx
 from anaximander3.utilities import nxtime
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
-from anaximander3.io import gcbigtable as gbt
+from anaximander3.io import redis as nxr
 
-# PROJECT_ID = 'anaximander-tests'
-# INSTANCE_ID = 'testinstance'
-PROJECT_ID = 'infinite-uptime-1232'
-INSTANCE_ID = 'testinstance'
-INSTANCE_LOC = 'us-central1-c'
+
+HOST = 'redis-15362.c1.us-central1-2.gce.cloud.redislabs.com'
+PORT = 15362
+PWD = '73wDWoBe'
+CONNECTIONS = 30
 
 NXPATH = os.path.dirname(nx.__path__[0])
 TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
@@ -46,7 +42,7 @@ DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
 # =============================================================================
 
 
-class BtSchema(sch.SampleLogsSchema):
+class RdSchema(sch.SampleLogsSchema):
     accel_x = cln.Measurement()
     accel_y = cln.Measurement()
 
@@ -71,43 +67,35 @@ def featurelog():
                               'Feature_Value_1': 'accel_x',
                               'Feature_Value_2': 'accel_y'},
                      inplace=True)
-    log = dtl.DataLog(dataframe, schema=BtSchema,
+    log = dtl.DataLog(dataframe, schema=RdSchema,
                       id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     return log
 
 
 def cleanup(instance):
-    """Cleans up the supplied Bigtable instance."""
-    for table in instance.list_tables():
-        table.delete()
-    instance.delete()
+    """Cleans up the Redis instance."""
+    instance.flushdb()
+    instance.connection_pool.disconnect()
 
 
 @pytest.fixture(scope="session")
 def instance():
     """Creates a bigtable instance for testing purposes."""
-    btclient = bt.Client(project=PROJECT_ID, admin=True)
-    instance = btclient.instance(INSTANCE_ID, INSTANCE_LOC)
-    instance.display_name = INSTANCE_ID
-    try:
-        instance.create()
-    except _Rendezvous:
-        pass
-    time.sleep(10)
-    yield instance
-    cleanup(instance)
+    client = nxr.client(HOST, PORT, PWD, CONNECTIONS)
+    yield client
+    cleanup(client)
 
 
 @pytest.fixture(scope="module")
 def ghost_table(instance):
     """Yields uncreated table instance."""
-    return gbt.BigTableDataTable(instance, 'ghost', BtSchema)
+    return nxr.RedisDataTable(instance, 'ghost', RdSchema)
 
 
 @pytest.fixture(scope="module")
 def empty_table(instance):
     """Yields an empty table to test insertions and appends."""
-    table = gbt.BigTableDataTable(instance, 'empty', BtSchema)
+    table = nxr.RedisDataTable(instance, 'empty', RdSchema)
     table.create(warn=False, overwrite=True, force=True)
     return table
 
@@ -115,7 +103,7 @@ def empty_table(instance):
 @pytest.fixture(scope="module")
 def full_table(instance, featurelog):
     """Yields a populated table to test queries."""
-    table = gbt.BigTableDataTable(instance, 'full', BtSchema)
+    table = nxr.RedisDataTable(instance, 'full', RdSchema)
     table.create(warn=False, overwrite=True, force=True)
     # Populates the table with some data
     table.append(featurelog)
@@ -126,7 +114,7 @@ def full_table(instance, featurelog):
 # =============================================================================
 
 # Specifies that tests are skipped if tester is not online.
-pytestmark = [pytest.mark.online, pytest.mark.gcloud, pytest.mark.bigtable]
+pytestmark = [pytest.mark.online, pytest.mark.gcloud]
 
 
 def test_table_instantiation(ghost_table):
@@ -154,8 +142,7 @@ def test_record(full_table):
 def test_insert(empty_table, featurelog):
     record = featurelog[0]
     empty_table.insert(record)
-    row = empty_table.table.read_row(record.key.encode('utf-8'))
-    assert isinstance(row, bt.row_data.PartialRowData)
+    assert not empty_table.empty
 
 
 def test_append(empty_table, featurelog):
@@ -167,7 +154,7 @@ def test_append(empty_table, featurelog):
 
 def test_query(full_table, featurelog):
     query = full_table.query(id=DEVICES)
-    assert query.schema == BtSchema()
+    assert query.schema == RdSchema()
     assert len(list(query.fetch())) == len(featurelog)
     assert len(list(query.fetch(limit=1))) == 2
 
@@ -196,8 +183,8 @@ def test_log(full_table):
 def test_fields(full_table):
     query = full_table.query('accel_x', id='68:9E:19:07:DE:C3')
     log = query.data()
-    assert log.schema == BtSchema('accel_x')
+    assert log.schema == RdSchema('accel_x')
 
 
 if __name__ == '__main__':
-    pytest.main([__file__, '-x', '--pdb', '--bigtable'])
+    pytest.main([__file__, '-x', '--pdb'])

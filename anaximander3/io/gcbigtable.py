@@ -208,11 +208,6 @@ class BigTableDataTable(DataTable):
             return MaxAgeGCRule(dt.timedelta(self.retention))
 
     @xprops.cachedproperty
-    def pool(self):
-        """A connection pool from the happybase API."""
-        return ConnectionPool(1, instance=self.instance)
-
-    @xprops.cachedproperty
     def reverse(self):
         """If True, then keys are accumulated in reverse order.
 
@@ -288,14 +283,14 @@ class BigTableDataTable(DataTable):
         records = list(logs)
         n = self.threadpoolsize
         with ThreadPoolExecutor(n) as executor:
-            executor.map(self.__insert__, records)
+            executor.map(self.__insert__, records, **kwargs)
 
     # Redefinition of DataTable.insert to take advantage of threads
     def insert(self, *records, **kwargs):
         """Inserts one or more records into table."""
         n = self.threadpoolsize
         with ThreadPoolExecutor(n) as executor:
-            executor.map(self.__insert__, records)
+            executor.map(self.__insert__, records, **kwargs)
 
     def __record__(self, idx, **kwargs):
         rowkey = self.schema.rowkey(idx)
@@ -308,11 +303,6 @@ class BigTableDataTable(DataTable):
 
 
 class BigTableQueryException(DataQueryException):
-    pass
-
-
-class BigTableMaxRowsException(BigTableQueryException):
-    """Raised when queries reach specified maxrows."""
     pass
 
 
@@ -353,7 +343,7 @@ class BigTableQuery(DataQuery):
         kwargs['limit'] = 1
         return super().first(**kwargs)
 
-    def __fetch__(self, limit=None):
+    def __fetch__(self, limit=None, **kwargs):
         """Fetch primitive.
 
         Params:
