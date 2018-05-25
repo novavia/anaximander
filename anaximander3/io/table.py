@@ -17,7 +17,7 @@ from collections import OrderedDict
 from grpc._channel import _Rendezvous
 import pandas as pd
 
-from ..utilities import nxrange
+from ..utilities import nxrange as rge
 from ..utilities.datastore import StorageResource
 from ..data import datalogs as dtl, records as rcd
 
@@ -139,6 +139,17 @@ class DataTable(StorageResource):
                 msg = "Deleting is not implemented on {0} table objects."""
                 raise DataTableWriteException(msg.format(type(self)))
 
+    def __discard__(self, id, datetime, **kwargs):
+        raise NotImplementedError
+
+    def discard(self, *, id, datetime=(None, None), **kwargs):
+        """Deletes ranges of rows within dt_range for specified ids."""
+        try:
+            self.__discard__(id, datetime, **kwargs)
+        except NotImplementedError:
+            msg = "Discarding is not implemented on {0} table objects."""
+            raise DataTableWriteException(msg.format(type(self)))
+
     def __record__(self, idx, **kwargs):
         """Returns a raw record data map from its index.
 
@@ -242,7 +253,7 @@ class DataQuery:
 
     @property
     def dt_range(self):
-        return self.quargs.get('datetime', nxrange.time_range((None, None)))
+        return self.quargs.get('datetime', rge.time_range((None, None)))
 
     @abc.abstractmethod
     def __fetch__(self, **kwargs):

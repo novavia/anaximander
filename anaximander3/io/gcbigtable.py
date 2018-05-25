@@ -25,12 +25,12 @@ import google.cloud.bigtable.table as gc_big_table
 from google.cloud.bigtable.column_family import MaxAgeGCRule
 from google.cloud.bigtable.row_data import PartialRowsData
 from google.cloud.bigtable.instance import Instance
-from google.cloud.happybase.pool import ConnectionPool
 from google.cloud.bigtable.row_filters import ColumnQualifierRegexFilter, \
     RowFilterUnion
 
 from ..utilities import xprops, nxrange as rge, functions as fun
 from ..data.nxschema import Schema, MultiSchema, TimeSeriesIndex
+from ..data import records as rcd
 from .table import DataTable, DataQuery, DataQueryException, \
     DataTableWriteException, DataTableAdminException, EmptyQueryException
 
@@ -263,6 +263,13 @@ class BigTableDataTable(DataTable):
         return BigTableQuery(self, *columns, **kwargs)
 
     def __insert__(self, record, retry=True, **kwargs):
+        if not isinstance(record, rcd.Record):
+            msg = f"Table insert requires a record, not a " + \
+                  f"{type(record)} instance."
+            raise TypeError(msg)
+        if not isinstance(record.schema, type(self.schema)):
+            msg = f"Incorrect record schema supplied to {self}."
+            raise ValueError(msg)
         rowkey = record.key
         row = self.table.row(rowkey)
         dump = record.to_dict()
@@ -281,16 +288,76 @@ class BigTableDataTable(DataTable):
 
     def __append__(self, logs, **kwargs):
         records = list(logs)
-        n = self.threadpoolsize
+        n = min(len(records), self.threadpoolsize)
         with ThreadPoolExecutor(n) as executor:
-            executor.map(self.__insert__, records, **kwargs)
+            executor.map(lambda r: self.__insert__(r, **kwargs), records)
 
     # Redefinition of DataTable.insert to take advantage of threads
     def insert(self, *records, **kwargs):
         """Inserts one or more records into table."""
-        n = self.threadpoolsize
+        n = min(len(records), self.threadpoolsize)
         with ThreadPoolExecutor(n) as executor:
-            executor.map(self.__insert__, records, **kwargs)
+            executor.map(lambda r: self.__insert__(r, **kwargs), records)
+
+    def update(self, *records, **kwargs):
+        """Updates rows in place from records, or inserts if not found."""
+        return self.insert(*records, **kwargs)
+
+    def __delete__(self, idx, retry=True, **kwargs):
+        rowkey = self.schema.rowkey(idx)
+        row = self.table.row(rowkey.encode())
+        row.delete()
+        try:
+            row.commit()
+        # Single retry
+        except _Rendezvous:
+            if retry:
+                self.__delete__(idx, retry=False, **kwargs)
+            else:
+                raise
+
+    def delete(self, *idxs, **kwargs):
+        """Deletes the specified rows based on their index."""
+        n = min(len(idxs), self.threadpoolsize)
+        with ThreadPoolExecutor(n) as executor:
+            executor.map(lambda i: self.__delete__(i, **kwargs), idxs)
+
+    def __discard__(self, id, datetime, **kwargs):
+        """Deletes ranges of rows within dt_range for specified ids."""
+        query = self.query(id=id, datetime=datetime)
+        rowkeypairs = list(query.rowkeypairs())
+
+        def row_group(keys):
+            start_key, end_key = keys
+            return self.table.read_rows(start_key,
+                                        end_key,
+                                        reverse=self.reverse)
+
+        n = min(len(rowkeypairs), self.threadpoolsize)
+        with ThreadPoolExecutor(n) as executor:
+            row_groups = executor.map(row_group, rowkeypairs)
+
+        def delete_row(key, retry=True):
+            row = self.table.row(key)
+            row.delete()
+            try:
+                row.commit()
+            except _Rendezvous:
+                if retry:
+                    delete_row(key, False)
+                else:
+                    raise
+
+        for g in row_groups:
+            while True:
+                g._rows = OrderedDict()
+                try:
+                    g.consume_next()
+                except StopIteration:
+                    break
+                n = min(len(g.rows), self.threadpoolsize)
+                with ThreadPoolExecutor(n) as executor:
+                    executor.map(delete_row, g.rows)
 
     def __record__(self, idx, **kwargs):
         rowkey = self.schema.rowkey(idx)
@@ -360,7 +427,8 @@ class BigTableQuery(DataQuery):
                                               reverse=self.table.reverse,
                                               limit=limit)
 
-        with ThreadPoolExecutor(len(rowkeypairs)) as executor:
+        n = min(len(rowkeypairs), self.table.threadpoolsize)
+        with ThreadPoolExecutor(n) as executor:
             row_groups = executor.map(row_group, rowkeypairs)
 
         for g in row_groups:

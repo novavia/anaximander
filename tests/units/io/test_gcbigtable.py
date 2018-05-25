@@ -28,7 +28,7 @@ from anaximander3.io import gcbigtable as gbt
 
 # PROJECT_ID = 'anaximander-tests'
 # INSTANCE_ID = 'testinstance'
-PROJECT_ID = 'infinite-uptime-1232'
+PROJECT_ID = 'infinite-uptime-test'
 INSTANCE_ID = 'testinstance'
 INSTANCE_LOC = 'us-central1-c'
 
@@ -121,6 +121,16 @@ def full_table(instance, featurelog):
     table.append(featurelog)
     return table
 
+
+@pytest.fixture(scope="module")
+def refuse_table(instance, featurelog):
+    """Yields a populated table to test deletes."""
+    table = gbt.BigTableDataTable(instance, 'refuse', BtSchema)
+    table.create(warn=False, overwrite=True, force=True)
+    # Populates the table with some data
+    table.append(featurelog)
+    return table
+
 # =============================================================================
 # Test Cases
 # =============================================================================
@@ -145,10 +155,10 @@ def test_record(full_table):
            pd.Timestamp('2016-09-14 10:02:27.800000+00:00'))
     record = full_table.record(idx)
     assert record.id == '88:4A:EA:69:DF:A2'
-    keys = ('88:4A:EA:69:DF:A2',
-            pd.Timestamp('2016-09-14 10:02:27.900000+00:00'))
+    idx = ('88:4A:EA:69:DF:A2',
+           pd.Timestamp('2016-09-14 10:02:27.900000+00:00'))
     with pytest.raises(KeyError):
-        full_table.record(*keys)
+        full_table.record(*idx)
 
 
 def test_insert(empty_table, featurelog):
@@ -156,6 +166,18 @@ def test_insert(empty_table, featurelog):
     empty_table.insert(record)
     row = empty_table.table.read_row(record.key.encode('utf-8'))
     assert isinstance(row, bt.row_data.PartialRowData)
+
+
+def test_update(empty_table, featurelog):
+    record = featurelog[-1]
+    record_x = record('accel_x')
+    empty_table.insert(record_x)
+    idx = ('88:4A:EA:69:DF:A2',
+           pd.Timestamp('2016-09-14 10:04:58.700000+00:00'))
+    assert empty_table.record(idx) == record_x
+    record_y = record('accel_y')
+    empty_table.update(record_y)
+    assert empty_table.record(idx) == record
 
 
 def test_append(empty_table, featurelog):
@@ -197,6 +219,26 @@ def test_fields(full_table):
     query = full_table.query('accel_x', id='68:9E:19:07:DE:C3')
     log = query.data()
     assert log.schema == BtSchema('accel_x')
+
+
+def test_delete(refuse_table):
+    idx = ('68:9E:19:07:DE:C3',
+           pd.Timestamp('2016-09-14 10:00:27.800000+00:00'))
+    refuse_table.delete(idx)
+    query = refuse_table.query(id='68:9E:19:07:DE:C3')
+    assert len(query.data()) == 2
+
+
+def test_discard(refuse_table):
+    start = '2016-9-14 10:01'
+    end = '2016-9-14 10:05'
+    refuse_table.discard(id='88:4A:EA:69:DF:A2', datetime=(start, end))
+    query = refuse_table.query(id='88:4A:EA:69:DF:A2')
+    assert len(query.data()) == 5
+    refuse_table.discard(id='68:9E:19:07:DE:C3')
+    query = refuse_table.query(id='68:9E:19:07:DE:C3')
+    with pytest.raises(gbt.EmptyQueryException):
+        query.first()
 
 
 if __name__ == '__main__':

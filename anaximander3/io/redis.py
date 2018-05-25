@@ -15,10 +15,12 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 import json
 
 import attr
+import pandas as pd
 from redis import StrictRedis, RedisError
 
 from ..utilities import xprops, nxrange as rge, functions as fun
@@ -65,7 +67,10 @@ class RedisDataTable(DataTable):
                      convert=lambda s: s() if isinstance(s, type) else s)
     # Data retention time, in days, defaulting to None (indefinite retention)
     retention = attr.ib(None, repr=False)
-    threadpoolsize = 250  # size of thread pool for inserts
+
+    @property
+    def threadpoolsize(self):
+        return (self.instance.connection_pool.max_connections // 3) + 1
 
     @property
     def table_id(self):
@@ -111,52 +116,99 @@ class RedisDataTable(DataTable):
         pass
 
     def __drop__(self, force=False, **kwargs):
-        pipe = self.instance.pipeline()
-        keys = pipe.scan_iter(match=self.name + '#*')
-        pipe.delete(*keys)
-        pipe.execute()
+        keys = list(self.instance.scan_iter(match=self.name + '#*'))
+        if keys:
+            self.instance.delete(*keys)
 
-    def __query__(self, *columns, pipe=None, **kwargs):
-        return RedisQuery(self, *columns, pipe=pipe, **kwargs)
+    def __query__(self, *columns, **kwargs):
+        return RedisQuery(self, *columns, **kwargs)
 
-    def __insert__(self, record, pipe=None, retry=True, **kwargs):
-        storage_key = self.name + '#' + str(record.id)
-        score = record.datetime
-        dump = record.json_dumps()
-        if pipe is not None:
-            return pipe.zadd(storage_key, score, dump)
-        else:
-            try:
-                self.instance.zadd(storage_key, score, dump)
-            except RedisError:
-                if retry:
-                    self.__insert__(record, retry=False, **kwargs)
-                else:
-                    raise
+    def __insert__(self, id, recs, pipe=None, **kwargs):
+        storage_key = self.name + '#' + str(id)
+        data = {json.dumps(r.payload): r.datetime.timestamp() for r in recs}
+        client = pipe if pipe is not None else self.instance
+        client.zadd(storage_key, **data)
 
     def __append__(self, logs, pipe=None, **kwargs):
-        records = list(logs)
-        n = self.threadpoolsize
-        with ThreadPoolExecutor(n) as executor:
-            executor.map(self.__insert__, records, pipe=pipe, **kwargs)
+        self.insert(*list(logs))
 
-    # Redefinition of DataTable.insert to take advantage of threads
+    # TODO: benchmark piping against threads
     def insert(self, *records, **kwargs):
         """Inserts one or more records into table."""
+        rmap = defaultdict(list)
+        for r in records:
+            rmap[r.id].append(r)
+        n = min(len(rmap), self.threadpoolsize)
+        with ThreadPoolExecutor(n) as executor:
+            executor.map(lambda i: self.__insert__(i[0], i[1], **kwargs),
+                         rmap.items())
+
+    # Note: in this form, this should significantly underperforms inserts
+    def __update__(self, record, pipe=None, **kwargs):
+        storage_key = self.name + '#' + str(record.id)
+        score = record.datetime.timestamp()
+        new_load = record.payload
+        client = pipe if pipe is not None else self.instance
+
+        try:
+            elm = client.zrangebyscore(storage_key, score, score)[0]
+        except IndexError:
+            client.zadd(storage_key, score, json.dumps(new_load))
+        else:
+            client.zrem(storage_key, elm)
+            load = json.loads(elm)
+            load.update(new_load)
+            client.zadd(storage_key, score, json.dumps(load))
+
+    def __delete__(self, idx, pipe=None, **kwargs):
+        id, datetime = idx
+        storage_key = self.name + '#' + str(id)
+        score = datetime.timestamp()
+        client = pipe if pipe is not None else self.instance
+        try:
+            elm = client.zrangebyscore(storage_key, score, score)[0]
+        except IndexError:
+            pass
+        else:
+            client.zrem(storage_key, elm)
+
+    # Note: try piping as an alternative to threads
+    def delete(self, *idxs, **kwargs):
+        """Deletes the specified rows based on their index."""
         n = self.threadpoolsize
         with ThreadPoolExecutor(n) as executor:
-            executor.map(self.__insert__, records, **kwargs)
+            executor.map(lambda i: self.__delete__(i, **kwargs), idxs)
+
+    def __discard__(self, id, dt_range, pipe=None, **kwargs):
+        """Deletes ranges of rows within dt_range for a given id."""
+        storage_key = self.name + '#' + str(id)
+        lower, upper = (t.timestamp() for t in dt_range)
+        # Remove a nanosecond as a hack to exclude upper bound.
+        upper -= 1e-9
+        client = pipe if pipe is not None else self.instance
+        client.zremrangebyscore(storage_key, lower, upper)
+
+    def discard(self, *, id, datetime=(None, None), **kwargs):
+        """Deletes ranges of rows within dt_range for specified ids."""
+        q = self.query(id=id, datetime=datetime)
+        if isinstance(q.id_range, rge.Level):
+            self.__discard__(q.id_range.level, q.dt_range)
+        else:
+            n = min(len(q.id_range), self.threadpoolsize)
+            with ThreadPoolExecutor(n) as executor:
+                executor.map(lambda id: self.__discard__(id, q.dt_range,
+                                                         **kwargs),
+                             q.id_range)
 
     def __record__(self, idx, pipe=None, **kwargs):
         id, datetime = idx
         storage_key = self.name + '#' + str(id)
-        if pipe is not None:
-            data = pipe.zrangebyscore(storage_key, datetime, datetime)
-        else:
-            data = self.instance.zrangebyscore(storage_key, datetime, datetime)
+        score = datetime.timestamp()
+        client = pipe if pipe is not None else self.instance
+        data = client.zrangebyscore(storage_key, score, score)
         if not data:
             raise EmptyQueryException()
-        return json.loads[data[0]]
+        return {'data': json.loads(data[0])}
 
 
 class RedisQueryException(DataQueryException):
@@ -185,16 +237,16 @@ class RedisQuery(DataQuery):
             id_range = [self.id_range.level]
         else:
             id_range = self.id_range
-        lower, upper = self.dt_range
+        lower, upper = (t.timestamp() for t in self.dt_range)
         limit = int(fun.get(limit, 1e5))
         start, num = 0, limit
+        client = pipe if pipe is not None else self.table.instance
 
         def sequence(id):
             storage_key = self.table.name + '#' + str(id)
-            client = pipe if pipe is not None else self.table.instance
             if self.table.reverse:
                 results = client.zrevrangebyscore(storage_key,
-                                                  lower, upper,
+                                                  upper, lower,
                                                   start, num,
                                                   withscores=True)
             else:
@@ -205,10 +257,12 @@ class RedisQuery(DataQuery):
             return results
 
         with ThreadPoolExecutor(len(id_range)) as executor:
-            sequence_results = executor.map(id_range)
+            sequence_results = executor.map(sequence, id_range)
 
-        for sr in sequence_results:
+        for id, sr in zip(id_range, sequence_results):
             for data, score in sr:
                 if score == upper:
                     continue
-                yield json.loads(data)
+                idx = (id,
+                       pd.Timestamp.utcfromtimestamp(score).tz_localize('utc'))
+                yield idx, {'data': json.loads(data)}

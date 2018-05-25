@@ -205,6 +205,9 @@ class DataLogsBase(DataObject, Sequence):
             data = {'id': id_range.level,
                     'datetime': dt_range.position,
                     col_name: data}
+        if archetype_ is Record:
+            metadata.pop('id_range', None)
+            metadata.pop('dt_range', None)
         return archetype_(data, schema=self.schema, **metadata)
 
     def __len__(self):

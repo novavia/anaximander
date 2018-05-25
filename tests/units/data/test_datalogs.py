@@ -405,4 +405,4 @@ def plots():
 
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
-#    plots()
+    plots()

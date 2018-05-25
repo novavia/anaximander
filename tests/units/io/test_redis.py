@@ -23,8 +23,8 @@ from anaximander3.data import nxcolumns as cln, nxschema as sch, \
 from anaximander3.io import redis as nxr
 
 
-HOST = 'redis-15362.c1.us-central1-2.gce.cloud.redislabs.com'
-PORT = 15362
+HOST = 'redis-15511.c1.us-central1-2.gce.cloud.redislabs.com'
+PORT = 15511
 PWD = '73wDWoBe'
 CONNECTIONS = 30
 
@@ -80,7 +80,7 @@ def cleanup(instance):
 
 @pytest.fixture(scope="session")
 def instance():
-    """Creates a bigtable instance for testing purposes."""
+    """Creates a redis instance for testing purposes."""
     client = nxr.client(HOST, PORT, PWD, CONNECTIONS)
     yield client
     cleanup(client)
@@ -104,6 +104,16 @@ def empty_table(instance):
 def full_table(instance, featurelog):
     """Yields a populated table to test queries."""
     table = nxr.RedisDataTable(instance, 'full', RdSchema)
+    table.create(warn=False, overwrite=True, force=True)
+    # Populates the table with some data
+    table.append(featurelog)
+    return table
+
+
+@pytest.fixture(scope="module")
+def refuse_table(instance, featurelog):
+    """Yields a populated table to test deletes."""
+    table = nxr.RedisDataTable(instance, 'refuse', RdSchema)
     table.create(warn=False, overwrite=True, force=True)
     # Populates the table with some data
     table.append(featurelog)
@@ -145,11 +155,22 @@ def test_insert(empty_table, featurelog):
     assert not empty_table.empty
 
 
+def test_update(empty_table, featurelog):
+    record = featurelog[-1]
+    record_x = record('accel_x')
+    empty_table.insert(record_x)
+    idx = ('88:4A:EA:69:DF:A2',
+           pd.Timestamp('2016-09-14 10:04:58.700000+00:00'))
+    assert empty_table.record(idx) == record_x
+    record_y = record('accel_y')
+    empty_table.update(record_y)
+    assert empty_table.record(idx) == record
+
+
 def test_append(empty_table, featurelog):
     empty_table.append(featurelog)
-    rowdata = empty_table.table.read_rows()
-    rowdata.consume_all()
-    assert len(rowdata.rows) >= len(featurelog)
+    key = 'empty#68:9E:19:07:DE:C3'
+    assert empty_table.instance.zcard(key) >= 3
 
 
 def test_query(full_table, featurelog):
@@ -184,6 +205,26 @@ def test_fields(full_table):
     query = full_table.query('accel_x', id='68:9E:19:07:DE:C3')
     log = query.data()
     assert log.schema == RdSchema('accel_x')
+
+
+def test_delete(refuse_table):
+    idx = ('68:9E:19:07:DE:C3',
+           pd.Timestamp('2016-09-14 10:00:27.800000+00:00'))
+    refuse_table.delete(idx)
+    query = refuse_table.query(id='68:9E:19:07:DE:C3')
+    assert len(query.data()) == 2
+
+
+def test_discard(refuse_table):
+    start = '2016-9-14 10:01'
+    end = '2016-9-14 10:05'
+    refuse_table.discard(id='88:4A:EA:69:DF:A2', datetime=(start, end))
+    query = refuse_table.query(id='88:4A:EA:69:DF:A2')
+    assert len(query.data()) == 5
+    refuse_table.discard(id='68:9E:19:07:DE:C3')
+    query = refuse_table.query(id='68:9E:19:07:DE:C3')
+    with pytest.raises(nxr.EmptyQueryException):
+        query.first()
 
 
 if __name__ == '__main__':
