@@ -12,10 +12,8 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
 import datetime as dt
 
-import attr
 from google.cloud._helpers import _to_bytes
 from google.cloud.bigtable._generated import (
     bigtable_pb2 as data_messages_v2_pb2)
@@ -30,12 +28,12 @@ from google.cloud.bigtable.row_filters import ColumnQualifierRegexFilter, \
 
 from ..utilities import xprops, nxrange as rge, functions as fun
 from ..data.nxschema import Schema, MultiSchema, TimeSeriesIndex
-from ..data import records as rcd
-from .table import DataTable, DataQuery, DataQueryException, \
-    DataTableWriteException, DataTableAdminException, EmptyQueryException
+from .store import Store, DataTract, Query, QueryException, \
+    WriteException, StorageAdminException, EmptyQueryException
 
-__all__ = ['BigTableDataTable', 'BigTableQuery', 'BigTableQueryException',
-           'BigTableInsertException', 'Client', 'Instance']
+__all__ = ['BigTableStore', 'BigDataTract', 'BigTableQuery',
+           'BigTableQueryException', 'BigTableInsertException', 'Client',
+           'Instance']
 
 # =============================================================================
 # Monkeypatching of Table
@@ -164,29 +162,49 @@ gc_big_table.Table.read_rows = read_rows
 # =============================================================================
 
 
-class BigTableAdminException(DataTableAdminException):
+class BigTableAdminException(StorageAdminException):
     pass
 
 
-class BigTableInsertException(DataTableWriteException):
+class BigTableInsertException(WriteException):
     pass
 
 
-@attr.s
-class BigTableDataTable(DataTable):
-    instance = attr.ib(validator=attr.validators.instance_of(Instance))
-    name = attr.ib(validator=attr.validators.instance_of(str))
-    schema = attr.ib(validator=attr.validators.instance_of((Schema,
-                                                            MultiSchema)),
-                     convert=lambda s: s() if isinstance(s, type) else s)
+class BigTableStore(Store):
+
+    def __interface__(self, instance_id=None, project_id=None, admin=False):
+        self.client = Client(project=project_id, admin=admin)
+        return self.client.instance(instance_id)
+
+    def create(self, location, display_name=None, serve_nodes=None):
+        if self.io.instance_id in [i.instance_id
+                                   for i in self.client.list_instances()[0]]:
+            msg = f"Instance {self.io.instance_id} already exists."
+            raise BigTableAdminException(msg)
+        self.io._cluster_location_id = location
+        if display_name:
+            self.io.display_name = display_name
+        if serve_nodes:
+            self._cluster_serve_nodes = serve_nodes
+        self.io.create()
+
+    def __repr__(self):
+        p, i = self.client.project, self.io.instance_id
+        return f'<BigTableStore project:{p} instance:{i}>'
+
+
+class BigDataTract(DataTract):
     # Data retention time, in days, defaulting to None (indefinite retention)
-    retention = attr.ib(None, repr=False)
-    threadpoolsize = 250  # size of thread pool for inserts
+
+    def __init__(self, store, title, retention=None, register=True):
+        """Data retention time, in days, defaulting to None (indefinite)."""
+        super().__init__(store, title, register)
+        self._retention = dt.timedelta(retention) if retention else retention
 
     @xprops.cachedproperty
     def table(self):
         """Caches an instance of table in the bigtable API."""
-        table = self.instance.table(self.name)
+        table = self.store.io.table(self.name)
         return table
 
     @property
@@ -195,11 +213,21 @@ class BigTableDataTable(DataTable):
 
     @property
     def client(self):
-        return self.instance._client
+        return self.store.io._client
 
     @property
     def project(self):
         return self.client.project
+
+    @property
+    def retention(self):
+        return self._retention
+
+    @retention.setter
+    def retention(self, retention):
+        self._retention = dt.timedelta(retention) if retention else retention
+        if self.exists:
+            self.__reset_retention__()
 
     @property
     def gc_rule(self):
@@ -222,7 +250,7 @@ class BigTableDataTable(DataTable):
 
     def __exists__(self):
         """Tests existence of the resource. Must return True or False."""
-        return self.name in [t.table_id for t in self.instance.list_tables()]
+        return self.name in [t.table_id for t in self.store.io.list_tables()]
 
     def __empty__(self):
         """Tests whether the resource is empty or not."""
@@ -262,14 +290,7 @@ class BigTableDataTable(DataTable):
     def __query__(self, *columns, **kwargs):
         return BigTableQuery(self, *columns, **kwargs)
 
-    def __insert__(self, record, retry=True, **kwargs):
-        if not isinstance(record, rcd.Record):
-            msg = f"Table insert requires a record, not a " + \
-                  f"{type(record)} instance."
-            raise TypeError(msg)
-        if not isinstance(record.schema, type(self.schema)):
-            msg = f"Incorrect record schema supplied to {self}."
-            raise ValueError(msg)
+    def __insert__(self, record, **kwargs):
         rowkey = record.key
         row = self.table.row(rowkey)
         dump = record.to_dict()
@@ -277,91 +298,64 @@ class BigTableDataTable(DataTable):
             data = dump.get(family, {})
             for k, v in data.items():
                 row.set_cell(family, k.encode('utf-8'), str(v).encode('utf-8'))
-        try:
-            row.commit()
-        # Single retry
-        except _Rendezvous:
-            if retry:
-                self.__insert__(record, retry=False, **kwargs)
-            else:
-                raise
+        return row
 
     def __append__(self, logs, **kwargs):
         records = list(logs)
-        n = min(len(records), self.threadpoolsize)
-        with ThreadPoolExecutor(n) as executor:
-            executor.map(lambda r: self.__insert__(r, **kwargs), records)
+        rows = [self.__insert__(r, **kwargs) for r in records]
+        return self.table.mutate_rows(rows)
 
-    # Redefinition of DataTable.insert to take advantage of threads
     def insert(self, *records, **kwargs):
         """Inserts one or more records into table."""
-        n = min(len(records), self.threadpoolsize)
-        with ThreadPoolExecutor(n) as executor:
-            executor.map(lambda r: self.__insert__(r, **kwargs), records)
+        rows = super().insert(*records, **kwargs)
+        return self.table.mutate_rows(rows)
+
+    __update__ = __insert__
 
     def update(self, *records, **kwargs):
         """Updates rows in place from records, or inserts if not found."""
-        return self.insert(*records, **kwargs)
+        rows = super().update(*records, **kwargs)
+        return self.table.mutate_rows(rows)
 
-    def __delete__(self, idx, retry=True, **kwargs):
+    def __delete__(self, idx, **kwargs):
         rowkey = self.schema.rowkey(idx)
         row = self.table.row(rowkey.encode())
         row.delete()
-        try:
-            row.commit()
-        # Single retry
-        except _Rendezvous:
-            if retry:
-                self.__delete__(idx, retry=False, **kwargs)
-            else:
-                raise
+        return row
 
     def delete(self, *idxs, **kwargs):
         """Deletes the specified rows based on their index."""
-        n = min(len(idxs), self.threadpoolsize)
-        with ThreadPoolExecutor(n) as executor:
-            executor.map(lambda i: self.__delete__(i, **kwargs), idxs)
+        rows = super().delete(*idxs, **kwargs)
+        return self.table.mutate_rows(rows)
 
-    def __discard__(self, id, datetime, **kwargs):
-        """Deletes ranges of rows within dt_range for specified ids."""
-        query = self.query(id=id, datetime=datetime)
-        rowkeypairs = list(query.rowkeypairs())
-
-        def row_group(keys):
-            start_key, end_key = keys
-            return self.table.read_rows(start_key,
-                                        end_key,
-                                        reverse=self.reverse)
-
-        n = min(len(rowkeypairs), self.threadpoolsize)
-        with ThreadPoolExecutor(n) as executor:
-            row_groups = executor.map(row_group, rowkeypairs)
-
-        def delete_row(key, retry=True):
-            row = self.table.row(key)
-            row.delete()
+    def __discard__(self, id, dt_range, **kwargs):
+        """Deletes ranges of rows within dt_range for specified id."""
+        start_key = self.schema.rowkey((id, dt_range.lower))
+        end_key = self.schema.rowkey((id, dt_range.upper))
+        try:
+            group = self.table.read_rows(start_key, end_key,
+                                         reverse=self.reverse)
+        except _Rendezvous:
+            group = self.table.read_rows(start_key, end_key,
+                                         reverse=self.reverse)
+        while True:
+            group._rows = OrderedDict()
             try:
-                row.commit()
-            except _Rendezvous:
-                if retry:
-                    delete_row(key, False)
-                else:
-                    raise
-
-        for g in row_groups:
-            while True:
-                g._rows = OrderedDict()
-                try:
-                    g.consume_next()
-                except StopIteration:
-                    break
-                n = min(len(g.rows), self.threadpoolsize)
-                with ThreadPoolExecutor(n) as executor:
-                    executor.map(delete_row, g.rows)
+                group.consume_next()
+            except StopIteration:
+                break
+            rows = [self.table.row(k) for k in group.rows]
+            for r in rows:
+                r.delete()
+            self.table.mutate_rows(rows)
 
     def __record__(self, idx, **kwargs):
         rowkey = self.schema.rowkey(idx)
-        row = self.table.read_row(rowkey.encode())
+        try:
+            row = self.table.read_row(rowkey.encode())
+        # Single retry fixes most problems
+        except _Rendezvous:
+            row = self.table.read_row(rowkey.encode())
         if row is None:
             raise EmptyQueryException()
         data = {f: {k.decode(): v[0].value.decode() for k, v in d.items()}
@@ -369,14 +363,14 @@ class BigTableDataTable(DataTable):
         return data
 
 
-class BigTableQueryException(DataQueryException):
+class BigTableQueryException(QueryException):
     pass
 
 
-class BigTableQuery(DataQuery):
+class BigTableQuery(Query):
 
-    def __init__(self, *columns, **quargs):
-        super().__init__(*columns, **quargs)
+    def __init__(self, tract, *columns, **quargs):
+        super().__init__(tract, *columns, **quargs)
         if 'id' not in quargs:
             msg = "A BigTable Query must specify an id range."
             raise BigTableQueryException(msg)
@@ -389,7 +383,7 @@ class BigTableQuery(DataQuery):
         return RowFilterUnion(colfilters)
 
     def rowkeypairs(self):
-        """A generator of rowkey pairs to slice the table."""
+        """A generator of rowkey pairs to slice the tract."""
         if isinstance(self.id_range, rge.Level):
             id_range = [self.id_range.level]
         else:
@@ -421,16 +415,20 @@ class BigTableQuery(DataQuery):
 
         def row_group(keys):
             start_key, end_key = keys
-            return self.table.table.read_rows(start_key,
-                                              end_key,
-                                              filter_=self.rowfilter,
-                                              reverse=self.table.reverse,
-                                              limit=limit)
+            try:
+                return self.tract.table.read_rows(start_key,
+                                                  end_key,
+                                                  filter_=self.rowfilter,
+                                                  reverse=self.tract.reverse,
+                                                  limit=limit)
+            except _Rendezvous:
+                return self.tract.table.read_rows(start_key,
+                                                  end_key,
+                                                  filter_=self.rowfilter,
+                                                  reverse=self.tract.reverse,
+                                                  limit=limit)
 
-        n = min(len(rowkeypairs), self.table.threadpoolsize)
-        with ThreadPoolExecutor(n) as executor:
-            row_groups = executor.map(row_group, rowkeypairs)
-
+        row_groups = [row_group(k) for k in rowkeypairs]
         for g in row_groups:
             while True:
                 g._rows = OrderedDict()

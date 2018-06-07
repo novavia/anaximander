@@ -16,61 +16,41 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 import json
 
-import attr
 import pandas as pd
-from redis import StrictRedis, RedisError
+from redis import StrictRedis
 
 from ..utilities import xprops, nxrange as rge, functions as fun
-from ..data.nxschema import Schema, MultiSchema, TimeSeriesIndex
-from .table import DataTable, DataQuery, DataQueryException, \
-    DataTableWriteException, DataTableAdminException, EmptyQueryException
+from ..data import records as rcd
+from ..data.nxschema import TimeSeriesIndex
+from .store import Store, Title, Tract, DataTract, Query, QueryException, \
+    WriteException
 
-__all__ = ['RedisDataTable', 'RedisQuery', 'RedisQueryException',
-           'RedisInsertException', 'client']
-
-
-# =============================================================================
-# Client factory
-# =============================================================================
-
-
-def client(host, port, password, max_connections, rolling=True):
-    """Instantiates a Redis client.
-
-    Params:
-        rolling: if True, tables are versioned to enable rolling flushes.
-            This should be set to False when Redis is used on a session-basis.
-    """
-    redis_client = StrictRedis(host=host, port=port, password=password,
-                               max_connections=max_connections)
-    redis_client.rolling = rolling
-    return redis_client
+__all__ = ['RedisStore', 'RedisTract', 'RedisDataQuery', 'RedisQueryException',
+           'RedisInsertException']
 
 # =============================================================================
-# Table implementation
+# Tract implementation
 # =============================================================================
 
 
-class RedisInsertException(DataTableWriteException):
+class RedisInsertException(WriteException):
     pass
 
 
-@attr.s
-class RedisDataTable(DataTable):
-    instance = attr.ib(validator=attr.validators.instance_of(StrictRedis))
-    name = attr.ib(validator=attr.validators.instance_of(str))
-    schema = attr.ib(validator=attr.validators.instance_of((Schema,
-                                                            MultiSchema)),
-                     convert=lambda s: s() if isinstance(s, type) else s)
-    # Data retention time, in days, defaulting to None (indefinite retention)
-    retention = attr.ib(None, repr=False)
+class RedisStore(Store):
 
-    @property
-    def threadpoolsize(self):
-        return (self.instance.connection_pool.max_connections // 3) + 1
+    def __interface__(self, host, port, password):
+        return StrictRedis(host=host, port=port, password=password)
+
+    def __repr__(self):
+        conn_kwargs = self.io.connection_pool.connection_kwargs
+        h, p, db = conn_kwargs['host'], conn_kwargs['port'], conn_kwargs['db']
+        return f'<RedisStore host:{h} port:{p} db:{db}>'
+
+
+class RedisTract(Tract):
 
     @property
     def table_id(self):
@@ -78,7 +58,7 @@ class RedisDataTable(DataTable):
 
     @property
     def client(self):
-        return self.instance
+        return self.store.io
 
     @xprops.cachedproperty
     def reverse(self):
@@ -93,19 +73,15 @@ class RedisDataTable(DataTable):
         else:
             return True
 
-    def storage_key(self, id):
-        """Returns the storage key given an application id."""
-        return '#'.join((self.name, id))
-
     def __exists__(self):
         """Tests existence of the resource. Must return True or False."""
         return True
 
     def __empty__(self):
         """Tests whether the resource is empty or not."""
-        for k in self.instance.scan_iter(match=self.name + '#*'):
+        for k in self.client.scan_iter(match=self.name + '#*'):
             try:
-                next(self.instance.zscan_iter(k))
+                next(self.client.zscan_iter(k))
             except StopIteration:
                 continue
             else:
@@ -116,109 +92,199 @@ class RedisDataTable(DataTable):
         pass
 
     def __drop__(self, force=False, **kwargs):
-        keys = list(self.instance.scan_iter(match=self.name + '#*'))
+        keys = list(self.client.scan_iter(match=self.name + '#*'))
         if keys:
-            self.instance.delete(*keys)
+            self.client.delete(*keys)
+
+
+class RedisDataTract(DataTract, RedisTract):
+
+    def __init__(self, store, title, max_range=None, max_count=None,
+                 register=True):
+        super().__init__(store, title, register)
+        # Optional time depth, in minutes. Following an insertion, elements
+        # that are older than the most recent insert minus the max_range are
+        # removed. Note that this doesn't guarantee that the time range of
+        # the elements in a sequence is less than max_range. In particular,
+        # one could accumulate arbitrary old elements without limits. However
+        # this is designed for buffering data with generally monotonously
+        # increasing time stamps.
+        self.max_range = pd.Timedelta(minutes=max_range) if max_range else None
+        # Optional maximum element count. Oldest elements by score are removed
+        # when the count is reached.
+        self.max_count = max_count
+
+    def storage_key(self, id):
+        """Returns the storage key given an application id."""
+        return '#'.join((self.name, id))
 
     def __query__(self, *columns, **kwargs):
-        return RedisQuery(self, *columns, **kwargs)
+        return RedisDataQuery(self, *columns, **kwargs)
 
-    def __insert__(self, id, recs, pipe=None, **kwargs):
+    def __insert__(self, pipe, id, recs, **kwargs):
+        if not recs:
+            return
         storage_key = self.name + '#' + str(id)
         data = {json.dumps(r.payload): r.datetime.timestamp() for r in recs}
-        client = pipe if pipe is not None else self.instance
-        client.zadd(storage_key, **data)
+        pipe.zadd(storage_key, **data)
+        if self.max_count:
+            pipe.zremrangebyrank(storage_key, 0, -(self.max_count + 1))
+        if self.max_range:
+            max_ts = max(data.values())
+            min_score = max_ts - self.max_range.total_seconds() + 1e-9
+            pipe.zremrangebyscore(storage_key, '-inf', min_score)
 
-    def __append__(self, logs, pipe=None, **kwargs):
-        self.insert(*list(logs))
-
-    # TODO: benchmark piping against threads
-    def insert(self, *records, **kwargs):
-        """Inserts one or more records into table."""
+    def insert(self, *records, validate=True, **kwargs):
+        """Inserts one or more records into tract."""
         rmap = defaultdict(list)
-        for r in records:
-            rmap[r.id].append(r)
-        n = min(len(rmap), self.threadpoolsize)
-        with ThreadPoolExecutor(n) as executor:
-            executor.map(lambda i: self.__insert__(i[0], i[1], **kwargs),
-                         rmap.items())
-
-    # Note: in this form, this should significantly underperforms inserts
-    def __update__(self, record, pipe=None, **kwargs):
-        storage_key = self.name + '#' + str(record.id)
-        score = record.datetime.timestamp()
-        new_load = record.payload
-        client = pipe if pipe is not None else self.instance
-
-        try:
-            elm = client.zrangebyscore(storage_key, score, score)[0]
-        except IndexError:
-            client.zadd(storage_key, score, json.dumps(new_load))
+        if validate:
+            for record in records:
+                if not isinstance(record, rcd.Record):
+                    msg = f"Tract insert requires a record, not a " + \
+                          f"{type(record)} instance."
+                    raise TypeError(msg)
+                if not isinstance(record.schema, type(self.schema)):
+                    msg = f"Incorrect record schema supplied to {self}."
+                    raise ValueError(msg)
+                rmap[record.id].append(record)
         else:
-            client.zrem(storage_key, elm)
-            load = json.loads(elm)
-            load.update(new_load)
-            client.zadd(storage_key, score, json.dumps(load))
+            for record in records:
+                rmap[record.id].append(record)
 
-    def __delete__(self, idx, pipe=None, **kwargs):
-        id, datetime = idx
+        pipe = self.client.pipeline()
+        for id, recs in rmap.items():
+            self.__insert__(pipe, id, recs, **kwargs)
+        return pipe.execute()
+
+    def __append__(self, logs, **kwargs):
+        return self.insert(*list(logs), validate=False)
+
+    def __update__(self, pipe, id, recs, **kwargs):
         storage_key = self.name + '#' + str(id)
-        score = datetime.timestamp()
-        client = pipe if pipe is not None else self.instance
-        try:
-            elm = client.zrangebyscore(storage_key, score, score)[0]
-        except IndexError:
-            pass
-        else:
-            client.zrem(storage_key, elm)
+        payloads = {r.datetime.timestamp(): r.payload for r in recs}
+        min_score, max_score = min(payloads), max(payloads)
+        extant = self.client.zrangebyscore(storage_key, min_score, max_score,
+                                           withscores=True)
+        extant = {s: data for data, s in extant}
+        for score, payload in payloads.items():
+            try:
+                elm = extant[score]
+            except KeyError:
+                pipe.zadd(storage_key, score, json.dumps(payload))
+            else:
+                load = json.loads(elm)
+                pipe.zrem(storage_key, elm)
+                load.update(payload)
+                pipe.zadd(storage_key, score, json.dumps(load))
 
-    # Note: try piping as an alternative to threads
+        if self.max_count:
+            pipe.zremrangebyrank(storage_key, 0, -(self.max_count + 1))
+        if self.max_range:
+            min_score = max_score - self.max_range.total_seconds() + 1e-9
+            pipe.zremrangebyscore(storage_key, '-inf', min_score)
+
+    def update(self, *records, **kwargs):
+        """Updates rows in place from records, or inserts if not found."""
+        rmap = defaultdict(list)
+        for record in records:
+            if not isinstance(record, rcd.Record):
+                msg = f"Tract update requires a record, not a " + \
+                      f"{type(record)} instance."
+                raise TypeError(msg)
+            if not isinstance(record.schema, type(self.schema)):
+                msg = f"Incorrect record schema supplied to {self}."
+                raise ValueError(msg)
+            rmap[record.id].append(record)
+
+        pipe = self.client.pipeline()
+        for id, recs in rmap.items():
+            self.__update__(pipe, id, recs, **kwargs)
+        return pipe.execute()
+
+    def __delete__(self, pipe, id, datetimes, **kwargs):
+        storage_key = self.name + '#' + str(id)
+        scores = [dt.timestamp() for dt in datetimes]
+        min_score, max_score = min(scores), max(scores)
+        records = self.client.zrangebyscore(storage_key,
+                                            min_score, max_score,
+                                            withscores=True)
+        records = {s: data for data, s in records}
+        for s in scores:
+            try:
+                pipe.zrem(storage_key, records[s])
+            except KeyError:
+                pass
+
     def delete(self, *idxs, **kwargs):
         """Deletes the specified rows based on their index."""
-        n = self.threadpoolsize
-        with ThreadPoolExecutor(n) as executor:
-            executor.map(lambda i: self.__delete__(i, **kwargs), idxs)
+        rmap = defaultdict(list)
+        for idx in idxs:
+            rmap[idx[0]].append(idx[1])
 
-    def __discard__(self, id, dt_range, pipe=None, **kwargs):
+        pipe = self.client.pipeline()
+        for id, recs in rmap.items():
+            self.__delete__(pipe, id, recs, **kwargs)
+        return pipe.execute()
+
+    def __discard__(self, pipe, id, dt_range, **kwargs):
         """Deletes ranges of rows within dt_range for a given id."""
         storage_key = self.name + '#' + str(id)
         lower, upper = (t.timestamp() for t in dt_range)
         # Remove a nanosecond as a hack to exclude upper bound.
         upper -= 1e-9
-        client = pipe if pipe is not None else self.instance
-        client.zremrangebyscore(storage_key, lower, upper)
+        pipe.zremrangebyscore(storage_key, lower, upper)
 
-    def discard(self, *, id, datetime=(None, None), **kwargs):
+    def discard(self, *ids, datetime=(None, None), **kwargs):
         """Deletes ranges of rows within dt_range for specified ids."""
-        q = self.query(id=id, datetime=datetime)
-        if isinstance(q.id_range, rge.Level):
-            self.__discard__(q.id_range.level, q.dt_range)
-        else:
-            n = min(len(q.id_range), self.threadpoolsize)
-            with ThreadPoolExecutor(n) as executor:
-                executor.map(lambda id: self.__discard__(id, q.dt_range,
-                                                         **kwargs),
-                             q.id_range)
+        dt_range = rge.time_range(datetime)
+        pipe = self.client.pipeline()
+        for id in ids:
+            self.__discard__(pipe, id, dt_range, **kwargs)
+        return pipe.execute()
 
-    def __record__(self, idx, pipe=None, **kwargs):
+    def __record__(self, pipe, idx, **kwargs):
         id, datetime = idx
         storage_key = self.name + '#' + str(id)
         score = datetime.timestamp()
-        client = pipe if pipe is not None else self.instance
-        data = client.zrangebyscore(storage_key, score, score)
-        if not data:
-            raise EmptyQueryException()
-        return {'data': json.loads(data[0])}
+        pipe.zrangebyscore(storage_key, score, score)
+
+    def _record(self, idx, result):
+        """Primitive for record and records."""
+        if not result:
+            msg = f"No row found with index {idx}."
+            raise KeyError(msg)
+        data = {'data': json.loads(result[0])}
+        data['index'] = idx
+        data['schema'] = self.schema
+        return rcd.Record.from_dict(data)
+
+    def record(self, *idx, **kwargs):
+        """Returns a record from its index."""
+        if len(idx) == 1:
+            idx = idx[0]
+        pipe = self.client.pipeline()
+        self.__record__(pipe, idx, **kwargs)
+        result = pipe.execute()[0]
+        return self._record(idx, result)
+
+    def records(self, *idxs, **kwargs):
+        """Returns a records iterator from their index."""
+        pipe = self.client.pipeline()
+        for idx in idxs:
+            self.__record__(pipe, idx, **kwargs)
+        results = pipe.execute()
+        for idx, result in zip(idxs, results):
+            yield self._record(idx, result)
 
 
-class RedisQueryException(DataQueryException):
+class RedisQueryException(QueryException):
     pass
 
 
-class RedisQuery(DataQuery):
+class RedisDataQuery(Query):
 
-    def __init__(self, *columns, **quargs):
-        super().__init__(*columns, **quargs)
+    def __init__(self, tract, *columns, **quargs):
+        super().__init__(tract, *columns, **quargs)
         if 'id' not in quargs:
             msg = "A Redis Query must specify an id range."
             raise RedisQueryException(msg)
@@ -227,7 +293,7 @@ class RedisQuery(DataQuery):
         kwargs['limit'] = 1
         return super().first(**kwargs)
 
-    def __fetch__(self, pipe=None, limit=None, **kwargs):
+    def __fetch__(self, limit=None, **kwargs):
         """Fetch primitive.
 
         Note that queries on sequential keys are closed on the left side
@@ -240,25 +306,20 @@ class RedisQuery(DataQuery):
         lower, upper = (t.timestamp() for t in self.dt_range)
         limit = int(fun.get(limit, 1e5))
         start, num = 0, limit
-        client = pipe if pipe is not None else self.table.instance
+        pipe = self.tract.client.pipeline()
 
-        def sequence(id):
-            storage_key = self.table.name + '#' + str(id)
-            if self.table.reverse:
-                results = client.zrevrangebyscore(storage_key,
-                                                  upper, lower,
-                                                  start, num,
-                                                  withscores=True)
-            else:
-                results = client.zrangebyscore(storage_key,
-                                               lower, upper,
-                                               start, num,
-                                               withscores=True)
-            return results
+        if self.tract.reverse:
+            for id in id_range:
+                storage_key = self.tract.storage_key(id)
+                pipe.zrevrangebyscore(storage_key, upper, lower,
+                                      start, num, withscores=True)
+        else:
+            for id in id_range:
+                storage_key = self.tract.storage_key(id)
+                pipe.zrangebyscore(storage_key, lower, upper,
+                                   start, num, withscores=True)
 
-        with ThreadPoolExecutor(len(id_range)) as executor:
-            sequence_results = executor.map(sequence, id_range)
-
+        sequence_results = pipe.execute()
         for id, sr in zip(id_range, sequence_results):
             for data, score in sr:
                 if score == upper:
@@ -266,3 +327,70 @@ class RedisQuery(DataQuery):
                 idx = (id,
                        pd.Timestamp.utcfromtimestamp(score).tz_localize('utc'))
                 yield idx, {'data': json.loads(data)}
+
+
+class RedisBuffer(RedisTract):
+    """A specialized storage structure that combines data & metadata.
+
+    The metadata is stored as a hash with the following structures:
+        lower: timestamp  # lower bound of the buffer
+        upper: timestamp  # upper bound of the buffer
+        certificate: timestamp  # certification line within buffer
+        [subscriber title]: timestamp  # for each subscribing buffer, their
+            own certification line, which determines data eviction.
+    """
+
+    def __init__(self, store, title, max_range=None, register=True):
+        super().__init__(store, title, register)
+        self.max_range = pd.Timedelta(minutes=max_range) if max_range else None
+        data_title = Title(title.name + '_data', title.schema)
+        self.data_tract = RedisDataTract(store, data_title, max_range,
+                                         register=False)
+
+    def meta_storage_key(self, id):
+        """Returns the storage key for metadata."""
+        return '#'.join((self.name + '_meta', id))
+
+    def __get_metadata__(self, pipe, id):
+        pipe.hgetall(self.meta_storage_key(id))
+
+    def metadata(self, id):
+        """Queries and returns the metadata for supplied id."""
+        pipe = self.client.pipeline()
+        self.__get_metadata__(pipe, id)
+        result = pipe.execute()[0]
+        return {k: pd.to_datetime(v, utc=True) for k, v in result.items()}
+
+    def __update_range__(self, pipe, id, dt_range, certificate=None):
+        lower, upper = (t.timestamp() for t in dt_range)
+        mapping = {'lower': lower, 'upper': upper}
+        if certificate is not None:
+            mapping['certificate'] = certificate.timestamp()
+        pipe.hmset(self.meta_storage_key(id), mapping)
+
+    def update_subscriber(self, subscriber, id, datetime):
+        """Updates metadata for subscriber.
+
+        Params:
+            subscriber: a RedisBuffer instance
+            id: the target id
+            datetime: the new certification line of the subscriber
+        """
+        return self.client.hset(self.meta_storage_key(id),
+                                subscriber.name, datetime.timestamp())
+
+    def __query__(self, *columns, **kwargs):
+        data_query = self.data_tract.query(*columns, **kwargs)
+        meta_pipe = self.client.pipeline()
+        if isinstance(data_query.id_range, rge.Level):
+            id_range = [data_query.id_range.level]
+        else:
+            id_range = data_query.id_range
+        meta_keys = ['lower', 'upper', 'certificate']
+        for id in id_range:
+            meta_pipe.hmget(self.meta_storage_key(id), meta_keys)
+        # Need to extract the intersection of date_ranges to set
+        # the dt_range on the resulting frame
+        # The certificates can be added as a dictionary for a datalog,
+        # or a single key for a sequence.
+        

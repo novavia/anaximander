@@ -165,6 +165,13 @@ class RecordBase(DataObject):
         return self._data.equals(other._data) and \
             self.metadata == other.metadata
 
+    def copy(self, id=None):
+        """Copies record, optionally with a different id -used for testing."""
+        d = self.to_dict()
+        if id is not None:
+            d['index'] = (id, d['index'][1])
+        return self.from_dict(d)
+
 
 class RecordType(DataObjectType):
     _registry = dict()
