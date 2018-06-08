@@ -42,9 +42,11 @@ class DataLogsBase(DataObject, Sequence):
 
     def __init__(self, data, *, schema=None, id_range=None, dt_range=None,
                  cast=True, flex=True, validate=False, force=False,
-                 **metadata):
+                 certification=None, consumption=None, **metadata):
         self._id_range = rge.cat_range(id_range)
         self._dt_range = rge.time_range(dt_range)
+        self._certification = pd.to_datetime(certification, utc=True)
+        self._consumption = pd.to_datetime(consumption, utc=True)
         try:
             assert isinstance(self._id_range, self.__id_range__)
         except AssertionError:

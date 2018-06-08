@@ -24,7 +24,7 @@ import anaximander3 as nx
 from anaximander3.utilities import nxtime
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
-from anaximander3.io import Title
+from anaximander3.io.store import Title
 from anaximander3.io import gcbigtable as gbt
 
 # PROJECT_ID = 'anaximander-tests'

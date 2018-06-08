@@ -131,14 +131,14 @@ class Interval(ContinuousRange, Iterable):
         return RowFilterChain([colfilter, rgefilter])
 
     @classmethod
-    def intersection(cls, a, b):
+    def intersection(cls, *intervals):
         """Returns an interval or None."""
-        if isinstance(a, EmptyInterval):
+        if not intervals:
             return cls.__empty__()
-        elif isinstance(b, EmptyInterval):
+        if any(isinstance(i, EmptyInterval) for i in intervals):
             return cls.__empty__()
-        lower = max([a.lower, b.lower])
-        upper = min([a.upper, b.upper])
+        lower = max([i.lower for i in intervals])
+        upper = min([i.upper for i in intervals])
         if upper <= lower:
             return cls.__empty__()
         return cls(lower, upper)

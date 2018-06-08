@@ -97,13 +97,13 @@ def store():
 @pytest.fixture(scope="module")
 def ghost_tract(store):
     """Yields uncreated tract store."""
-    return nxr.RedisTract(store, GHOST)
+    return nxr.RedisDataTract(store, GHOST)
 
 
 @pytest.fixture(scope="module")
 def empty_tract(store):
     """Yields an empty tract to test insertions and appends."""
-    tract = nxr.RedisTract(store, EMPTY)
+    tract = nxr.RedisDataTract(store, EMPTY)
     tract.create(warn=False, overwrite=True, force=True)
     return tract
 
@@ -111,7 +111,7 @@ def empty_tract(store):
 @pytest.fixture(scope="module")
 def max_count_tract(store):
     """Yields an empty tract with a max_count."""
-    tract = nxr.RedisTract(store, MAX_COUNT, max_count=5)
+    tract = nxr.RedisDataTract(store, MAX_COUNT, max_count=5)
     tract.create(warn=False, overwrite=True, force=True)
     return tract
 
@@ -119,7 +119,7 @@ def max_count_tract(store):
 @pytest.fixture(scope="module")
 def max_range_tract(store):
     """Yields an empty tract with a max_range."""
-    tract = nxr.RedisTract(store, MAX_RANGE, max_range=1)
+    tract = nxr.RedisDataTract(store, MAX_RANGE, max_range=1)
     tract.create(warn=False, overwrite=True, force=True)
     return tract
 
@@ -127,7 +127,7 @@ def max_range_tract(store):
 @pytest.fixture(scope="module")
 def max_max_tract(store):
     """Yields an empty tract with a max_count and max_range."""
-    tract = nxr.RedisTract(store, MAX_MAX, max_range=1, max_count=3)
+    tract = nxr.RedisDataTract(store, MAX_MAX, max_range=1, max_count=3)
     tract.create(warn=False, overwrite=True, force=True)
     return tract
 
@@ -135,7 +135,7 @@ def max_max_tract(store):
 @pytest.fixture(scope="module")
 def full_tract(store, featurelog):
     """Yields a populated tract to test queries."""
-    tract = nxr.RedisTract(store, FULL)
+    tract = nxr.RedisDataTract(store, FULL)
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(featurelog)
@@ -145,7 +145,7 @@ def full_tract(store, featurelog):
 @pytest.fixture(scope="module")
 def refuse_tract(store, featurelog):
     """Yields a populated tract to test deletes."""
-    tract = nxr.RedisTract(store, REFUSE)
+    tract = nxr.RedisDataTract(store, REFUSE)
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(featurelog)

@@ -389,6 +389,16 @@ class RedisBuffer(RedisTract):
         meta_keys = ['lower', 'upper', 'certificate']
         for id in id_range:
             meta_pipe.hmget(self.meta_storage_key(id), meta_keys)
+        meta = meta_pipe.execute()
+        metadata = [{k: pd.to_datetime(v, utc=True) for k, v in m.items()}
+                    for m in meta]
+        metaranges = [rge.time_range(m['lower'], m['upper']) for m in metadata]
+        certificates = [m['certificate'] for m in metadata]
+        dt_range = rge.TimeInterval.intersection(data_query.dt_range,
+                                                 *metaranges)
+        certificate = min(certificates)
+        data_query.quargs['datetime'] = dt_range
+        
         # Need to extract the intersection of date_ranges to set
         # the dt_range on the resulting frame
         # The certificates can be added as a dictionary for a datalog,
