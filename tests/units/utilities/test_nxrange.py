@@ -11,6 +11,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+import json
 from unittest import TestCase
 
 import pandas as pd
@@ -107,6 +108,16 @@ class TestTimeInterval(TestCase):
         i0 = rge.time_range(l0, u0)
         i1 = rge.time_range(l1, u1)
         assert rge.TimeInterval.compact(i0, i1) == rge.time_range(l0, u1)
+
+    def test_serialization(self):
+        l0 = '2018-4-23 15:40'
+        u0 = '2018-4-23 15:45'
+        i0 = rge.time_range(l0, u0)
+        assert rge.TimeInterval.json_loads(i0.json_dumps()) == i0
+        assert rge.time_range(json.loads(i0.json_dumps())) == i0
+        i = rge.EmptyTimeInterval()
+        assert rge.TimeInterval.json_loads(i.json_dumps()) == i
+        assert rge.time_range(json.loads(i.json_dumps())) == i
 
 
 class TestDiscreteRange(TestCase):

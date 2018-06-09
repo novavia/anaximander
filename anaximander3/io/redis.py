@@ -21,14 +21,16 @@ import json
 import pandas as pd
 from redis import StrictRedis
 
-from ..utilities import xprops, nxrange as rge, functions as fun
-from ..data import records as rcd
+from ..utilities import xprops, nxtime, nxrange as rge, functions as fun
+from ..data import records as rcd, datalogs as dtl
 from ..data.nxschema import TimeSeriesIndex
 from .store import Store, Title, Tract, DataTract, Query, QueryException, \
     WriteException
 
 __all__ = ['RedisStore', 'RedisTract', 'RedisDataQuery', 'RedisQueryException',
            'RedisInsertException']
+
+NS = pd.Timedelta(nanoseconds=1)
 
 # =============================================================================
 # Tract implementation
@@ -156,8 +158,13 @@ class RedisDataTract(DataTract, RedisTract):
             self.__insert__(pipe, id, recs, **kwargs)
         return pipe.execute()
 
-    def __append__(self, logs, **kwargs):
+    def __append__(self, pipe, logs, **kwargs):
         return self.insert(*list(logs), validate=False)
+
+    def append(self, logs, **kwargs):
+        pipe = self.client.pipeline()
+        kwargs.setdefault('pipe', pipe)
+        super().append(logs, **kwargs)
 
     def __update__(self, pipe, id, recs, **kwargs):
         storage_key = self.name + '#' + str(id)
@@ -335,7 +342,7 @@ class RedisBuffer(RedisTract):
     The metadata is stored as a hash with the following structures:
         lower: timestamp  # lower bound of the buffer
         upper: timestamp  # upper bound of the buffer
-        certificate: timestamp  # certification line within buffer
+        certification: timestamp  # certification line within buffer
         [subscriber title]: timestamp  # for each subscribing buffer, their
             own certification line, which determines data eviction.
     """
@@ -346,6 +353,42 @@ class RedisBuffer(RedisTract):
         data_title = Title(title.name + '_data', title.schema)
         self.data_tract = RedisDataTract(store, data_title, max_range,
                                          register=False)
+
+    def __get_data__(self, pipe, id, lower=None):
+        dt_range = rge.time_range((lower, None))
+        lower, upper = (t.timestamp() for t in dt_range)
+        if self.tract.reverse:
+            storage_key = self.tract.storage_key(id)
+            pipe.zrevrangebyscore(storage_key, upper, lower, withscores=True)
+        else:
+            storage_key = self.tract.storage_key(id)
+            pipe.zrangebyscore(storage_key, lower, upper, withscores=True)
+
+    def sequence(self, id, lower=None):
+        """Fetches data for id, optionally above lower datetime."""
+        pipe = self.client.pipeline()
+        self.__get_metadata__(pipe, id)
+        self.__get_data__(pipe, id, lower=lower)
+        meta_, data_ = pipe.execute()
+        metadata = {k: pd.to_datetime(v, utc=True) for k, v in meta_.items()}
+        dt_range = rge.time_range(metadata.pop('lower', None),
+                                  metadata.pop('upper', None))
+        consumption = nxtime.MAX
+        for k in metadata.keys():
+            if k != 'certification':
+                v = metadata.pop(k)
+                consumption = min((consumption, v))
+        metadata['dt_range'] = dt_range
+        metadata['consumption'] = consumption
+        datetime, payload = [], []
+        for d, score in data_:
+            dt = pd.Timestamp.utcfromtimestamp(score).tz_localize('utc')
+            datetime.append(dt)
+            payload.append(json.load(d))
+        data = pd.DataFrame(payload)
+        data['id'] = id
+        data['datetime'] = datetime
+        return dtl.Sequence(data, schema=self.schema, id_range=id, **metadata)
 
     def meta_storage_key(self, id):
         """Returns the storage key for metadata."""
@@ -365,7 +408,7 @@ class RedisBuffer(RedisTract):
         lower, upper = (t.timestamp() for t in dt_range)
         mapping = {'lower': lower, 'upper': upper}
         if certificate is not None:
-            mapping['certificate'] = certificate.timestamp()
+            mapping['certification'] = certificate.timestamp()
         pipe.hmset(self.meta_storage_key(id), mapping)
 
     def update_subscriber(self, subscriber, id, datetime):
@@ -386,21 +429,70 @@ class RedisBuffer(RedisTract):
             id_range = [data_query.id_range.level]
         else:
             id_range = data_query.id_range
-        meta_keys = ['lower', 'upper', 'certificate']
+        meta_keys = ['lower', 'upper', 'certification']
         for id in id_range:
             meta_pipe.hmget(self.meta_storage_key(id), meta_keys)
         meta = meta_pipe.execute()
         metadata = [{k: pd.to_datetime(v, utc=True) for k, v in m.items()}
                     for m in meta]
         metaranges = [rge.time_range(m['lower'], m['upper']) for m in metadata]
-        certificates = [m['certificate'] for m in metadata]
+        certificates = [m['certification'] for m in metadata]
         dt_range = rge.TimeInterval.intersection(data_query.dt_range,
                                                  *metaranges)
-        certificate = min(certificates)
+        certification = min(certificates)
         data_query.quargs['datetime'] = dt_range
-        
-        # Need to extract the intersection of date_ranges to set
-        # the dt_range on the resulting frame
-        # The certificates can be added as a dictionary for a datalog,
-        # or a single key for a sequence.
-        
+        data_query.metadata = {'certification': certification}
+        return data_query
+
+    def __flush__(self, pipe, id, flushline):
+        """Discards data behind flushline."""
+        dt_range = rge.time_range(None, flushline)
+        self.data_tract.__discard__(pipe, id, dt_range)
+
+    def flush(self, id):
+        """Discards from flushline based on certication & consumption."""
+        metadata = self.metadata(id)
+        certification = metadata.pop('certification')
+        consumption = nxtime.MAX
+        for k in metadata.keys():
+            if k not in ['lower', 'upper']:
+                v = metadata.pop(k)
+                consumption = min((consumption, v))
+        flushline = min((certification, consumption))
+        pipe = self.client.pipeline()
+        self.__flush__(pipe, id, flushline)
+
+    def archive(self, sequence):
+        return NotImplemented
+
+    def update(self, sequence, old_certificate):
+        """Updates the buffer by supplying a sequence.
+
+        Data more recent than the old certificate is first discarded.
+        Then the sequence data beyond the old certificate is appended.
+        Newly certified data is archived.
+        The flushline is computed and older data is discarded.
+        Finally the metadata gets updated.
+        """
+        id = sequence.id
+        pipe = self.client.pipeline()
+        dt_range = rge.time_range(old_certificate + NS, None)
+        self.data_tract.__discard__(pipe, id, dt_range)
+
+        sequence = sequence[old_certificate + NS:]
+        self.data_tract.__append__(pipe, sequence)
+
+        self.archive(sequence[:sequence.certification])
+
+        flushline = min((sequence.certification, sequence.consumption))
+        self.__flush__(pipe, sequence.id, flushline)
+
+        lower = flushline
+        upper = sequence.dt_range.upper
+        certification = sequence.certfication
+        metadata = {'lower': lower,
+                    'upper': upper,
+                    'certification': certification}
+        pipe.hmset(self.meta_storage_key(id), metadata)
+
+        pipe.execute()

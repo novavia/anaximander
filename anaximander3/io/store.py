@@ -173,7 +173,7 @@ class DataTract(Tract):
         if not isinstance(logs.schema, type(self.schema)):
             msg = f"Incorrect data schema supplied to {self}."
             raise ValueError(msg)
-        return self.__append__(logs, **kwargs)
+        return self.__append__(logs=logs, **kwargs)
 
     def __update__(self, record, **kwargs):
         raise NotImplementedError
@@ -290,7 +290,8 @@ class Query:
     # Indicates whether a query type supports sql.
     __sql__ = False
 
-    def __init__(self, tract, *columns, exclude=None, sql=None, **quargs):
+    def __init__(self, tract, *columns, exclude=None, sql=None,
+                 metadata=None, **quargs):
         self.tract = tract
         self.schema = type(tract.schema)(*columns, exclude=exclude)
         if sql is not None:
@@ -317,6 +318,7 @@ class Query:
                                (k, column.data_range(v))))
         query_args.sort()
         self.quargs = OrderedDict([elm[1] for elm in query_args])
+        self.metadata = fun.get(metadata, {})
 
     @property
     def id_range(self):
@@ -360,4 +362,5 @@ class Query:
             data['id'] = id
             data['datetime'] = datetime
         return cls(data, schema=self.schema,
-                   id_range=self.id_range, dt_range=self.dt_range)
+                   id_range=self.id_range, dt_range=self.dt_range,
+                   **self.metadata)

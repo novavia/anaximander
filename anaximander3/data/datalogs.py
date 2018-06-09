@@ -43,36 +43,46 @@ class DataLogsBase(DataObject, Sequence):
     def __init__(self, data, *, schema=None, id_range=None, dt_range=None,
                  cast=True, flex=True, validate=False, force=False,
                  certification=None, consumption=None, **metadata):
-        self._id_range = rge.cat_range(id_range)
-        self._dt_range = rge.time_range(dt_range)
-        self._certification = pd.to_datetime(certification, utc=True)
-        self._consumption = pd.to_datetime(consumption, utc=True)
+        id_range = rge.cat_range(id_range)
+        dt_range = rge.time_range(dt_range)
         try:
-            assert isinstance(self._id_range, self.__id_range__)
+            assert isinstance(id_range, self.__id_range__)
         except AssertionError:
             msg = f"{type(self).__name__} expects a " + \
                   f"{self.__id_range__.__name__} instance that could not " + \
                   f"be cast from {id_range}"
             raise ValueError(msg)
         try:
-            assert isinstance(self._dt_range, self.__dt_range__)
+            assert isinstance(dt_range, self.__dt_range__)
         except AssertionError:
             msg = f"{type(self).__name__} expects a " + \
                   f"{self.__dt_range__.__name__} instance that could not " + \
                   f"be cast from {dt_range}"
             raise ValueError(msg)
-        metadata.update({'id_range': self.id_range.serializable,
-                         'dt_range': self.dt_range.serializable})
+        metadata.update({'id_range': id_range,
+                         'dt_range': dt_range})
+        if certification:
+            metadata['certification'] = pd.to_datetime(certification, utc=True)
+        if consumption:
+            metadata['consumption'] = pd.to_datetime(consumption, utc=True)
         super().__init__(data, schema=schema, cast=cast, flex=flex,
                          validate=validate, **metadata)
 
     @property
     def id_range(self):
-        return self._id_range
+        return self.metadata['id_range']
 
     @property
     def dt_range(self):
-        return self._dt_range
+        return self.metadata['dt_range']
+
+    @property
+    def certification(self):
+        return self.metadata.get('certification', None)
+
+    @property
+    def consumption(self):
+        return self.metadata.get('consumption', None)
 
     @property
     def tabulated(self):
@@ -210,6 +220,12 @@ class DataLogsBase(DataObject, Sequence):
         if archetype_ is Record:
             metadata.pop('id_range', None)
             metadata.pop('dt_range', None)
+            certification = metadata.pop('certification', None)
+            consumption = metadata.pop('consumption', None)
+            if certification:
+                metadata['certified'] = True
+            if consumption:
+                metadata['consumed'] = True
         return archetype_(data, schema=self.schema, **metadata)
 
     def __len__(self):

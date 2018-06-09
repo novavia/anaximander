@@ -46,7 +46,7 @@ class JsonMixin:
 
 @singledispatch
 def serialize(val):
-    """Function to supply to the 'default' argumnent of json dump / dumps."""
+    """Function to supply to the 'default' argument of json dump / dumps."""
     return str(val)
 
 
@@ -77,6 +77,6 @@ def jsonio(cls):
 
     @serialize.register(cls)
     def serialize_(val):
-        return json.dumps(val.to_dict())
+        return val.to_dict()
 
     return cls

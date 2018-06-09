@@ -12,7 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections.abc import Set, Iterable, Sequence
+from collections.abc import Set, Iterable, Sequence, Mapping
 from functools import partial, wraps
 from itertools import chain
 from numbers import Number
@@ -23,6 +23,7 @@ from google.cloud.bigtable.row_filters import ValueRangeFilter, \
 import numpy as np
 import pandas as pd
 
+from .jsonmixin import jsonio
 from . import nxtime
 from .functions import get, passthrough, iformat
 
@@ -53,10 +54,7 @@ def nonehandler(default):
 
 class Range(abc.ABC):
     """Abstract base class for all Range objects."""
-
-    @property
-    def serializable(self):
-        return None
+    pass
 
 
 class ContinuousRange(Range):
@@ -84,6 +82,7 @@ def _sqlstring(val):
         return "'{0}'".format(val)
 
 
+@jsonio
 class Interval(ContinuousRange, Iterable):
     """For now intervals are closed on the left and open on the right."""
 
@@ -183,6 +182,15 @@ class Interval(ContinuousRange, Iterable):
                   f"{self.lower} greater than upper bound {self.upper}"
             raise ValueError(msg)
 
+    def to_dict(self, **kwargs):
+        return {'lower': self.lower, 'upper': self.upper}
+
+    @classmethod
+    def from_dict(cls, dict_, **kwargs):
+        if not dict_:
+            return cls.__empty__()
+        return cls(**dict_)
+
     def __repr__(self):
         return f"<{type(self).__name__} {self.lower}, {self.upper}>"
 
@@ -214,6 +222,13 @@ class EmptyInterval(Interval):
     def intersection(cls, a, b):
         return cls()
 
+    def to_dict(self, **kwargs):
+        return {}
+
+    @classmethod
+    def from_dict(cls, dict_, **kwargs):
+        return cls()
+
     def __repr__(self):
         return iformat()(self)
 
@@ -224,6 +239,7 @@ class EmptyInterval(Interval):
         return False
 
 
+@jsonio
 class Singleton(ContinuousRange):
     """A degenerate continuous range at a single position."""
 
@@ -245,6 +261,13 @@ class Singleton(ContinuousRange):
         else:
             return other.__and__(self)
 
+    def to_dict(self, **kwargs):
+        return {'position': self.position}
+
+    @classmethod
+    def from_dict(cls, dict_, **kwargs):
+        return cls(**dict_)
+
     def __repr__(self):
         return f"<{type(self).__name__} {self.position}>"
 
@@ -252,6 +275,7 @@ class Singleton(ContinuousRange):
         return f"<{str(self.position)}>"
 
 
+@jsonio
 class Levels(CategoricalRange, Set):
     """Holds a set of discrete levels."""
 
@@ -296,15 +320,18 @@ class Levels(CategoricalRange, Set):
         elif isinstance(key, slice):
             return self._slice(key)
 
-    @property
-    def serializable(self):
-        return list(self._levels)
-
     def __eq__(self, other):
         try:
             return self._levels == set(other)
         except TypeError:
             return False
+
+    def to_dict(self, **kwargs):
+        return {'levels': list(self._levels)}
+
+    @classmethod
+    def from_dict(cls, dict_, **kwargs):
+        return cls(dict_.get('levels', []))
 
     def __repr__(self):
         return f"<{type(self).__name__} {self._levels}>"
@@ -317,6 +344,7 @@ class Levels(CategoricalRange, Set):
         return attr + " IN (" + ", ".join(_sqlstring(l) for l in self) + ")"
 
 
+@jsonio
 @attr.s(frozen=True, repr=False, cmp=False)
 class Level(CategoricalRange):
     """Holds a single level."""
@@ -325,15 +353,6 @@ class Level(CategoricalRange):
     def sql(self, attr):
         """Returns a sql statement fragment making attr equals to self."""
         return attr + " = " + _sqlstring(self.level)
-
-    @property
-    def serializable(self):
-        return self.level
-
-    @property
-    def _levels(self):
-        """Provided for unified interface with Levels."""
-        return {self.level}
 
     def __and__(self, other):
         if isinstance(other, Level):
@@ -348,6 +367,13 @@ class Level(CategoricalRange):
             return False
         else:
             return self.level == other
+
+    def to_dict(self, **kwargs):
+        return {'level': self.level}
+
+    @classmethod
+    def from_dict(cls, dict_, **kwargs):
+        return cls(**dict_)
 
     def __repr__(self):
         return f"<{type(self).__name__} {self.level!r}>"
@@ -374,16 +400,9 @@ class FloatInterval(Interval, FloatRange):
     upper = attr.ib(default=float('inf'),
                     convert=nonehandler(float('inf'))(np.float_))
 
-    @property
-    def serializable(self):
-        return (self.lower, self.upper)
-
 
 class EmptyFloatInterval(EmptyInterval, FloatInterval):
-
-    @property
-    def serializable(self):
-        return None
+    pass
 
 
 FloatRange.__empty__ = EmptyFloatInterval
@@ -392,10 +411,6 @@ FloatRange.__empty__ = EmptyFloatInterval
 @attr.s(frozen=True, repr=False)
 class FloatSingleton(Singleton, FloatRange):
     position = attr.ib(convert=np.float_)
-
-    @property
-    def serializable(self):
-        return self.position
 
 
 class TimeRange(ContinuousRange):
@@ -428,16 +443,9 @@ class TimeInterval(Interval, TimeRange):
     def duration(self):
         return self.upper - self.lower
 
-    @property
-    def serializable(self):
-        return (str(self.lower), str(self.upper))
-
 
 class EmptyTimeInterval(EmptyInterval, TimeInterval):
-
-    @property
-    def serializable(self):
-        return None
+    pass
 
 
 TimeRange.__empty__ = EmptyTimeInterval
@@ -449,10 +457,6 @@ class TimeSingleton(Singleton, TimeRange):
 
     def tz_convert(self, tzinfo):
         return type(self)(self.position.tz_convert(tzinfo))
-
-    @property
-    def serializable(self):
-        return str(self.position)
 
 # =============================================================================
 # Multi-Interval object
@@ -670,6 +674,13 @@ def float_range(x=None, y=None):
     if x is None:
         return EmptyFloatInterval()
     if y is None:
+        if isinstance(y, Mapping):
+            if any(k in y for k in ('lower', 'upper')):
+                return FloatInterval(**y)
+            elif 'position' in y:
+                return FloatSingleton(**y)
+            else:
+                return EmptyFloatInterval()
         if isinstance(x, Iterable) and not isinstance(x, str):
             return FloatInterval(*x)
         elif isinstance(x, slice):
@@ -686,6 +697,13 @@ def time_range(t0=None, t1=None):
     if t0 is None:
         return EmptyTimeInterval()
     if t1 is None:
+        if isinstance(t0, Mapping):
+            if any(k in t0 for k in ('lower', 'upper')):
+                return TimeInterval(**t0)
+            elif 'position' in t0:
+                return TimeSingleton(**t0)
+            else:
+                return EmptyTimeInterval()
         if isinstance(t0, Iterable) and not isinstance(t0, str):
             return TimeInterval(*t0)
         elif isinstance(t0, slice):
@@ -704,6 +722,13 @@ def categorical_range(arg=None, *, sliced=None):
     """
     if arg is None:
         return Levels([])
+    if isinstance(arg, Mapping):
+        if 'levels' in arg:
+            return Levels.from_dict(arg)
+        elif 'level' in arg:
+            return Level(**arg)
+        else:
+            raise ValueError()
     if isinstance(arg, Iterable) and not isinstance(arg, str):
         return Levels(arg)
     elif isinstance(arg, slice):
