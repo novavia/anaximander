@@ -21,7 +21,7 @@ import pytest
 import anaximander3 as nx
 from anaximander3.utilities import nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
-    datalogs as dtl, records as rec, plot
+    datalogs as dtl, records as rec
 
 
 NXPATH = os.path.dirname(nx.__path__[0])
@@ -291,6 +291,23 @@ def test_slicing(featurelog):
     assert not l1['2016-9-15':'2018-4-15'].dt_range
     assert l1['2016-9-14 10:00:00':'2016-9-14 10:00:15'].empty
     assert l1['2016-9-14 10:00:00':'2016-9-14 10:00:15'].dt_range
+    l7 = l0[0:2]
+    assert len(l7) == 2
+    assert l7.dt_range == rge.time_range('2016-09-14 10:00:27.800000+00:00',
+                                         '2016-09-14 10:00:29.500000+00:00')
+    l8 = l0[5:7]
+    assert len(l8) == 0
+    assert l8.dt_range == rge.EmptyTimeInterval()
+    l9 = dtl.DataLog(PERIODS, schema=PeriodSchema, id_range=IDS,
+                     dt_range=PERIODS_TME)
+    l10 = l9[slice(None), '2018-4-14 00:00:00']
+    l11 = l10[0:5]
+    assert len(l11) == 2
+    l12 = l10[1:2]
+    assert len(l12) == 1
+    assert l12.id_range == {'88:4A:EA:69:38:1A'}
+    with pytest.raises(TypeError):
+        log[0:1]
 
 
 def test_samples():

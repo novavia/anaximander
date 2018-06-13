@@ -17,7 +17,7 @@ from itertools import cycle
 
 import pandas as pd
 
-from ..utilities import xprops, nxrange as rge
+from ..utilities import xprops, nxrange as rge, nxtime
 from ..utilities.jsonmixin import jsonio
 from .exceptions import ConformityError
 from .dataobject import DataObjectType, DataObject
@@ -415,8 +415,14 @@ class DataLog(DataLogsBase, metaclass=LogType):
             if isinstance(key, tuple):
                 id_slice, dt_slice = key
             elif isinstance(key, slice):
-                id_slice, dt_slice = None, key
-                key = (slice(None), dt_slice)
+                if any(isinstance(a, int) for a in [key.start,
+                                                    key.stop,
+                                                    key.step]):
+                    msg = "DataLog instances don't support integer slicing."
+                    raise TypeError(msg)
+                else:
+                    id_slice, dt_slice = None, key
+                    key = (slice(None), dt_slice)
             else:
                 id_slice, dt_slice = key, None
             metadata = self._metaslice(id_slice, dt_slice)
@@ -512,6 +518,15 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         try:
             if isinstance(key, int):
                 key = self.index[key]
+            elif isinstance(key, slice):
+                if any(isinstance(a, int) for a in [key.start,
+                                                    key.stop,
+                                                    key.step]):
+                    ix = self.index[key]
+                    if ix.empty:
+                        key = slice(nxtime.MIN, nxtime.MIN)
+                    else:
+                        key = slice(ix[0], ix[-1])
             dt_slice = key
             metadata = self._metaslice(dt_slice=dt_slice)
             dt_range = metadata['dt_range']
@@ -599,6 +614,15 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
         try:
             if isinstance(key, int):
                 key = self.index[key]
+            elif isinstance(key, slice):
+                if any(isinstance(a, int) for a in [key.start,
+                                                    key.stop,
+                                                    key.step]):
+                    ix = self.index[key]
+                    if ix.empty:
+                        key = slice('', '')
+                    else:
+                        key = slice(ix[0], ix[-1])
             id_slice = key
             metadata = self._metaslice(id_slice=id_slice)
             data = self.data.loc[key]

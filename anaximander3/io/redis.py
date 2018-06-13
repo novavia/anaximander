@@ -16,12 +16,14 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 from collections import defaultdict
+from itertools import chain
 import json
 
 import pandas as pd
 from redis import StrictRedis
 
 from ..utilities import xprops, nxtime, nxrange as rge, functions as fun
+from ..utilities.jsonmixin import serialize
 from ..data import records as rcd, datalogs as dtl
 from ..data.nxschema import TimeSeriesIndex
 from .store import Store, Title, Tract, DataTract, Query, QueryException, \
@@ -62,19 +64,6 @@ class RedisTract(Tract):
     def client(self):
         return self.store.io
 
-    @xprops.cachedproperty
-    def reverse(self):
-        """If True, then keys are accumulated in reverse order.
-
-        This influences how queries are processed.
-        """
-        try:
-            assert isinstance(self.schema.index, TimeSeriesIndex)
-        except (AttributeError, AssertionError):
-            return False
-        else:
-            return True
-
     def __exists__(self):
         """Tests existence of the resource. Must return True or False."""
         return True
@@ -101,20 +90,8 @@ class RedisTract(Tract):
 
 class RedisDataTract(DataTract, RedisTract):
 
-    def __init__(self, store, title, max_range=None, max_count=None,
-                 register=True):
+    def __init__(self, store, title, register=True):
         super().__init__(store, title, register)
-        # Optional time depth, in minutes. Following an insertion, elements
-        # that are older than the most recent insert minus the max_range are
-        # removed. Note that this doesn't guarantee that the time range of
-        # the elements in a sequence is less than max_range. In particular,
-        # one could accumulate arbitrary old elements without limits. However
-        # this is designed for buffering data with generally monotonously
-        # increasing time stamps.
-        self.max_range = pd.Timedelta(minutes=max_range) if max_range else None
-        # Optional maximum element count. Oldest elements by score are removed
-        # when the count is reached.
-        self.max_count = max_count
 
     def storage_key(self, id):
         """Returns the storage key given an application id."""
@@ -127,14 +104,10 @@ class RedisDataTract(DataTract, RedisTract):
         if not recs:
             return
         storage_key = self.name + '#' + str(id)
-        data = {json.dumps(r.payload): r.datetime.timestamp() for r in recs}
-        pipe.zadd(storage_key, **data)
-        if self.max_count:
-            pipe.zremrangebyrank(storage_key, 0, -(self.max_count + 1))
-        if self.max_range:
-            max_ts = max(data.values())
-            min_score = max_ts - self.max_range.total_seconds() + 1e-9
-            pipe.zremrangebyscore(storage_key, '-inf', min_score)
+        data = {r.datetime.timestamp(): json.dumps(r.tabulated,
+                                                   default=serialize)
+                for r in recs}
+        pipe.zadd(storage_key, *chain(*data.items()))
 
     def insert(self, *records, validate=True, **kwargs):
         """Inserts one or more records into tract."""
@@ -168,27 +141,23 @@ class RedisDataTract(DataTract, RedisTract):
 
     def __update__(self, pipe, id, recs, **kwargs):
         storage_key = self.name + '#' + str(id)
-        payloads = {r.datetime.timestamp(): r.payload for r in recs}
-        min_score, max_score = min(payloads), max(payloads)
+        updates = {r.datetime.timestamp(): r.tabulated for r in recs}
+        min_score, max_score = min(updates), max(updates)
         extant = self.client.zrangebyscore(storage_key, min_score, max_score,
                                            withscores=True)
         extant = {s: data for data, s in extant}
-        for score, payload in payloads.items():
+        for score, tab in updates.items():
             try:
                 elm = extant[score]
             except KeyError:
-                pipe.zadd(storage_key, score, json.dumps(payload))
+                pipe.zadd(storage_key, score,
+                          json.dumps(tab, default=serialize))
             else:
                 load = json.loads(elm)
                 pipe.zrem(storage_key, elm)
-                load.update(payload)
-                pipe.zadd(storage_key, score, json.dumps(load))
-
-        if self.max_count:
-            pipe.zremrangebyrank(storage_key, 0, -(self.max_count + 1))
-        if self.max_range:
-            min_score = max_score - self.max_range.total_seconds() + 1e-9
-            pipe.zremrangebyscore(storage_key, '-inf', min_score)
+                load.update(tab)
+                pipe.zadd(storage_key, score,
+                          json.dumps(load, default=serialize))
 
     def update(self, *records, **kwargs):
         """Updates rows in place from records, or inserts if not found."""
@@ -260,10 +229,13 @@ class RedisDataTract(DataTract, RedisTract):
         if not result:
             msg = f"No row found with index {idx}."
             raise KeyError(msg)
-        data = {'data': json.loads(result[0])}
-        data['index'] = idx
-        data['schema'] = self.schema
-        return rcd.Record.from_dict(data)
+        data = json.loads(result[0])
+        data.pop('id')
+        data.pop('datetime')
+        dict_ = {'data': data}
+        dict_['index'] = idx
+        dict_['schema'] = self.schema
+        return rcd.Record.from_dict(dict_)
 
     def record(self, *idx, **kwargs):
         """Returns a record from its index."""
@@ -315,25 +287,29 @@ class RedisDataQuery(Query):
         start, num = 0, limit
         pipe = self.tract.client.pipeline()
 
-        if self.tract.reverse:
-            for id in id_range:
-                storage_key = self.tract.storage_key(id)
-                pipe.zrevrangebyscore(storage_key, upper, lower,
-                                      start, num, withscores=True)
-        else:
-            for id in id_range:
-                storage_key = self.tract.storage_key(id)
-                pipe.zrangebyscore(storage_key, lower, upper,
-                                   start, num, withscores=True)
+        for id in id_range:
+            storage_key = self.tract.storage_key(id)
+            pipe.zrevrangebyscore(storage_key, upper, lower,
+                                  start, num, withscores=True)
+            if self.schema.xindex:
+                pipe.zrevrangebyscore(storage_key, lower,
+                                      nxtime.MIN.timestamp(), 0, 1,
+                                      withscores=True)
+                id_sequence = chain(*zip(id_range, id_range))
+            else:
+                id_sequence = id_range
 
         sequence_results = pipe.execute()
-        for id, sr in zip(id_range, sequence_results):
-            for data, score in sr:
+        for id, sr in zip(id_sequence, sequence_results):
+            for res, score in sr:
                 if score == upper:
                     continue
+                data = json.loads(res)
                 idx = (id,
                        pd.Timestamp.utcfromtimestamp(score).tz_localize('utc'))
-                yield idx, {'data': json.loads(data)}
+                idx = (data.pop('id'),
+                       pd.to_datetime(data.pop('datetime'), utc=True))
+                yield idx, {'data': data}
 
 
 class RedisBuffer(RedisTract):
@@ -347,22 +323,16 @@ class RedisBuffer(RedisTract):
             own certification line, which determines data eviction.
     """
 
-    def __init__(self, store, title, max_range=None, register=True):
+    def __init__(self, store, title, register=True):
         super().__init__(store, title, register)
-        self.max_range = pd.Timedelta(minutes=max_range) if max_range else None
         data_title = Title(title.name + '_data', title.schema)
-        self.data_tract = RedisDataTract(store, data_title, max_range,
-                                         register=False)
+        self.data_tract = RedisDataTract(store, data_title, register=False)
 
     def __get_data__(self, pipe, id, lower=None):
         dt_range = rge.time_range((lower, None))
         lower, upper = (t.timestamp() for t in dt_range)
-        if self.tract.reverse:
-            storage_key = self.tract.storage_key(id)
-            pipe.zrevrangebyscore(storage_key, upper, lower, withscores=True)
-        else:
-            storage_key = self.tract.storage_key(id)
-            pipe.zrangebyscore(storage_key, lower, upper, withscores=True)
+        storage_key = self.tract.storage_key(id)
+        pipe.zrevrangebyscore(storage_key, upper, lower, withscores=True)
 
     def sequence(self, id, lower=None):
         """Fetches data for id, optionally above lower datetime."""
@@ -380,15 +350,9 @@ class RedisBuffer(RedisTract):
                 consumption = min((consumption, v))
         metadata['dt_range'] = dt_range
         metadata['consumption'] = consumption
-        datetime, payload = [], []
-        for d, score in data_:
-            dt = pd.Timestamp.utcfromtimestamp(score).tz_localize('utc')
-            datetime.append(dt)
-            payload.append(json.load(d))
-        data = pd.DataFrame(payload)
-        data['id'] = id
-        data['datetime'] = datetime
-        return dtl.Sequence(data, schema=self.schema, id_range=id, **metadata)
+        data = [json.loads(d) for d in data_]
+        df = pd.DataFrame(data)
+        return dtl.Sequence(df, schema=self.schema, id_range=id, **metadata)
 
     def meta_storage_key(self, id):
         """Returns the storage key for metadata."""

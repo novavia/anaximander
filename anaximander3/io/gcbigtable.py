@@ -26,7 +26,7 @@ from google.cloud.bigtable.instance import Instance
 from google.cloud.bigtable.row_filters import ColumnQualifierRegexFilter, \
     RowFilterUnion
 
-from ..utilities import xprops, nxrange as rge, functions as fun
+from ..utilities import xprops, nxrange as rge, functions as fun, nxtime
 from ..data.nxschema import Schema, MultiSchema, TimeSeriesIndex
 from .store import Store, DataTract, Query, QueryException, \
     WriteException, StorageAdminException, EmptyQueryException
@@ -235,19 +235,6 @@ class BigDataTract(DataTract):
         if self.retention is not None:
             return MaxAgeGCRule(dt.timedelta(self.retention))
 
-    @xprops.cachedproperty
-    def reverse(self):
-        """If True, then keys are accumulated in reverse order.
-
-        This influences how queries are processed.
-        """
-        try:
-            assert isinstance(self.schema.index, TimeSeriesIndex)
-        except (AttributeError, AssertionError):
-            return False
-        else:
-            return True
-
     def __exists__(self):
         """Tests existence of the resource. Must return True or False."""
         return self.name in [t.table_id for t in self.store.io.list_tables()]
@@ -333,11 +320,9 @@ class BigDataTract(DataTract):
         start_key = self.schema.rowkey((id, dt_range.lower))
         end_key = self.schema.rowkey((id, dt_range.upper))
         try:
-            group = self.table.read_rows(start_key, end_key,
-                                         reverse=self.reverse)
+            group = self.table.read_rows(start_key, end_key, reverse=True)
         except _Rendezvous:
-            group = self.table.read_rows(start_key, end_key,
-                                         reverse=self.reverse)
+            group = self.table.read_rows(start_key, end_key, reverse=True)
         while True:
             group._rows = OrderedDict()
             try:
@@ -389,10 +374,12 @@ class BigTableQuery(Query):
         else:
             id_range = self.id_range
         lower, upper = self.dt_range
+        bottom = nxtime.MIN
         for id_ in id_range:
             start_key = self.schema.rowkey((id_, lower))
             end_key = self.schema.rowkey((id_, upper))
-            yield (start_key, end_key)
+            bottom_key = self.schema.rowkey((id_, bottom))
+            yield (start_key, end_key, bottom_key)
 
     def read_row(self, row):
         data = {f: {k.decode(): v[0].value.decode() for k, v in d.items()}
@@ -413,28 +400,44 @@ class BigTableQuery(Query):
         rowkeypairs = list(self.rowkeypairs())
         limit = int(fun.get(limit, 1e5))
 
-        def row_group(keys):
-            start_key, end_key = keys
+        def rows(keys):
+            start_key, end_key, bottom_key = keys
             try:
-                return self.tract.table.read_rows(start_key,
-                                                  end_key,
-                                                  filter_=self.rowfilter,
-                                                  reverse=self.tract.reverse,
-                                                  limit=limit)
+                group = self.tract.table.read_rows(start_key,
+                                                   end_key,
+                                                   filter_=self.rowfilter,
+                                                   reverse=True,
+                                                   limit=limit)
             except _Rendezvous:
-                return self.tract.table.read_rows(start_key,
-                                                  end_key,
-                                                  filter_=self.rowfilter,
-                                                  reverse=self.tract.reverse,
-                                                  limit=limit)
+                group = self.tract.table.read_rows(start_key,
+                                                   end_key,
+                                                   filter_=self.rowfilter,
+                                                   reverse=True,
+                                                   limit=limit)
+            if self.schema.xindex:
+                next_ = self.tract.table.read_rows(bottom_key,
+                                                   start_key,
+                                                   filter_=self.rowfilter,
+                                                   reverse=True,
+                                                   limit=1)
+            else:
+                next_ = None
+            return group, next_
 
-        row_groups = [row_group(k) for k in rowkeypairs]
-        for g in row_groups:
+        for k in rowkeypairs:
+            group, next_ = rows(k)
             while True:
-                g._rows = OrderedDict()
+                group._rows = OrderedDict()
                 try:
-                    g.consume_next()
+                    group.consume_next()
                 except StopIteration:
                     break
-                for row in g.rows.values():
+                for row in group.rows.values():
                     yield self.read_row(row)
+            if next_ is not None:
+                try:
+                    next_.consume_next()
+                except StopIteration:
+                    continue
+                row = next(iter(next_.rows.values()))
+                yield self.read_row(row)

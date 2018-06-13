@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 
 import anaximander3 as nx
-from anaximander3.utilities import nxtime
+from anaximander3.utilities import nxtime, nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
 from anaximander3.io.store import Title, EmptyQueryException
@@ -31,11 +31,15 @@ PWD = '73wDWoBe'
 NXPATH = os.path.dirname(nx.__path__[0])
 TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
 LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
+STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
+STATES = pd.read_csv(STATES_PATH)
 
 FEATURE_IDS = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
+IDS = ['88:4A:EA:69:35:BD', '88:4A:EA:69:38:1A']
+STATES_TME = ['2018-4-15 00:16:00', '2018-4-15 00:17:00']
 
 # =============================================================================
 # Environment
@@ -57,13 +61,16 @@ class RdSchema(sch.SampleLogsSchema):
                           tz='UTC', unit='us')
         return (id[::-1], dt)
 
+
+class StateSchema(sch.StateLogsSchema):
+    label = cln.StateLabel(('Loading', 'Executing'))
+
+
 GHOST = Title('ghost', RdSchema)
 EMPTY = Title('empty', RdSchema)
-MAX_COUNT = Title('max_count', RdSchema)
-MAX_RANGE = Title('max_range', RdSchema)
-MAX_MAX = Title('max_max', RdSchema)
 FULL = Title('full', RdSchema)
 REFUSE = Title('refuse', RdSchema)
+STATE = Title('state', StateSchema)
 
 
 @pytest.fixture(scope="module")
@@ -77,6 +84,14 @@ def featurelog():
                      inplace=True)
     log = dtl.DataLog(dataframe, schema=RdSchema,
                       id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+    return log
+
+
+@pytest.fixture(scope="module")
+def statelog():
+    """Returns a nominal dataframe."""
+    log = dtl.DataLog(STATES, schema=StateSchema, id_range=IDS,
+                      dt_range=STATES_TME)
     return log
 
 
@@ -109,30 +124,6 @@ def empty_tract(store):
 
 
 @pytest.fixture(scope="module")
-def max_count_tract(store):
-    """Yields an empty tract with a max_count."""
-    tract = nxr.RedisDataTract(store, MAX_COUNT, max_count=5)
-    tract.create(warn=False, overwrite=True, force=True)
-    return tract
-
-
-@pytest.fixture(scope="module")
-def max_range_tract(store):
-    """Yields an empty tract with a max_range."""
-    tract = nxr.RedisDataTract(store, MAX_RANGE, max_range=1)
-    tract.create(warn=False, overwrite=True, force=True)
-    return tract
-
-
-@pytest.fixture(scope="module")
-def max_max_tract(store):
-    """Yields an empty tract with a max_count and max_range."""
-    tract = nxr.RedisDataTract(store, MAX_MAX, max_range=1, max_count=3)
-    tract.create(warn=False, overwrite=True, force=True)
-    return tract
-
-
-@pytest.fixture(scope="module")
 def full_tract(store, featurelog):
     """Yields a populated tract to test queries."""
     tract = nxr.RedisDataTract(store, FULL)
@@ -151,6 +142,17 @@ def refuse_tract(store, featurelog):
     tract.append(featurelog)
     return tract
 
+
+@pytest.fixture(scope="module")
+def state_tract(store, statelog):
+    """Yields a populated tract to test xindex queries."""
+    tract = nxr.RedisDataTract(store, STATE)
+    tract.create(warn=False, overwrite=True, force=True)
+    # Populates the tract with some data
+    tract.append(statelog)
+    return tract
+
+
 # =============================================================================
 # Test Cases
 # =============================================================================
@@ -161,9 +163,6 @@ pytestmark = [pytest.mark.online, pytest.mark.gcloud]
 
 def test_tract_instantiation(ghost_tract):
     assert ghost_tract.name == 'ghost'
-    assert ghost_tract.reverse
-    assert ghost_tract.max_range is None
-    assert ghost_tract.max_count is None
 
 
 def test_keymaker(featurelog, ghost_tract):
@@ -244,75 +243,6 @@ def test_fields(full_tract):
     assert log.schema == RdSchema('accel_x')
 
 
-def test_max_count(max_count_tract, featurelog):
-    client = max_count_tract.client
-    max_count_tract.append(featurelog)
-    assert client.zcard('max_count#68:9E:19:07:DE:C3') == 3
-    assert client.zcard('max_count#88:4A:EA:69:DF:A2') == 5
-    query = max_count_tract.query(id='88:4A:EA:69:DF:A2')
-    ts = pd.Timestamp('2016-09-14 10:03:56.670000+00:00')
-    assert query.data()[0].datetime == ts
-    client.zremrangebyrank('max_count#88:4A:EA:69:DF:A2', 0, 0)
-    assert client.zcard('max_count#88:4A:EA:69:DF:A2') == 4
-    record = featurelog[-10]
-    max_count_tract.insert(record)
-    data = query.data()
-    assert len(data) == 5
-    assert data[0] == record
-    record = featurelog[-9]
-    max_count_tract.insert(record)
-    data = query.data()
-    assert len(data) == 5
-    assert data[0] == record
-
-
-def test_max_range(max_range_tract, featurelog):
-    client = max_range_tract.client
-    max_range_tract.append(featurelog)
-    assert client.zcard('max_range#68:9E:19:07:DE:C3') == 1
-    assert client.zcard('max_range#88:4A:EA:69:DF:A2') == 4
-    query = max_range_tract.query(id='88:4A:EA:69:DF:A2')
-    ts = pd.Timestamp('2016-09-14 10:04:00.690000+00:00')
-    assert query.data()[0].datetime == ts
-    record = featurelog[4]
-    max_range_tract.insert(record)
-    data = query.data()
-    assert len(data) == 5
-    assert data[0] == record
-    record = featurelog[-1]
-    max_range_tract.insert(record)
-    data = query.data()
-    assert len(data) == 4
-    assert data[-1] == record
-
-
-def test_max_max(max_max_tract, featurelog):
-    client = max_max_tract.client
-    max_max_tract.append(featurelog)
-    assert client.zcard('max_max#68:9E:19:07:DE:C3') == 1
-    assert client.zcard('max_max#88:4A:EA:69:DF:A2') == 3
-    query = max_max_tract.query(id='88:4A:EA:69:DF:A2')
-    record = featurelog[4]
-    max_max_tract.insert(record)
-    data = query.data()
-    assert len(data) == 3
-    assert data[0] != record
-    record = featurelog[-1]
-    max_max_tract.delete(record.idx)
-    data = query.data()
-    assert len(data) == 2
-    record = featurelog[4]
-    max_max_tract.insert(record)
-    data = query.data()
-    assert len(data) == 3
-    assert data[0] == record
-    record = featurelog[-1]
-    max_max_tract.insert(record)
-    data = query.data()
-    assert len(data) == 3
-    assert data.datetime[-1] - data.datetime[0] <= max_max_tract.max_range
-
-
 def test_delete(refuse_tract):
     idx = ('68:9E:19:07:DE:C3',
            pd.Timestamp('2016-09-14 10:00:27.800000+00:00'))
@@ -332,6 +262,26 @@ def test_discard(refuse_tract):
     with pytest.raises(EmptyQueryException):
         query.first()
 
+
+def test_xindex(state_tract):
+    start = '2018-4-15 00:15'
+    end = '2018-4-15 00:16:30'
+    query = state_tract.query(id=IDS, datetime=(start, end))
+    log = query.data()
+    assert len(log) == 8
+    assert log.dt_range == rge.time_range(start, end)
+    start = '2018-4-15 00:16:30'
+    end = '2018-4-15 00:17:00'
+    query = state_tract.query(id=IDS, datetime=(start, end))
+    log = query.data()
+    assert len(log) == 11
+    assert log.dt_range == rge.time_range(start, end)
+    start = '2018-4-15 00:17:00'
+    end = '2018-4-15 00:17:30'
+    query = state_tract.query(id=IDS, datetime=(start, end))
+    log = query.data()
+    assert len(log) == 2
+    assert log.dt_range == rge.time_range(start, end)
 
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])

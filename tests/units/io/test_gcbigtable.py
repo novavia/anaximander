@@ -92,13 +92,23 @@ def cleanup(store):
 @pytest.fixture(scope="session")
 def store():
     """Creates a bigtable instance for testing purposes."""
-    store = gbt.BigTableStore(project_id=PROJECT_ID,
-                              instance_id=INSTANCE_ID, admin=True)
+    btclient = bt.Client(project=PROJECT_ID, admin=True)
+    instance = btclient.instance(INSTANCE_ID, INSTANCE_LOC)
+    instance.display_name = INSTANCE_ID
+#    store = gbt.BigTableStore(project_id=PROJECT_ID,
+#                              instance_id=INSTANCE_ID, admin=True)
     try:
-        store.create(INSTANCE_LOC)
+        instance.create()
+#        store.create(INSTANCE_LOC)
     except _Rendezvous:
         pass
+#    except gbt.BigTableAdminException:
+#        cleanup(store)
+#        time.sleep(10)
+#        store.create(INSTANCE_LOC)
     time.sleep(10)
+    store = gbt.BigTableStore(project_id=PROJECT_ID,
+                              instance_id=INSTANCE_ID, admin=True)
     yield store
     cleanup(store)
 
@@ -146,7 +156,6 @@ pytestmark = [pytest.mark.online, pytest.mark.gcloud, pytest.mark.bigtable]
 
 def test_tract_instantiation(ghost_tract):
     assert ghost_tract.table_id == 'ghost'
-    assert ghost_tract.reverse
 
 
 def test_keymaker(featurelog, ghost_tract):

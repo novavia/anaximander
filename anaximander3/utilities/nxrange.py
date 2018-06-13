@@ -303,13 +303,16 @@ class Levels(CategoricalRange, Set):
         if slice_.stop is None:
             return self
         elif slice_.start is None:
-            return type(self)(l for l in self._levels if l < slice_.stop)
+            return type(self)(l for l in self._levels if l <= slice_.stop)
         else:
-            return type(self)(l for l in self._levels if l < slice_.stop and
+            return type(self)(l for l in self._levels if l <= slice_.stop and
                               l >= slice_.start)
 
     def __getitem__(self, key):
-        """Levels slicer."""
+        """Levels slicer.
+
+        NOTE: slices are inclusive, unlike integer slices.
+        """
         if isinstance(key, str):
             if key in self._levels:
                 return Level(key)
