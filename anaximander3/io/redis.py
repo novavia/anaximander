@@ -300,16 +300,19 @@ class RedisDataQuery(Query):
                 id_sequence = id_range
 
         sequence_results = pipe.execute()
+        prev_id = None
         for id, sr in zip(id_sequence, sequence_results):
             for res, score in sr:
                 if score == upper:
                     continue
+                if score == lower:
+                    if id == prev_id:
+                        continue
                 data = json.loads(res)
-                idx = (id,
-                       pd.Timestamp.utcfromtimestamp(score).tz_localize('utc'))
                 idx = (data.pop('id'),
                        pd.to_datetime(data.pop('datetime'), utc=True))
                 yield idx, {'data': data}
+            prev_id = id
 
 
 class RedisBuffer(RedisTract):

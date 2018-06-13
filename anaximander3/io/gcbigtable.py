@@ -432,12 +432,13 @@ class BigTableQuery(Query):
                     group.consume_next()
                 except StopIteration:
                     break
-                for row in group.rows.values():
+                for key, row in group.rows.items():
                     yield self.read_row(row)
             if next_ is not None:
                 try:
                     next_.consume_next()
                 except StopIteration:
                     continue
-                row = next(iter(next_.rows.values()))
-                yield self.read_row(row)
+                nx_key, nx_row = next(iter(next_.rows.items()))
+                if not nx_key == key:
+                    yield self.read_row(nx_row)

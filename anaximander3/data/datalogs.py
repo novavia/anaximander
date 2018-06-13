@@ -101,6 +101,7 @@ class DataLogsBase(DataObject, Sequence):
     def _conform(self, data, flex=True, force=False):
         """Primitive for cast, returning a non-indexed dataframe."""
         df = pd.DataFrame(data).reset_index()
+        df.drop_duplicates(subset=['id', 'datetime'], inplace=True)
         missing_columns = []
         mistyped_columns = []
         for name, col in self.columns.items():
