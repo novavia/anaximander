@@ -282,7 +282,7 @@ def test_xindex(state_tract):
     log = query.data()
     assert len(log) == 2
     assert log.dt_range == rge.time_range(start, end)
-    start = '2018-04-15 00:16:32.609999872+00:00'
+    start = '2018-04-15 00:16:32.610+00:00'
     end = '2018-4-15 00:17:00'
     query = state_tract.query(id='88:4A:EA:69:35:BD', datetime=(start, end))
     log = query.data()

@@ -41,7 +41,7 @@ __all__ = ['BigTableStore', 'BigDataTract', 'BigTableQuery',
 
 
 def _create_row_request(table_name, row_key=None, start_key=None, end_key=None,
-                        filter_=None, limit=None, reverse=False):
+                        filter_=None, limit=None, reverse=False, closed=False):
     """Creates a request to read rows in a table.
 
     :type table_name: str
@@ -73,6 +73,10 @@ def _create_row_request(table_name, row_key=None, start_key=None, end_key=None,
     :param reverse: if True, then the request is closed wrt. end key and
         open wrt. to the start key.
 
+    :type closed: bool
+    :param closed: if True, the request is closed on both ends. Otherwise
+        open on end key, or on start key if reverse is True.
+
     :rtype: :class:`data_messages_v2_pb2.ReadRowsRequest`
     :returns: The ``ReadRowsRequest`` protobuf corresponding to the inputs.
     :raises: :class:`ValueError <exceptions.ValueError>` if both
@@ -91,10 +95,16 @@ def _create_row_request(table_name, row_key=None, start_key=None, end_key=None,
             else:
                 range_kwargs['start_key_closed'] = _to_bytes(start_key)
         if end_key is not None:
-            if reverse is True:
-                range_kwargs['start_key_open'] = _to_bytes(end_key)
+            if closed:
+                if reverse is True:
+                    range_kwargs['start_key_closed'] = _to_bytes(end_key)
+                else:
+                    range_kwargs['end_key_closed'] = _to_bytes(end_key)
             else:
-                range_kwargs['end_key_open'] = _to_bytes(end_key)
+                if reverse is True:
+                    range_kwargs['start_key_open'] = _to_bytes(end_key)
+                else:
+                    range_kwargs['end_key_open'] = _to_bytes(end_key)
     if filter_ is not None:
         request_kwargs['filter'] = filter_.to_pb()
     if limit is not None:
@@ -115,7 +125,7 @@ gc_big_table._create_row_request = _create_row_request
 
 
 def read_rows(self, start_key=None, end_key=None, limit=None,
-              filter_=None, reverse=False):
+              filter_=None, reverse=False, closed=False):
     """Read rows from this table.
 
     :type start_key: bytes
@@ -140,7 +150,11 @@ def read_rows(self, start_key=None, end_key=None, limit=None,
 
     :type reverse: bool
     :param reverse: if True, then the request is closed wrt. end key and
-        open wrt. to the start key.
+        open / closed wrt. to the start key depending on 'closed'.
+
+    :type closed: bool
+    :param closed: if True, the request is closed on both ends. Otherwise
+        open on end key, or on start key if reverse is True.
 
     :rtype: :class:`.PartialRowsData`
     :returns: A :class:`.PartialRowsData` convenience wrapper for consuming
@@ -148,7 +162,7 @@ def read_rows(self, start_key=None, end_key=None, limit=None,
     """
     request_pb = _create_row_request(
         self.name, start_key=start_key, end_key=end_key, filter_=filter_,
-        limit=limit, reverse=reverse)
+        limit=limit, reverse=reverse, closed=closed)
     client = self._instance._client
     response_iterator = client._data_stub.ReadRows(request_pb)
     # We expect an iterator of `data_messages_v2_pb2.ReadRowsResponse`
@@ -194,7 +208,6 @@ class BigTableStore(Store):
 
 
 class BigDataTract(DataTract):
-    # Data retention time, in days, defaulting to None (indefinite retention)
 
     def __init__(self, store, title, retention=None, register=True):
         """Data retention time, in days, defaulting to None (indefinite)."""
@@ -419,6 +432,7 @@ class BigTableQuery(Query):
                                                    start_key,
                                                    filter_=self.rowfilter,
                                                    reverse=True,
+                                                   closed=True,
                                                    limit=1)
             else:
                 next_ = None
@@ -426,6 +440,7 @@ class BigTableQuery(Query):
 
         for k in rowkeypairs:
             group, next_ = rows(k)
+            key = None
             while True:
                 group._rows = OrderedDict()
                 try:

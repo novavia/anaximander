@@ -508,14 +508,14 @@ class DateTimeBase(NxColumn):
 
     def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
-        timestamp = pd.to_datetime(value, utc=True,
-                                   errors='coerce' if force else 'raise')
+        err = 'coerce' if force else 'raise'
+        timestamp = pd.to_datetime(value, utc=True, errors=err).round('us')
         return timestamp if self.tz == 'UTC' else timestamp.tz_convert(self.tz)
 
     def dcast(self, series, force=False):
         """Casts a series to the appropriate type."""
-        series = pd.to_datetime(series, utc=True,
-                                errors='coerce' if force else 'raise')
+        err = 'coerce' if force else 'raise'
+        series = pd.to_datetime(series, utc=True, errors=err).dt.round('us')
         return series if self.tz == 'UTC' else series.dt.tz_convert(self.tz)
 
 

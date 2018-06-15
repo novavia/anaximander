@@ -21,7 +21,7 @@ from google.cloud import bigtable as bt
 from grpc._channel import _Rendezvous
 
 import anaximander3 as nx
-from anaximander3.utilities import nxtime
+from anaximander3.utilities import nxtime, nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
 from anaximander3.io.store import Title
@@ -36,11 +36,15 @@ INSTANCE_LOC = 'us-central1-c'
 NXPATH = os.path.dirname(nx.__path__[0])
 TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
 LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
+STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
+STATES = pd.read_csv(STATES_PATH)
 
 FEATURE_IDS = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
+IDS = ['88:4A:EA:69:35:BD', '88:4A:EA:69:38:1A']
+STATES_TME = ['2018-4-15 00:16:00', '2018-4-15 00:17:00']
 
 # =============================================================================
 # Environment
@@ -62,10 +66,16 @@ class BtSchema(sch.SampleLogsSchema):
                           tz='UTC', unit='us')
         return (id[::-1], dt)
 
+
+class StateSchema(sch.StateLogsSchema):
+    label = cln.StateLabel(('Loading', 'Executing'))
+
+
 GHOST = Title('ghost', BtSchema)
 EMPTY = Title('empty', BtSchema)
 FULL = Title('full', BtSchema)
 REFUSE = Title('refuse', BtSchema)
+STATE = Title('state', StateSchema)
 
 
 @pytest.fixture(scope="module")
@@ -82,6 +92,14 @@ def featurelog():
     return log
 
 
+@pytest.fixture(scope="module")
+def statelog():
+    """Returns a nominal dataframe."""
+    log = dtl.DataLog(STATES, schema=StateSchema, id_range=IDS,
+                      dt_range=STATES_TME)
+    return log
+
+
 def cleanup(store):
     """Cleans up the supplied Bigtable instance."""
     for table in store.io.list_tables():
@@ -92,20 +110,15 @@ def cleanup(store):
 @pytest.fixture(scope="session")
 def store():
     """Creates a bigtable instance for testing purposes."""
-    btclient = bt.Client(project=PROJECT_ID, admin=True)
-    instance = btclient.instance(INSTANCE_ID, INSTANCE_LOC)
-    instance.display_name = INSTANCE_ID
-#    store = gbt.BigTableStore(project_id=PROJECT_ID,
-#                              instance_id=INSTANCE_ID, admin=True)
+    store = gbt.BigTableStore(project_id=PROJECT_ID,
+                              instance_id=INSTANCE_ID, admin=True)
     try:
-        instance.create()
-#        store.create(INSTANCE_LOC)
+        store.create(INSTANCE_LOC, serve_nodes=1)
     except _Rendezvous:
         pass
-#    except gbt.BigTableAdminException:
-#        cleanup(store)
-#        time.sleep(10)
-#        store.create(INSTANCE_LOC)
+    except gbt.BigTableAdminException:
+        cleanup(store)
+        store.create(INSTANCE_LOC)
     time.sleep(10)
     store = gbt.BigTableStore(project_id=PROJECT_ID,
                               instance_id=INSTANCE_ID, admin=True)
@@ -144,6 +157,16 @@ def refuse_tract(store, featurelog):
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(featurelog)
+    return tract
+
+
+@pytest.fixture(scope="module")
+def state_tract(store, statelog):
+    """Yields a populated tract to test xindex queries."""
+    tract = gbt.BigDataTract(store, STATE)
+    tract.create(warn=False, overwrite=True, force=True)
+    # Populates the tract with some data
+    tract.append(statelog)
     return tract
 
 # =============================================================================
@@ -253,6 +276,32 @@ def test_discard(refuse_tract):
     query = refuse_tract.query(id='68:9E:19:07:DE:C3')
     with pytest.raises(gbt.EmptyQueryException):
         query.first()
+
+
+def test_xindex(state_tract):
+    start = '2018-4-15 00:15'
+    end = '2018-4-15 00:16:30'
+    query = state_tract.query(id=IDS, datetime=(start, end))
+    log = query.data()
+    assert len(log) == 8
+    assert log.dt_range == rge.time_range(start, end)
+    start = '2018-4-15 00:16:30'
+    end = '2018-4-15 00:17:00'
+    query = state_tract.query(id=IDS, datetime=(start, end))
+    log = query.data()
+    assert len(log) == 11
+    assert log.dt_range == rge.time_range(start, end)
+    start = '2018-4-15 00:17:00'
+    end = '2018-4-15 00:17:30'
+    query = state_tract.query(id=IDS, datetime=(start, end))
+    log = query.data()
+    assert len(log) == 2
+    assert log.dt_range == rge.time_range(start, end)
+    start = '2018-04-15 00:16:32.610+00:00'
+    end = '2018-4-15 00:17:00'
+    query = state_tract.query(id='88:4A:EA:69:35:BD', datetime=(start, end))
+    log = query.data()
+    assert len(log) == 4
 
 
 if __name__ == '__main__':
