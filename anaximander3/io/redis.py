@@ -22,10 +22,9 @@ import json
 import pandas as pd
 from redis import StrictRedis
 
-from ..utilities import xprops, nxtime, nxrange as rge, functions as fun
+from ..utilities import nxtime, nxrange as rge, functions as fun
 from ..utilities.jsonmixin import serialize
 from ..data import records as rcd, datalogs as dtl
-from ..data.nxschema import TimeSeriesIndex
 from .store import Store, Title, Tract, DataTract, Query, QueryException, \
     WriteException
 
@@ -45,7 +44,9 @@ class RedisInsertException(WriteException):
 
 class RedisStore(Store):
 
-    def __interface__(self, host, port, password):
+    def __interface__(self, host, port, password, archive=None):
+        """Archive is an optional archive store."""
+        self.archive = archive
         return StrictRedis(host=host, port=port, password=password)
 
     def __repr__(self):
@@ -132,12 +133,17 @@ class RedisDataTract(DataTract, RedisTract):
         return pipe.execute()
 
     def __append__(self, pipe, logs, **kwargs):
-        return self.insert(*list(logs), validate=False)
+        rmap = defaultdict(list)
+        for record in list(logs):
+            rmap[record.id].append(record)
+        for id, recs in rmap.items():
+            self.__insert__(pipe, id, recs, **kwargs)
 
     def append(self, logs, **kwargs):
         pipe = self.client.pipeline()
         kwargs.setdefault('pipe', pipe)
         super().append(logs, **kwargs)
+        return pipe.execute()
 
     def __update__(self, pipe, id, recs, **kwargs):
         storage_key = self.name + '#' + str(id)
@@ -334,8 +340,8 @@ class RedisBuffer(RedisTract):
     def __get_data__(self, pipe, id, lower=None):
         dt_range = rge.time_range((lower, None))
         lower, upper = (t.timestamp() for t in dt_range)
-        storage_key = self.tract.storage_key(id)
-        pipe.zrevrangebyscore(storage_key, upper, lower, withscores=True)
+        storage_key = self.data_tract.storage_key(id)
+        pipe.zrevrangebyscore(storage_key, upper, lower)
 
     def sequence(self, id, lower=None):
         """Fetches data for id, optionally above lower datetime."""
@@ -343,7 +349,8 @@ class RedisBuffer(RedisTract):
         self.__get_metadata__(pipe, id)
         self.__get_data__(pipe, id, lower=lower)
         meta_, data_ = pipe.execute()
-        metadata = {k: pd.to_datetime(v, utc=True) for k, v in meta_.items()}
+        metadata = {k.decode(): pd.to_datetime(v.decode(), utc=True)
+                    for k, v in meta_.items()}
         dt_range = rge.time_range(metadata.pop('lower', None),
                                   metadata.pop('upper', None))
         consumption = nxtime.MAX
@@ -355,7 +362,8 @@ class RedisBuffer(RedisTract):
         metadata['consumption'] = consumption
         data = [json.loads(d) for d in data_]
         df = pd.DataFrame(data)
-        return dtl.Sequence(df, schema=self.schema, id_range=id, **metadata)
+        return dtl.DataSequence(df, schema=self.schema,
+                                id_range=id, **metadata)
 
     def meta_storage_key(self, id):
         """Returns the storage key for metadata."""
@@ -369,14 +377,8 @@ class RedisBuffer(RedisTract):
         pipe = self.client.pipeline()
         self.__get_metadata__(pipe, id)
         result = pipe.execute()[0]
-        return {k: pd.to_datetime(v, utc=True) for k, v in result.items()}
-
-    def __update_range__(self, pipe, id, dt_range, certificate=None):
-        lower, upper = (t.timestamp() for t in dt_range)
-        mapping = {'lower': lower, 'upper': upper}
-        if certificate is not None:
-            mapping['certification'] = certificate.timestamp()
-        pipe.hmset(self.meta_storage_key(id), mapping)
+        return {k.decode(): pd.to_datetime(v.decode(), utc=True)
+                for k, v in result.items()}
 
     def update_subscriber(self, subscriber, id, datetime):
         """Updates metadata for subscriber.
@@ -387,7 +389,7 @@ class RedisBuffer(RedisTract):
             datetime: the new certification line of the subscriber
         """
         return self.client.hset(self.meta_storage_key(id),
-                                subscriber.name, datetime.timestamp())
+                                subscriber.name, str(datetime))
 
     def __query__(self, *columns, **kwargs):
         data_query = self.data_tract.query(*columns, **kwargs)
@@ -402,8 +404,9 @@ class RedisBuffer(RedisTract):
         meta = meta_pipe.execute()
         metadata = [{k: pd.to_datetime(v, utc=True) for k, v in m.items()}
                     for m in meta]
-        metaranges = [rge.time_range(m['lower'], m['upper']) for m in metadata]
-        certificates = [m['certification'] for m in metadata]
+        metaranges = [rge.time_range(m.get('lower'), m.get('upper'))
+                      for m in metadata]
+        certificates = [m.get('certification', nxtime.MIN) for m in metadata]
         dt_range = rge.TimeInterval.intersection(data_query.dt_range,
                                                  *metaranges)
         certification = min(certificates)
@@ -411,55 +414,61 @@ class RedisBuffer(RedisTract):
         data_query.metadata = {'certification': certification}
         return data_query
 
-    def __flush__(self, pipe, id, flushline):
-        """Discards data behind flushline."""
-        dt_range = rge.time_range(None, flushline)
-        self.data_tract.__discard__(pipe, id, dt_range)
+    def archive(self, sequence, old_certificate=None):
+        """Archives sequence against old certificate."""
+        archive_store = self.store.archive
+        if archive_store is None:
+            return
+        else:
+            try:
+                archive_tract = archive_store[self.title]
+            except KeyError:
+                msg = f"Cannot archive {sequence} into {archive_store} " + \
+                      f"because it doesn't feature a table for {self.title}."
+                raise WriteException(msg)
+        archive_bound = sequence[old_certificate:sequence.certification]
+        try:
+            first = archive_bound[0]
+        except KeyError:
+            pass
+        else:
+            if first.datetime == old_certificate:
+                archive_bound = archive_bound[1:]
+        archive_tract.append(archive_bound)
 
-    def flush(self, id):
-        """Discards from flushline based on certication & consumption."""
-        metadata = self.metadata(id)
-        certification = metadata.pop('certification')
-        consumption = nxtime.MAX
-        for k in metadata.keys():
-            if k not in ['lower', 'upper']:
-                v = metadata.pop(k)
-                consumption = min((consumption, v))
-        flushline = min((certification, consumption))
-        pipe = self.client.pipeline()
-        self.__flush__(pipe, id, flushline)
+    def write(self, sequence, old_certificate=None):
+        """Writes the buffer by supplying a sequence.
 
-    def archive(self, sequence):
-        return NotImplemented
-
-    def update(self, sequence, old_certificate):
-        """Updates the buffer by supplying a sequence.
-
-        Data more recent than the old certificate is first discarded.
-        Then the sequence data beyond the old certificate is appended.
+        Overwrites data with sequence.
         Newly certified data is archived.
-        The flushline is computed and older data is discarded.
         Finally the metadata gets updated.
         """
+        if not isinstance(sequence, dtl.DataSequence):
+            msg = f"Buffer write requires a DataSequence instance, not a " + \
+                  f"{type(sequence)} instance."
+            raise TypeError(msg)
+        if not isinstance(sequence.schema, type(self.schema)):
+            msg = f"Incorrect data schema supplied to {self}."
+            raise ValueError(msg)
         id = sequence.id
         pipe = self.client.pipeline()
-        dt_range = rge.time_range(old_certificate + NS, None)
-        self.data_tract.__discard__(pipe, id, dt_range)
-
-        sequence = sequence[old_certificate + NS:]
+        pipe.delete(self.data_tract.storage_key(id))
+        self.archive(sequence, old_certificate)
+        certification = fun.get(sequence.certification, nxtime.MIN)
+        consumption = fun.get(sequence.consumption, nxtime.MAX)
+        flushline = min((certification, consumption))
+        sequence = sequence[flushline:]
         self.data_tract.__append__(pipe, sequence)
+        lower, upper = sequence.dt_range
 
-        self.archive(sequence[:sequence.certification])
-
-        flushline = min((sequence.certification, sequence.consumption))
-        self.__flush__(pipe, sequence.id, flushline)
-
-        lower = flushline
-        upper = sequence.dt_range.upper
-        certification = sequence.certfication
-        metadata = {'lower': lower,
-                    'upper': upper,
-                    'certification': certification}
+        # XXX: this isn't robust to None lower / upper
+        # Even if we skipped updates that would be bad because it may
+        # not ovewrite previous values
+        # Best would be to store NaT so pandas can apply conversion
+        # However TimeInterval doesn't handle NaT
+        # So that needs to happen first
+        metadata = {'lower': str(lower),
+                    'upper': str(upper),
+                    'certification': str(certification)}
         pipe.hmset(self.meta_storage_key(id), metadata)
-
         pipe.execute()

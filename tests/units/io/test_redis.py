@@ -71,6 +71,7 @@ EMPTY = Title('empty', RdSchema)
 FULL = Title('full', RdSchema)
 REFUSE = Title('refuse', RdSchema)
 STATE = Title('state', StateSchema)
+BUFFER = Title('buffer', RdSchema)
 
 
 @pytest.fixture(scope="module")
@@ -152,6 +153,13 @@ def state_tract(store, statelog):
     tract.append(statelog)
     return tract
 
+
+@pytest.fixture(scope="module")
+def buffer_tract(store):
+    """Yields an empty buffer."""
+    tract = nxr.RedisBuffer(store, BUFFER)
+    tract.create(warn=False, overwrite=True, force=True)
+    return tract
 
 # =============================================================================
 # Test Cases
@@ -287,6 +295,19 @@ def test_xindex(state_tract):
     query = state_tract.query(id='88:4A:EA:69:35:BD', datetime=(start, end))
     log = query.data()
     assert len(log) == 4
+
+
+def test_write_buffer(buffer_tract, featurelog):
+    with pytest.raises(TypeError):
+        buffer_tract.write(featurelog)
+    input_sequence = featurelog['68:9E:19:07:DE:C3']
+    buffer_tract.write(input_sequence)
+    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    assert sequence.data.equals(input_sequence.data)
+    assert sequence.dt_range == input_sequence.dt_range
+    assert sequence.certification == nxtime.MIN
+    assert sequence.consumption == nxtime.MAX
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
