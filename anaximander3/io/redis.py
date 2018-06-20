@@ -22,7 +22,7 @@ import json
 import pandas as pd
 from redis import StrictRedis
 
-from ..utilities import nxtime, nxrange as rge, functions as fun
+from ..utilities import nxtime, nxrange as rge, functions as fun, xprops
 from ..utilities.jsonmixin import serialize
 from ..data import records as rcd, datalogs as dtl
 from .store import Store, Title, Tract, DataTract, Query, QueryException, \
@@ -32,6 +32,13 @@ __all__ = ['RedisStore', 'RedisTract', 'RedisDataQuery', 'RedisQueryException',
            'RedisInsertException']
 
 NS = pd.Timedelta(nanoseconds=1)
+
+
+def dtget(datetime, default=pd.NaT):
+    """Utility that returns datetime if not None or NaT."""
+    if datetime in (None, pd.NaT):
+        return default
+    return datetime
 
 # =============================================================================
 # Tract implementation
@@ -321,6 +328,68 @@ class RedisDataQuery(Query):
             prev_id = id
 
 
+class BufferQuery(RedisDataQuery):
+    """Specialized query type that doesn't aggregate results across ids."""
+
+    def __init__(self, tract, *columns, **quargs):
+        super().__init__(tract, *columns, **quargs)
+        try:
+            assert isinstance(tract, RedisBuffer)
+        except AssertionError:
+            msg = "A BufferQuery requires a  RedisBuffer tract."
+            raise RedisQueryException(msg)
+        self.data_query = tract.data_tract.query(**self.quargs)
+
+    @xprops.cachedproperty
+    def dt_ranges(self):
+        return {id: rge.EmptyTimeInterval() for id in self.id_range}
+
+    @xprops.cachedproperty
+    def certificates(self):
+        return {id: nxtime.MIN for id in self.id_range}
+
+    def _metadata(self):
+        """Fetches metadata for self."""
+        meta_pipe = self.tract.client.pipeline()
+        if isinstance(self.id_range, rge.Level):
+            id_range = [self.id_range.level]
+        else:
+            id_range = self.id_range
+        meta_keys = ['lower', 'upper', 'certification']
+        for id in id_range:
+            meta_pipe.hmget(self.tract.meta_storage_key(id), meta_keys)
+        meta = meta_pipe.execute()
+        metadata = [{k: pd.to_datetime(v.decode(), utc=True)
+                     for k, v in zip(meta_keys, m) if v is not None}
+                    for m in meta]
+        for id, m in zip(id_range, metadata):
+            self.dt_ranges[id] = rge.time_range(m.get('lower', pd.NaT),
+                                                m.get('upper', pd.NaT))
+            self.certificates[id] = dtget(m.get('certification'), nxtime.MIN)
+
+    def __fetch__(self, **kwargs):
+        """Returns an iterator of row indexes and data."""
+        self._metadata()
+        return self.data_query.__fetch__(**kwargs)
+
+    def data(self, **kwargs):
+        """Returns the data."""
+        super_data = super().data(**kwargs)
+        if isinstance(self.id_range, rge.Levels):
+            data = []
+            for id in self.id_range:
+                sequence = super_data[id]
+                sequence.metadata['dt_range'] = self.dt_ranges[id]
+                sequence.metadata['certification'] = self.certificates[id]
+                data.append(sequence)
+            return data
+        else:
+            id = self.id_range.level
+            super_data.metadata['dt_range'] = self.dt_ranges[id]
+            super_data.metadata['certification'] = self.certificates[id]
+            return super_data
+
+
 class RedisBuffer(RedisTract):
     """A specialized storage structure that combines data & metadata.
 
@@ -351,10 +420,10 @@ class RedisBuffer(RedisTract):
         meta_, data_ = pipe.execute()
         metadata = {k.decode(): pd.to_datetime(v.decode(), utc=True)
                     for k, v in meta_.items()}
-        dt_range = rge.time_range(metadata.pop('lower', None),
-                                  metadata.pop('upper', None))
+        dt_range = rge.time_range(metadata.pop('lower', pd.NaT),
+                                  metadata.pop('upper', pd.NaT))
         consumption = nxtime.MAX
-        for k in metadata.keys():
+        for k in list(metadata.keys()):
             if k != 'certification':
                 v = metadata.pop(k)
                 consumption = min((consumption, v))
@@ -392,27 +461,7 @@ class RedisBuffer(RedisTract):
                                 subscriber.name, str(datetime))
 
     def __query__(self, *columns, **kwargs):
-        data_query = self.data_tract.query(*columns, **kwargs)
-        meta_pipe = self.client.pipeline()
-        if isinstance(data_query.id_range, rge.Level):
-            id_range = [data_query.id_range.level]
-        else:
-            id_range = data_query.id_range
-        meta_keys = ['lower', 'upper', 'certification']
-        for id in id_range:
-            meta_pipe.hmget(self.meta_storage_key(id), meta_keys)
-        meta = meta_pipe.execute()
-        metadata = [{k: pd.to_datetime(v, utc=True) for k, v in m.items()}
-                    for m in meta]
-        metaranges = [rge.time_range(m.get('lower'), m.get('upper'))
-                      for m in metadata]
-        certificates = [m.get('certification', nxtime.MIN) for m in metadata]
-        dt_range = rge.TimeInterval.intersection(data_query.dt_range,
-                                                 *metaranges)
-        certification = min(certificates)
-        data_query.quargs['datetime'] = dt_range
-        data_query.metadata = {'certification': certification}
-        return data_query
+        return BufferQuery(self, *columns, **kwargs)
 
     def archive(self, sequence, old_certificate=None):
         """Archives sequence against old certificate."""
@@ -454,19 +503,12 @@ class RedisBuffer(RedisTract):
         pipe = self.client.pipeline()
         pipe.delete(self.data_tract.storage_key(id))
         self.archive(sequence, old_certificate)
-        certification = fun.get(sequence.certification, nxtime.MIN)
-        consumption = fun.get(sequence.consumption, nxtime.MAX)
+        certification = dtget(sequence.certification, nxtime.MIN)
+        consumption = dtget(sequence.consumption, nxtime.MAX)
         flushline = min((certification, consumption))
         sequence = sequence[flushline:]
         self.data_tract.__append__(pipe, sequence)
         lower, upper = sequence.dt_range
-
-        # XXX: this isn't robust to None lower / upper
-        # Even if we skipped updates that would be bad because it may
-        # not ovewrite previous values
-        # Best would be to store NaT so pandas can apply conversion
-        # However TimeInterval doesn't handle NaT
-        # So that needs to happen first
         metadata = {'lower': str(lower),
                     'upper': str(upper),
                     'certification': str(certification)}

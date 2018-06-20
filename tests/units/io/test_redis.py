@@ -12,6 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import os.path
+from unittest.mock import MagicMock, PropertyMock
 
 import pandas as pd
 import pytest
@@ -307,6 +308,70 @@ def test_write_buffer(buffer_tract, featurelog):
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification == nxtime.MIN
     assert sequence.consumption == nxtime.MAX
+
+
+def test_metadata(buffer_tract, featurelog):
+    input_sequence = featurelog['68:9E:19:07:DE:C3']
+    buffer_tract.write(input_sequence)
+    metadata = buffer_tract.metadata('68:9E:19:07:DE:C3')
+    assert set(metadata.keys()) == {'lower', 'upper', 'certification'}
+    assert metadata['lower'] == input_sequence.dt_range.lower
+    assert metadata['upper'] == input_sequence.dt_range.upper
+    assert metadata['certification'] == nxtime.MIN
+    subscriber = MagicMock()
+    name_property = PropertyMock(return_value='subscriber')
+    type(subscriber).name = name_property
+    buffer_tract.update_subscriber(subscriber,
+                                   '68:9E:19:07:DE:C3',
+                                   '2016-9-14 10:01')
+    metadata = buffer_tract.metadata('68:9E:19:07:DE:C3')
+    assert set(metadata.keys()) == {'lower', 'upper', 'certification',
+                                    'subscriber'}
+    assert metadata['certification'] == nxtime.MIN
+    assert metadata['subscriber'] == pd.to_datetime('2016-9-14 10:01',
+                                                    utc=True)
+    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    sequence.certify('2016-9-14 10:02')
+    buffer_tract.write(sequence)
+    metadata = buffer_tract.metadata('68:9E:19:07:DE:C3')
+    assert metadata['certification'] == pd.to_datetime('2016-9-14 10:02',
+                                                       utc=True)
+
+
+def test_sequence(buffer_tract, featurelog):
+    input_sequence = featurelog['68:9E:19:07:DE:C3']
+    buffer_tract.write(input_sequence)
+    subscriber = MagicMock()
+    name_property = PropertyMock(return_value='subscriber')
+    type(subscriber).name = name_property
+    buffer_tract.update_subscriber(subscriber,
+                                   '68:9E:19:07:DE:C3',
+                                   pd.NaT)
+    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    assert sequence.dt_range == input_sequence.dt_range
+    assert sequence.certification == nxtime.MIN
+    assert sequence.consumption == nxtime.MAX
+    buffer_tract.update_subscriber(subscriber,
+                                   '68:9E:19:07:DE:C3',
+                                   '2016-9-14 10:01')
+    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    sequence.certify('2016-9-14 10:02')
+    buffer_tract.write(sequence)
+    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    assert len(sequence) == 1
+
+
+def test_buffer_query(buffer_tract, featurelog):
+    input_sequence = featurelog['68:9E:19:07:DE:C3']
+    buffer_tract.write(input_sequence)
+    query = buffer_tract.query(id=DEVICES)
+    assert query.schema == RdSchema()
+    assert len(list(query.fetch())) == len(input_sequence)
+    assert len(list(query.fetch(limit=1))) == 1
+    query_data = query.data()
+    assert len(query_data) == 2
+    assert query_data[1].empty
+    assert query_data[0].data.equals(input_sequence.data)
 
 
 if __name__ == '__main__':

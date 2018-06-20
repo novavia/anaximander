@@ -80,11 +80,11 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
             msg = f"Improper schema supplied to {type(self).__name__}. " + \
                   f"It must be of type {self.__schema__.__name__}"
             raise ConformityError(msg)
+        self.metadata = metadata
         if cast:
             self._data = self.cast(data, flex=flex)
         else:
             self._data = data
-        self.metadata = metadata
         if validate:
             if not self.validate():
                 msg = "Validation failed with the following errors: " + \

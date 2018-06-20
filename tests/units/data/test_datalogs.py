@@ -204,9 +204,10 @@ def test_logs(featurelog, featurelog_partial, featurelog_no_device,
     log = dtl.DataLog(featurelog_superfluous, schema=FeatureSchema,
                       id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     assert log.data.equals(LOG)
-    log = dtl.DataLog(featurelog_invalid, schema=FeatureSchema,
-                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
-    assert not log.validate()
+    with pytest.raises(dtl.ConformityError):
+        log = dtl.DataLog(featurelog_invalid, schema=FeatureSchema,
+                          id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+#    assert not log.validate()
 
 
 def test_json_round_trip(featurelog):

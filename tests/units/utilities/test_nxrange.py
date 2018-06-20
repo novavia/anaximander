@@ -118,6 +118,7 @@ class TestTimeInterval(TestCase):
         i = rge.EmptyTimeInterval()
         assert rge.TimeInterval.json_loads(i.json_dumps()) == i
         assert rge.time_range(json.loads(i.json_dumps())) == i
+        assert rge.TimeInterval.json_loads('{"lower": "NaT"}') == i
 
 
 class TestDiscreteRange(TestCase):

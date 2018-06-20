@@ -15,6 +15,7 @@ import abc
 from collections.abc import Set, Iterable, Sequence, Mapping
 from functools import partial, wraps
 from itertools import chain
+import math
 from numbers import Number
 
 import attr
@@ -85,6 +86,9 @@ def _sqlstring(val):
 @jsonio
 class Interval(ContinuousRange, Iterable):
     """For now intervals are closed on the left and open on the right."""
+
+    def __init__(self, lower=None, upper=None):
+        pass
 
     @property
     def length(self):
@@ -202,6 +206,9 @@ class EmptyInterval(Interval):
     lower = None
     upper = None
 
+    def __new__(cls, *args, **kwargs):
+        return object.__new__(cls)
+
     def __init__(self, *args, **kwargs):
         pass
 
@@ -288,7 +295,7 @@ class Levels(CategoricalRange, Set):
         return self._levels.__contains__(item)
 
     def __iter__(self):
-        return self._levels.__iter__()
+        return sorted(self._levels).__iter__()
 
     def __len__(self):
         return self._levels.__len__()
@@ -395,17 +402,34 @@ class FloatRange(ContinuousRange):
     __max__ = float('inf')
 
 
-@attr.s(frozen=True, repr=False)
+@attr.s(frozen=True, init=False, repr=False)
 class FloatInterval(Interval, FloatRange):
-    """An interval of floats."""
-    lower = attr.ib(default=float('-inf'),
-                    convert=nonehandler(float('-inf'))(np.float_))
-    upper = attr.ib(default=float('inf'),
-                    convert=nonehandler(float('inf'))(np.float_))
+    """An interval of floats.
+
+    None inputs are converted to -inf / inf respectively. 'nan' is also an
+    admissible input but will set the interval to an empty instance.
+    """
+
+    def __new__(cls, lower=None, upper=None):
+        lower = nonehandler(float('-inf'))(np.float_)(lower)
+        upper = nonehandler(float('inf'))(np.float_)(upper)
+        try:
+            if any(math.isnan(f) for f in (lower, upper)):
+                return EmptyFloatInterval()
+        except TypeError:
+            pass
+        obj = super().__new__(cls)
+        object.__setattr__(obj, 'lower', lower)
+        object.__setattr__(obj, 'upper', upper)
+        return obj
 
 
 class EmptyFloatInterval(EmptyInterval, FloatInterval):
-    pass
+    lower = float('nan')
+    upper = float('nan')
+
+    def to_dict(self, **kwargs):
+        return {'lower': 'nan', 'upper': 'nan'}
 
 
 FloatRange.__empty__ = EmptyFloatInterval
@@ -422,21 +446,31 @@ class TimeRange(ContinuousRange):
     __max__ = nxtime.MAX
 
 
-@attr.s(frozen=True, repr=False)
+@attr.s(frozen=True, init=False, repr=False)
 class TimeInterval(Interval, TimeRange):
     """An interval of datetimes.
 
     The arguments are automatically converted to pandas Timestamp if
     possible, potentially raising an error if that is not possible.
     Naive datetime values are also automatically converted to UTC.
-    Finally, None is an admissible value for either lower or upper, in
+    None is an admissible value for either lower or upper, in
     which case it will be converted to anaximander's absolute time bounds,
     currently set at Jan. 1 1970, UTC and Jan. 1 2100, UTC.
+    pd.NaT is also an admissible input but will set the interval to an
+    empty instance.
     """
-    lower = attr.ib(nxtime.MIN, convert=nonehandler(nxtime.MIN)(
-        partial(pd.to_datetime, utc=True)))
-    upper = attr.ib(nxtime.MAX, convert=nonehandler(nxtime.MAX)(
-        partial(pd.to_datetime, utc=True)))
+
+    def __new__(cls, lower=None, upper=None):
+        lower = nonehandler(nxtime.MIN)(partial(pd.to_datetime,
+                                                utc=True))(lower)
+        upper = nonehandler(nxtime.MAX)(partial(pd.to_datetime,
+                                                utc=True))(upper)
+        if any(b is pd.NaT for b in (lower, upper)):
+            return EmptyTimeInterval()
+        obj = super().__new__(cls)
+        object.__setattr__(obj, 'lower', lower)
+        object.__setattr__(obj, 'upper', upper)
+        return obj
 
     def tz_convert(self, tzinfo):
         return type(self)(self.lower.tz_convert(tzinfo),
@@ -448,7 +482,11 @@ class TimeInterval(Interval, TimeRange):
 
 
 class EmptyTimeInterval(EmptyInterval, TimeInterval):
-    pass
+    lower = pd.NaT
+    upper = pd.NaT
+
+    def to_dict(self, **kwargs):
+        return {'lower': 'NaT', 'upper': 'NaT'}
 
 
 TimeRange.__empty__ = EmptyTimeInterval

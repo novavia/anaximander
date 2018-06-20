@@ -78,18 +78,21 @@ class DataLogsBase(DataObject, Sequence):
 
     @property
     def certification(self):
-        return self.metadata.get('certification', None)
+        return self.metadata.get('certification', pd.NaT)
 
     @property
     def consumption(self):
-        return self.metadata.get('consumption', None)
+        return self.metadata.get('consumption', pd.NaT)
 
     @property
     def tabulated(self):
         """Returns a normalized, unindexed dataframe."""
         if self.empty:
             return self._conform(self._data)
-        return self._data.reset_index()
+        df = self._data.reset_index()
+        if 'id' in df:
+            df['id'] = df['id'].astype('object')
+        return df
 
     @property
     def payload(self):
@@ -155,12 +158,23 @@ class DataLogsBase(DataObject, Sequence):
         replace self.schema -which may raise an error if mandatory columns
         are missing;
         * recasts columns to the dtype specified in the schema if necessary;
-        * reorders columns to match the schema if necessary.
+        * reorders columns to match the schema if necessary;
+        * Verifies that all records have an id that belongs to the id_range.
 
         The force flag will silently handle incorrect inputs, such as
         unreadable datetime, and treat them as missing values.
         """
         df = self._conform(data, flex=flex, force=force)
+        if isinstance(self.id_range, rge.Level):
+            id_range = [self.id_range.level]
+        else:
+            id_range = self.id_range
+        if 'id' in df:
+            df['id'] = pd.Categorical(df['id'], id_range)
+            if any(df['id'].isna()):
+                unknowns = df['id'][df['id'].isna()].unique()
+                msg = f"Unknown ids {unknowns} supplied to {self}."
+                raise ConformityError(msg)
         df.set_index(self._index_columns, drop=True, inplace=True)
         return df.sort_index()
 
@@ -322,6 +336,10 @@ class DataLogsBase(DataObject, Sequence):
         data = pd.DataFrame.from_records(rows)
         return cls(data, schema=schema, id_range=id_range, dt_range=dt_range,
                    cast=cast, validate=validate, **metadata)
+
+    def certify(self, datetime):
+        """Adds / update certification line."""
+        self.metadata['certification'] = pd.to_datetime(datetime, utc=True)
 
     def __repr__(self):
         return f"<{type(self).__name__} id_range:{str(self.id_range)} " + \
