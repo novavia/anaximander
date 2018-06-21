@@ -165,12 +165,8 @@ class DataLogsBase(DataObject, Sequence):
         unreadable datetime, and treat them as missing values.
         """
         df = self._conform(data, flex=flex, force=force)
-        if isinstance(self.id_range, rge.Level):
-            id_range = [self.id_range.level]
-        else:
-            id_range = self.id_range
         if 'id' in df:
-            df['id'] = pd.Categorical(df['id'], id_range)
+            df['id'] = pd.Categorical(df['id'], self.id_range.levels)
             if any(df['id'].isna()):
                 unknowns = df['id'][df['id'].isna()].unique()
                 msg = f"Unknown ids {unknowns} supplied to {self}."
@@ -197,7 +193,7 @@ class DataLogsBase(DataObject, Sequence):
     def empty(self):
         return self.data.empty
 
-    def _metaslice(self, id_slice=None, dt_slice=None):
+    def _metaslice(self, id_slice=None, dt_slice=None, xrecord=False):
         """Primitive for __getitem__, providing metadata."""
         if id_slice is None:
             id_range = self.id_range
@@ -206,6 +202,8 @@ class DataLogsBase(DataObject, Sequence):
             id_range &= self.id_range
         if dt_slice is None:
             dt_range = self.dt_range
+        elif xrecord:
+            dt_range = rge.time_range(dt_slice)
         else:
             dt_range = rge.time_range(dt_slice) & self.dt_range
         metadata = self.metadata.copy()
@@ -430,9 +428,11 @@ class DataLog(DataLogsBase, metaclass=LogType):
         return self.data.loc[key, :]
 
     def __getitem__(self, key):
+        xrecord = False  # flag for metadata slicing
         try:
             if isinstance(key, int):
                 key = self.index[key]
+                xrecord = True
             if isinstance(key, tuple):
                 id_slice, dt_slice = key
             elif isinstance(key, slice):
@@ -446,7 +446,7 @@ class DataLog(DataLogsBase, metaclass=LogType):
                     key = (slice(None), dt_slice)
             else:
                 id_slice, dt_slice = key, None
-            metadata = self._metaslice(id_slice, dt_slice)
+            metadata = self._metaslice(id_slice, dt_slice, xrecord=xrecord)
             id_range = metadata['id_range']
             dt_range = metadata['dt_range']
             data = self._dataslice(key, id_range, dt_range)
@@ -536,9 +536,11 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         return self.data.loc[key]
 
     def __getitem__(self, key):
+        xrecord = False  # flag for metadata slicing
         try:
             if isinstance(key, int):
                 key = self.index[key]
+                xrecord = True
             elif isinstance(key, slice):
                 if any(isinstance(a, int) for a in [key.start,
                                                     key.stop,
@@ -549,7 +551,7 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
                     else:
                         key = slice(ix[0], ix[-1])
             dt_slice = key
-            metadata = self._metaslice(dt_slice=dt_slice)
+            metadata = self._metaslice(dt_slice=dt_slice, xrecord=xrecord)
             dt_range = metadata['dt_range']
             data = self._dataslice(key, dt_range)
             return self._slice(data, metadata)

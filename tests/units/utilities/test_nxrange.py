@@ -132,6 +132,7 @@ class TestDiscreteRange(TestCase):
         level = rge.Level('item')
         assert repr(level) == "<Level 'item'>"
         assert level == 'item'
+        assert level.levels == ['item']
 
     def test_levels(self):
         levels = rge.Levels(['i0', 'i1', 'i2'])
@@ -139,6 +140,7 @@ class TestDiscreteRange(TestCase):
         assert 'i0' in levels
         levels_repr = repr(levels._levels)
         assert repr(levels) == "<Levels {0}>".format(levels_repr)
+        assert levels.levels == ['i0', 'i1', 'i2']
 
     def test_sql(self):
         levels = rge.Levels(['i0', 'i1'])

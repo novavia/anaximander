@@ -15,6 +15,7 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports and constants
 # =============================================================================
 
+import abc
 from collections import defaultdict
 from itertools import chain
 import json
@@ -47,19 +48,6 @@ def dtget(datetime, default=pd.NaT):
 
 class RedisInsertException(WriteException):
     pass
-
-
-class RedisStore(Store):
-
-    def __interface__(self, host, port, password, archive=None):
-        """Archive is an optional archive store."""
-        self.archive = archive
-        return StrictRedis(host=host, port=port, password=password)
-
-    def __repr__(self):
-        conn_kwargs = self.io.connection_pool.connection_kwargs
-        h, p, db = conn_kwargs['host'], conn_kwargs['port'], conn_kwargs['db']
-        return f'<RedisStore host:{h} port:{p} db:{db}>'
 
 
 class RedisTract(Tract):
@@ -291,10 +279,7 @@ class RedisDataQuery(Query):
         Note that queries on sequential keys are closed on the left side
         and open on the right side.
         """
-        if isinstance(self.id_range, rge.Level):
-            id_range = [self.id_range.level]
-        else:
-            id_range = self.id_range
+        id_range = self.id_range.levels
         lower, upper = (t.timestamp() for t in self.dt_range)
         limit = int(fun.get(limit, 1e5))
         start, num = 0, limit
@@ -351,10 +336,7 @@ class BufferQuery(RedisDataQuery):
     def _metadata(self):
         """Fetches metadata for self."""
         meta_pipe = self.tract.client.pipeline()
-        if isinstance(self.id_range, rge.Level):
-            id_range = [self.id_range.level]
-        else:
-            id_range = self.id_range
+        id_range = self.id_range.levels
         meta_keys = ['lower', 'upper', 'certification']
         for id in id_range:
             meta_pipe.hmget(self.tract.meta_storage_key(id), meta_keys)
@@ -449,6 +431,45 @@ class RedisBuffer(RedisTract):
         return {k.decode(): pd.to_datetime(v.decode(), utc=True)
                 for k, v in result.items()}
 
+    def __query__(self, *columns, **kwargs):
+        return BufferQuery(self, *columns, **kwargs)
+
+    @abc.abstractmethod
+    def write(self, sequence, old_certificate=None):
+        pass
+
+
+class RedisApplicationBuffer(RedisBuffer):
+
+    def write(self, sequence, old_certificate=None):
+        """Writes the buffer by supplying a sequence.
+
+        Overwrites data with sequence.
+        Finally the metadata gets updated.
+        """
+        if not isinstance(sequence, dtl.DataSequence):
+            msg = f"Buffer write requires a DataSequence instance, not a " + \
+                  f"{type(sequence)} instance."
+            raise TypeError(msg)
+        if not isinstance(sequence.schema, type(self.schema)):
+            msg = f"Incorrect data schema supplied to {self}."
+            raise ValueError(msg)
+        id = sequence.id
+        pipe = self.client.pipeline()
+        pipe.delete(self.data_tract.storage_key(id))
+        certification = dtget(sequence.certification, nxtime.MIN)
+        sequence = sequence[certification:]
+        self.data_tract.__append__(pipe, sequence)
+        lower, upper = sequence.dt_range
+        metadata = {'lower': str(lower),
+                    'upper': str(upper),
+                    'certification': str(certification)}
+        pipe.hmset(self.meta_storage_key(id), metadata)
+        pipe.execute()
+
+
+class RedisProcessBuffer(RedisBuffer):
+
     def update_subscriber(self, subscriber, id, datetime):
         """Updates metadata for subscriber.
 
@@ -459,9 +480,6 @@ class RedisBuffer(RedisTract):
         """
         return self.client.hset(self.meta_storage_key(id),
                                 subscriber.name, str(datetime))
-
-    def __query__(self, *columns, **kwargs):
-        return BufferQuery(self, *columns, **kwargs)
 
     def archive(self, sequence, old_certificate=None):
         """Archives sequence against old certificate."""
@@ -478,7 +496,7 @@ class RedisBuffer(RedisTract):
         archive_bound = sequence[old_certificate:sequence.certification]
         try:
             first = archive_bound[0]
-        except KeyError:
+        except IndexError:
             pass
         else:
             if first.datetime == old_certificate:
@@ -514,3 +532,36 @@ class RedisBuffer(RedisTract):
                     'certification': str(certification)}
         pipe.hmset(self.meta_storage_key(id), metadata)
         pipe.execute()
+
+
+class RedisStore(Store):
+
+    def __interface__(self, host, port, password):
+        return StrictRedis(host=host, port=port, password=password)
+
+    def __repr__(self):
+        conn_kwargs = self.io.connection_pool.connection_kwargs
+        h, p, db = conn_kwargs['host'], conn_kwargs['port'], conn_kwargs['db']
+        return f'<{type(self).__name__} host:{h} port:{p} db:{db}>'
+
+
+class RedisArchive(RedisStore):
+    __tract__ = RedisDataTract
+
+
+class RedisApplicationStore(RedisStore):
+    __tract__ = RedisApplicationBuffer
+
+    def __interface__(self, host, port, password, archive=None):
+        """Archive is an optional archive store."""
+        self.archive = archive
+        return StrictRedis(host=host, port=port, password=password)
+
+
+class RedisProcessStore(RedisStore):
+    __tract__ = RedisProcessBuffer
+
+    def __interface__(self, host, port, password, archive=None):
+        """Archive is an optional archive store."""
+        self.archive = archive
+        return StrictRedis(host=host, port=port, password=password)

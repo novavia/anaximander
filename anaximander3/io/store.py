@@ -56,7 +56,7 @@ class WriteException(StorageException):
 # =============================================================================
 
 
-@attr.s
+@attr.s(frozen=True)
 class Title:
     """A wrapper for a name / schema association.
 
@@ -75,6 +75,7 @@ class Store(Mapping):
 
     The Store provides a mapping from Title name to Tract.
     """
+    __tract__ = None  # The tract type associated with the Store class
 
     def __init__(self, **kwargs):
         self._io = self.__interface__(**kwargs)
@@ -90,6 +91,8 @@ class Store(Mapping):
         return self._io
 
     def __getitem__(self, key):
+        if isinstance(key, Title):
+            key = key.name
         return self._tracts.__getitem__(key)
 
     def __iter__(self):
@@ -97,6 +100,10 @@ class Store(Mapping):
 
     def __len__(self):
         return self._tracts.__len__()
+
+    def tract(self, title):
+        """Instantiates a tract for self."""
+        return self.__tract__(self, title)
 
 
 class Tract(StorageResource):

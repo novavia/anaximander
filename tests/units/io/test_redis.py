@@ -35,7 +35,7 @@ LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
 STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
 STATES = pd.read_csv(STATES_PATH)
 
-FEATURE_IDS = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
+FEATURE_IDS = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
@@ -73,6 +73,7 @@ FULL = Title('full', RdSchema)
 REFUSE = Title('refuse', RdSchema)
 STATE = Title('state', StateSchema)
 BUFFER = Title('buffer', RdSchema)
+STATEBUF = Title('statebuf', StateSchema)
 
 
 @pytest.fixture(scope="module")
@@ -104,31 +105,42 @@ def cleanup(store):
 
 
 @pytest.fixture(scope="session")
-def store():
+def archive():
     """Creates a redis store for testing purposes."""
-    store = nxr.RedisStore(host=HOST, port=PORT, password=PWD)
+    store = nxr.RedisArchive(host=HOST, port=PORT, password=PWD)
+    store.tract(BUFFER)
+    store.tract(STATEBUF)
+    yield store
+    cleanup(store)
+
+
+@pytest.fixture(scope="session")
+def procstore(archive):
+    """Creates a redis application store for testing purposes."""
+    store = nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
+                                  archive=archive)
     yield store
     cleanup(store)
 
 
 @pytest.fixture(scope="module")
-def ghost_tract(store):
+def ghost_tract(archive):
     """Yields uncreated tract store."""
-    return nxr.RedisDataTract(store, GHOST)
+    return archive.tract(GHOST)
 
 
 @pytest.fixture(scope="module")
-def empty_tract(store):
+def empty_tract(archive):
     """Yields an empty tract to test insertions and appends."""
-    tract = nxr.RedisDataTract(store, EMPTY)
+    tract = archive.tract(EMPTY)
     tract.create(warn=False, overwrite=True, force=True)
     return tract
 
 
 @pytest.fixture(scope="module")
-def full_tract(store, featurelog):
+def full_tract(archive, featurelog):
     """Yields a populated tract to test queries."""
-    tract = nxr.RedisDataTract(store, FULL)
+    tract = archive.tract(FULL)
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(featurelog)
@@ -136,9 +148,9 @@ def full_tract(store, featurelog):
 
 
 @pytest.fixture(scope="module")
-def refuse_tract(store, featurelog):
+def refuse_tract(archive, featurelog):
     """Yields a populated tract to test deletes."""
-    tract = nxr.RedisDataTract(store, REFUSE)
+    tract = archive.tract(REFUSE)
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(featurelog)
@@ -146,9 +158,9 @@ def refuse_tract(store, featurelog):
 
 
 @pytest.fixture(scope="module")
-def state_tract(store, statelog):
+def state_tract(archive, statelog):
     """Yields a populated tract to test xindex queries."""
-    tract = nxr.RedisDataTract(store, STATE)
+    tract = archive.tract(STATE)
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(statelog)
@@ -156,9 +168,17 @@ def state_tract(store, statelog):
 
 
 @pytest.fixture(scope="module")
-def buffer_tract(store):
+def buffer_tract(procstore):
     """Yields an empty buffer."""
-    tract = nxr.RedisBuffer(store, BUFFER)
+    tract = procstore.tract(BUFFER)
+    tract.create(warn=False, overwrite=True, force=True)
+    return tract
+
+
+@pytest.fixture(scope="module")
+def statebuf_tract(procstore):
+    """Yields an empty buffer."""
+    tract = procstore.tract(STATEBUF)
     tract.create(warn=False, overwrite=True, force=True)
     return tract
 
@@ -338,7 +358,7 @@ def test_metadata(buffer_tract, featurelog):
                                                        utc=True)
 
 
-def test_sequence(buffer_tract, featurelog):
+def test_sequence(buffer_tract, archive, featurelog):
     input_sequence = featurelog['68:9E:19:07:DE:C3']
     buffer_tract.write(input_sequence)
     subscriber = MagicMock()
@@ -359,6 +379,8 @@ def test_sequence(buffer_tract, featurelog):
     buffer_tract.write(sequence)
     sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
     assert len(sequence) == 1
+    archived = archive[BUFFER].query(id='68:9E:19:07:DE:C3').data()
+    assert len(archived) == 3
 
 
 def test_buffer_query(buffer_tract, featurelog):
@@ -366,6 +388,84 @@ def test_buffer_query(buffer_tract, featurelog):
     buffer_tract.write(input_sequence)
     query = buffer_tract.query(id=DEVICES)
     assert query.schema == RdSchema()
+    assert len(list(query.fetch())) == len(input_sequence)
+    assert len(list(query.fetch(limit=1))) == 1
+    query_data = query.data()
+    assert len(query_data) == 2
+    assert query_data[0].empty
+    assert query_data[1].data.equals(input_sequence.data)
+
+
+def test_write_xbuffer(statebuf_tract, statelog):
+    with pytest.raises(TypeError):
+        statebuf_tract.write(statelog)
+    input_sequence = statelog['88:4A:EA:69:35:BD']
+    statebuf_tract.write(input_sequence)
+    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    assert sequence.data.equals(input_sequence.data)
+    assert sequence.dt_range == input_sequence.dt_range
+    assert sequence.certification == nxtime.MIN
+    assert sequence.consumption == nxtime.MAX
+
+
+def test_xmetadata(statebuf_tract, statelog):
+    input_sequence = statelog['88:4A:EA:69:35:BD']
+    statebuf_tract.write(input_sequence)
+    metadata = statebuf_tract.metadata('88:4A:EA:69:35:BD')
+    assert set(metadata.keys()) == {'lower', 'upper', 'certification'}
+    assert metadata['lower'] == input_sequence.dt_range.lower
+    assert metadata['upper'] == input_sequence.dt_range.upper
+    assert metadata['certification'] == nxtime.MIN
+    subscriber = MagicMock()
+    name_property = PropertyMock(return_value='subscriber')
+    type(subscriber).name = name_property
+    statebuf_tract.update_subscriber(subscriber,
+                                     '88:4A:EA:69:35:BD',
+                                     '2018-4-15 00:16:30')
+    metadata = statebuf_tract.metadata('88:4A:EA:69:35:BD')
+    assert set(metadata.keys()) == {'lower', 'upper', 'certification',
+                                    'subscriber'}
+    assert metadata['certification'] == nxtime.MIN
+    assert metadata['subscriber'] == pd.to_datetime('2018-4-15 00:16:30',
+                                                    utc=True)
+    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    sequence.certify('2018-4-15 00:16:45')
+    statebuf_tract.write(sequence)
+    metadata = statebuf_tract.metadata('88:4A:EA:69:35:BD')
+    assert metadata['certification'] == pd.to_datetime('2018-4-15 00:16:45',
+                                                       utc=True)
+
+
+def test_xsequence(statebuf_tract, archive, statelog):
+    input_sequence = statelog['88:4A:EA:69:35:BD']
+    statebuf_tract.write(input_sequence)
+    subscriber = MagicMock()
+    name_property = PropertyMock(return_value='subscriber')
+    type(subscriber).name = name_property
+    statebuf_tract.update_subscriber(subscriber,
+                                     '88:4A:EA:69:35:BD',
+                                     pd.NaT)
+    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    assert sequence.dt_range == input_sequence.dt_range
+    assert sequence.certification == nxtime.MIN
+    assert sequence.consumption == nxtime.MAX
+    statebuf_tract.update_subscriber(subscriber,
+                                     '88:4A:EA:69:35:BD',
+                                     '2018-4-15 00:16:30')
+    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    sequence.certify('2018-4-15 00:16:45')
+    statebuf_tract.write(sequence)
+    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    assert len(sequence) == 5
+    archived = archive[STATEBUF].query(id='88:4A:EA:69:35:BD').data()
+    assert len(archived) == 8
+
+
+def test_xbuffer_query(statebuf_tract, statelog):
+    input_sequence = statelog['88:4A:EA:69:35:BD']
+    statebuf_tract.write(input_sequence)
+    query = statebuf_tract.query(id=IDS)
+    assert query.schema == StateSchema()
     assert len(list(query.fetch())) == len(input_sequence)
     assert len(list(query.fetch(limit=1))) == 1
     query_data = query.data()

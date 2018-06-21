@@ -39,7 +39,7 @@ LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
 STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
 STATES = pd.read_csv(STATES_PATH)
 
-FEATURE_IDS = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
+FEATURE_IDS = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
@@ -129,13 +129,13 @@ def store():
 @pytest.fixture(scope="module")
 def ghost_tract(store):
     """Yields uncreated tract instance."""
-    return gbt.BigDataTract(store, GHOST)
+    return gbt.BigTableTract(store, GHOST)
 
 
 @pytest.fixture(scope="module")
 def empty_tract(store):
     """Yields an empty tract to test insertions and appends."""
-    tract = gbt.BigDataTract(store, EMPTY)
+    tract = gbt.BigTableTract(store, EMPTY)
     tract.create(warn=False, overwrite=True, force=True)
     return tract
 
@@ -143,7 +143,7 @@ def empty_tract(store):
 @pytest.fixture(scope="module")
 def full_tract(store, featurelog):
     """Yields a populated tract to test queries."""
-    tract = gbt.BigDataTract(store, FULL)
+    tract = gbt.BigTableTract(store, FULL)
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(featurelog)
@@ -153,7 +153,7 @@ def full_tract(store, featurelog):
 @pytest.fixture(scope="module")
 def refuse_tract(store, featurelog):
     """Yields a populated tract to test deletes."""
-    tract = gbt.BigDataTract(store, REFUSE)
+    tract = gbt.BigTableTract(store, REFUSE)
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(featurelog)
@@ -163,7 +163,7 @@ def refuse_tract(store, featurelog):
 @pytest.fixture(scope="module")
 def state_tract(store, statelog):
     """Yields a populated tract to test xindex queries."""
-    tract = gbt.BigDataTract(store, STATE)
+    tract = gbt.BigTableTract(store, STATE)
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(statelog)

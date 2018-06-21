@@ -22,6 +22,7 @@ import attr
 from google.cloud.bigtable.row_filters import ValueRangeFilter, \
     ColumnQualifierRegexFilter, RowFilterChain, BlockAllFilter
 import numpy as np
+from orderedset import OrderedSet
 import pandas as pd
 
 from .jsonmixin import jsonio
@@ -67,7 +68,10 @@ class ContinuousRange(Range):
 
 class CategoricalRange(Range):
     """Abstract base class for Ranges in discrete data dimensions."""
-    pass
+
+    @abc.abstractproperty
+    def levels(self):
+        return []
 
 
 class MultiRange(Range):
@@ -289,13 +293,17 @@ class Levels(CategoricalRange, Set):
     def __init__(self, levels=None):
         if levels is None:
             levels = []
-        self._levels = set(levels)
+        self._levels = OrderedSet(levels)
+
+    @property
+    def levels(self):
+        return list(self._levels)
 
     def __contains__(self, item):
         return self._levels.__contains__(item)
 
     def __iter__(self):
-        return sorted(self._levels).__iter__()
+        return self._levels.__iter__()
 
     def __len__(self):
         return self._levels.__len__()
@@ -332,7 +340,7 @@ class Levels(CategoricalRange, Set):
 
     def __eq__(self, other):
         try:
-            return self._levels == set(other)
+            return self._levels == OrderedSet(other)
         except TypeError:
             return False
 
@@ -359,6 +367,10 @@ class Levels(CategoricalRange, Set):
 class Level(CategoricalRange):
     """Holds a single level."""
     level = attr.ib()
+
+    @property
+    def levels(self):
+        return [self.level]
 
     def sql(self, attr):
         """Returns a sql statement fragment making attr equals to self."""

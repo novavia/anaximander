@@ -48,7 +48,7 @@ SESSIONS = pd.read_csv(SESSIONS_PATH)
 PERIODS = pd.read_csv(PERIODS_PATH)
 
 
-FEATURE_IDS = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
+FEATURE_IDS = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
 
 IDS = ['88:4A:EA:69:35:BD', '88:4A:EA:69:38:1A']
@@ -349,6 +349,7 @@ def test_states():
     log = dtl.DataLog(STATES, schema=StateSchema, id_range=IDS,
                       dt_range=STATES_TME)
     assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    assert all(isinstance(r, rec.Record) for r in log)
     states = STATES.copy()
     states.loc[0, 'label'] = 'invalid_label'
     log = dtl.DataLog(states, schema=StateSchema, id_range=IDS,
@@ -361,6 +362,7 @@ def test_states():
     logslice = log[t0:t1]
     assert isinstance(logslice, dtl.DataLog)
     assert len(logslice) == 7
+    assert all(isinstance(r, rec.Record) for r in logslice)
     logarray = log[slice(None), t0]
     assert isinstance(logarray, dtl.DataArray)
     assert len(logarray) == 2

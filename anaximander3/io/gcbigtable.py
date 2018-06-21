@@ -26,12 +26,12 @@ from google.cloud.bigtable.instance import Instance
 from google.cloud.bigtable.row_filters import ColumnQualifierRegexFilter, \
     RowFilterUnion
 
-from ..utilities import xprops, nxrange as rge, functions as fun, nxtime
-from ..data.nxschema import Schema, MultiSchema, TimeSeriesIndex
+from ..utilities import xprops, functions as fun, nxtime
+from ..data.nxschema import Schema, MultiSchema
 from .store import Store, DataTract, Query, QueryException, \
     WriteException, StorageAdminException, EmptyQueryException
 
-__all__ = ['BigTableStore', 'BigDataTract', 'BigTableQuery',
+__all__ = ['BigTableStore', 'BigTableTract', 'BigTableQuery',
            'BigTableQueryException', 'BigTableInsertException', 'Client',
            'Instance']
 
@@ -184,30 +184,7 @@ class BigTableInsertException(WriteException):
     pass
 
 
-class BigTableStore(Store):
-
-    def __interface__(self, instance_id=None, project_id=None, admin=False):
-        self.client = Client(project=project_id, admin=admin)
-        return self.client.instance(instance_id)
-
-    def create(self, location, display_name=None, serve_nodes=None):
-        if self.io.instance_id in [i.instance_id
-                                   for i in self.client.list_instances()[0]]:
-            msg = f"Instance {self.io.instance_id} already exists."
-            raise BigTableAdminException(msg)
-        self.io._cluster_location_id = location
-        if display_name:
-            self.io.display_name = display_name
-        if serve_nodes:
-            self._cluster_serve_nodes = serve_nodes
-        self.io.create()
-
-    def __repr__(self):
-        p, i = self.client.project, self.io.instance_id
-        return f'<BigTableStore project:{p} instance:{i}>'
-
-
-class BigDataTract(DataTract):
+class BigTableTract(DataTract):
 
     def __init__(self, store, title, retention=None, register=True):
         """Data retention time, in days, defaulting to None (indefinite)."""
@@ -382,10 +359,7 @@ class BigTableQuery(Query):
 
     def rowkeypairs(self):
         """A generator of rowkey pairs to slice the tract."""
-        if isinstance(self.id_range, rge.Level):
-            id_range = [self.id_range.level]
-        else:
-            id_range = self.id_range
+        id_range = self.id_range.levels
         lower, upper = self.dt_range
         bottom = nxtime.MIN
         for id_ in id_range:
@@ -457,3 +431,27 @@ class BigTableQuery(Query):
                 nx_key, nx_row = next(iter(next_.rows.items()))
                 if not nx_key == key:
                     yield self.read_row(nx_row)
+
+
+class BigTableStore(Store):
+    __tract__ = BigTableTract
+
+    def __interface__(self, instance_id=None, project_id=None, admin=False):
+        self.client = Client(project=project_id, admin=admin)
+        return self.client.instance(instance_id)
+
+    def create(self, location, display_name=None, serve_nodes=None):
+        if self.io.instance_id in [i.instance_id
+                                   for i in self.client.list_instances()[0]]:
+            msg = f"Instance {self.io.instance_id} already exists."
+            raise BigTableAdminException(msg)
+        self.io._cluster_location_id = location
+        if display_name:
+            self.io.display_name = display_name
+        if serve_nodes:
+            self._cluster_serve_nodes = serve_nodes
+        self.io.create()
+
+    def __repr__(self):
+        p, i = self.client.project, self.io.instance_id
+        return f'<BigTableStore project:{p} instance:{i}>'
