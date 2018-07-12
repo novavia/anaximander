@@ -27,7 +27,7 @@ from ..utilities import nxtime, nxrange as rge, functions as fun, xprops
 from ..utilities.jsonmixin import serialize
 from ..data import records as rcd, datalogs as dtl
 from .store import Store, Title, Tract, DataTract, Query, QueryException, \
-    WriteException
+    ReadException, WriteException
 
 __all__ = ['RedisStore', 'RedisTract', 'RedisDataQuery', 'RedisQueryException',
            'RedisInsertException']
@@ -372,6 +372,16 @@ class BufferQuery(RedisDataQuery):
             return super_data
 
 
+class NotInStoreException(ReadException):
+    """Exception raised on buffers if id is not found in store."""
+    pass
+
+
+class NoArchive(WriteException):
+    """Exception raised when attempting to access non-existing archive."""
+    pass
+
+
 class RedisBuffer(RedisTract):
     """A specialized storage structure that combines data & metadata.
 
@@ -388,6 +398,41 @@ class RedisBuffer(RedisTract):
         data_title = Title(title.name + '_data', title.schema)
         self.data_tract = RedisDataTract(store, data_title, register=False)
 
+    def setup(self, id):
+        """Sets up storage for supplied id."""
+        dt_range = self._archive_retrieve_range(id)
+        try:
+            sequence = self._load_from_archive(id, dt_range)
+        except NoArchive:
+        # XXX: specify default empty sequence here
+            sequence = None
+        self.write(sequence)
+
+    def _archive_retrieve_range(self, id):
+        """The range of the archive query."""
+        return None
+
+    def _load_from_archive(self, id, dt_range):
+        archive_store = self.store.archive
+        if archive_store is None:
+            msg = "Cannot retrieve from non-existing archive."
+            raise NoArchive(msg)
+        else:
+            try:
+                archive_tract = archive_store[self.title]
+            except KeyError:
+                msg = f"Cannot retrieve data from {archive_store} " + \
+                      f"because it doesn't feature a table for {self.title}."
+                raise NoArchive(msg)
+        return archive_tract.query(id=id, datetime=dt_range).sequence()
+
+    def teardown(self, id):
+        """Discards storage for supplied id."""
+        pipe = self.client.pipeline()
+        pipe.delete(self.data_tract.storage_key(id))
+        pipe.delete(self.meta_storage_key(id))
+        pipe.execute()
+
     def __get_data__(self, pipe, id, lower=None):
         dt_range = rge.time_range((lower, None))
         lower, upper = (t.timestamp() for t in dt_range)
@@ -397,9 +442,12 @@ class RedisBuffer(RedisTract):
     def sequence(self, id, lower=None):
         """Fetches data for id, optionally above lower datetime."""
         pipe = self.client.pipeline()
+        pipe.exists(self.meta_storage_key(id))
         self.__get_metadata__(pipe, id)
         self.__get_data__(pipe, id, lower=lower)
-        meta_, data_ = pipe.execute()
+        id_exists, meta_, data_ = pipe.execute()
+        if not id_exists:
+            raise NotInStoreException()
         metadata = {k.decode(): pd.to_datetime(v.decode(), utc=True)
                     for k, v in meta_.items()}
         dt_range = rge.time_range(metadata.pop('lower', pd.NaT),
@@ -426,10 +474,13 @@ class RedisBuffer(RedisTract):
     def metadata(self, id):
         """Queries and returns the metadata for supplied id."""
         pipe = self.client.pipeline()
+        pipe.exists(self.meta_storage_key(id))
         self.__get_metadata__(pipe, id)
-        result = pipe.execute()[0]
+        id_exists, meta = pipe.execute()
+        if not id_exists:
+            raise NotInStoreException()
         return {k.decode(): pd.to_datetime(v.decode(), utc=True)
-                for k, v in result.items()}
+                for k, v in meta.items()}
 
     def __query__(self, *columns, **kwargs):
         return BufferQuery(self, *columns, **kwargs)
@@ -440,6 +491,10 @@ class RedisBuffer(RedisTract):
 
 
 class RedisApplicationBuffer(RedisBuffer):
+
+    def __init__(self, store, title, depth, register=True):
+        super().__init__(store, title, register)
+        self.depth = pd.Timedelta(depth)
 
     def write(self, sequence, old_certificate=None):
         """Writes the buffer by supplying a sequence.
@@ -485,14 +540,16 @@ class RedisProcessBuffer(RedisBuffer):
         """Archives sequence against old certificate."""
         archive_store = self.store.archive
         if archive_store is None:
-            return
+            msg = f"Cannot archive {sequence}  " + \
+                  f"because not archive store is setup."
+            raise NoArchive(msg)
         else:
             try:
                 archive_tract = archive_store[self.title]
             except KeyError:
                 msg = f"Cannot archive {sequence} into {archive_store} " + \
                       f"because it doesn't feature a table for {self.title}."
-                raise WriteException(msg)
+                raise NoArchive(msg)
         archive_bound = sequence[old_certificate:sequence.certification]
         try:
             first = archive_bound[0]
@@ -520,7 +577,10 @@ class RedisProcessBuffer(RedisBuffer):
         id = sequence.id
         pipe = self.client.pipeline()
         pipe.delete(self.data_tract.storage_key(id))
-        self.archive(sequence, old_certificate)
+        try:
+            self.archive(sequence, old_certificate)
+        except NoArchive:
+            pass
         certification = dtget(sequence.certification, nxtime.MIN)
         consumption = dtget(sequence.consumption, nxtime.MAX)
         flushline = min((certification, consumption))
