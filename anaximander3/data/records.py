@@ -59,6 +59,8 @@ class RecordBase(DataObject):
         fields = OrderedDict()
         missing_fields = []
         mistyped_fields = OrderedDict()
+        if data is None:
+            data = []
         if isinstance(data, Sequence):
             data = dict(zip(self.schema, data))
         for name, col in self.columns.items():
@@ -203,6 +205,19 @@ class EventRecord(Record):
 
 class StateRecord(Record):
     __schema__ = sch.StateLogsSchema
+
+    def nulled_copy(self, datetime=None):
+        """Return a record with the label set to None.
+
+        if datetime is None, the copy has the same datetime as the original,
+        otherwise it is modified accordingly.
+        """
+        dict_ = self.to_dict()
+        dict_['data']['label'] = None
+        if datetime is not None:
+            dt = pd.to_datetime(datetime, utc=True)
+            dict_['index'] = (self.id, dt)
+        return self.from_dict(dict_)
 
     def __repr__(self):
         return f"<{type(self).__name__} id:{self.id} " + \

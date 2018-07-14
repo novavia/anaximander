@@ -14,6 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import os.path
 from unittest.mock import MagicMock, PropertyMock
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -172,6 +173,8 @@ def buffer_tract(procstore):
     """Yields an empty buffer."""
     tract = procstore.tract(BUFFER)
     tract.create(warn=False, overwrite=True, force=True)
+    for id in FEATURE_IDS:
+        tract.setup(id)
     return tract
 
 
@@ -180,6 +183,8 @@ def statebuf_tract(procstore):
     """Yields an empty buffer."""
     tract = procstore.tract(STATEBUF)
     tract.create(warn=False, overwrite=True, force=True)
+    for id in IDS:
+        tract.setup(id)
     return tract
 
 # =============================================================================
@@ -219,6 +224,14 @@ def test_insert(empty_tract, featurelog):
     record = featurelog[0]
     empty_tract.insert(record)
     assert not empty_tract.empty
+
+
+def test_insert_null_state(state_tract, statelog):
+    record = statelog[0].nulled_copy()
+    state_tract.update(record)
+    assert state_tract.record(record.idx) == record
+    log = state_tract.query(id=record.id).data()
+    assert log.data['label'][0] is np.nan
 
 
 def test_update(empty_tract, featurelog):
@@ -318,6 +331,13 @@ def test_xindex(state_tract):
     assert len(log) == 4
 
 
+def test_buffer_setup_teardown(buffer_tract, featurelog):
+    assert buffer_tract.metadata('68:9E:19:07:DE:C3')['lower'] is pd.NaT
+    buffer_tract.teardown('68:9E:19:07:DE:C3')
+    with pytest.raises(nxr.NotInStoreException):
+        buffer_tract.metadata('68:9E:19:07:DE:C3')
+
+
 def test_write_buffer(buffer_tract, featurelog):
     with pytest.raises(TypeError):
         buffer_tract.write(featurelog)
@@ -326,8 +346,8 @@ def test_write_buffer(buffer_tract, featurelog):
     sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
     assert sequence.data.equals(input_sequence.data)
     assert sequence.dt_range == input_sequence.dt_range
-    assert sequence.certification == nxtime.MIN
-    assert sequence.consumption == nxtime.MAX
+    assert sequence.certification is pd.NaT
+    assert sequence.consumption is pd.NaT
 
 
 def test_metadata(buffer_tract, featurelog):
@@ -337,7 +357,7 @@ def test_metadata(buffer_tract, featurelog):
     assert set(metadata.keys()) == {'lower', 'upper', 'certification'}
     assert metadata['lower'] == input_sequence.dt_range.lower
     assert metadata['upper'] == input_sequence.dt_range.upper
-    assert metadata['certification'] == nxtime.MIN
+    assert metadata['certification'] is pd.NaT
     subscriber = MagicMock()
     name_property = PropertyMock(return_value='subscriber')
     type(subscriber).name = name_property
@@ -347,7 +367,7 @@ def test_metadata(buffer_tract, featurelog):
     metadata = buffer_tract.metadata('68:9E:19:07:DE:C3')
     assert set(metadata.keys()) == {'lower', 'upper', 'certification',
                                     'subscriber'}
-    assert metadata['certification'] == nxtime.MIN
+    assert metadata['certification'] is pd.NaT
     assert metadata['subscriber'] == pd.to_datetime('2016-9-14 10:01',
                                                     utc=True)
     sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
@@ -369,8 +389,8 @@ def test_sequence(buffer_tract, archive, featurelog):
                                    pd.NaT)
     sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
     assert sequence.dt_range == input_sequence.dt_range
-    assert sequence.certification == nxtime.MIN
-    assert sequence.consumption == nxtime.MAX
+    assert sequence.certification is pd.NaT
+    assert sequence.consumption is pd.NaT
     buffer_tract.update_subscriber(subscriber,
                                    '68:9E:19:07:DE:C3',
                                    '2016-9-14 10:01')
@@ -404,8 +424,8 @@ def test_write_xbuffer(statebuf_tract, statelog):
     sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
     assert sequence.data.equals(input_sequence.data)
     assert sequence.dt_range == input_sequence.dt_range
-    assert sequence.certification == nxtime.MIN
-    assert sequence.consumption == nxtime.MAX
+    assert sequence.certification is pd.NaT
+    assert sequence.consumption is pd.NaT
 
 
 def test_xmetadata(statebuf_tract, statelog):
@@ -415,7 +435,7 @@ def test_xmetadata(statebuf_tract, statelog):
     assert set(metadata.keys()) == {'lower', 'upper', 'certification'}
     assert metadata['lower'] == input_sequence.dt_range.lower
     assert metadata['upper'] == input_sequence.dt_range.upper
-    assert metadata['certification'] == nxtime.MIN
+    assert metadata['certification'] is pd.NaT
     subscriber = MagicMock()
     name_property = PropertyMock(return_value='subscriber')
     type(subscriber).name = name_property
@@ -425,7 +445,7 @@ def test_xmetadata(statebuf_tract, statelog):
     metadata = statebuf_tract.metadata('88:4A:EA:69:35:BD')
     assert set(metadata.keys()) == {'lower', 'upper', 'certification',
                                     'subscriber'}
-    assert metadata['certification'] == nxtime.MIN
+    assert metadata['certification'] is pd.NaT
     assert metadata['subscriber'] == pd.to_datetime('2018-4-15 00:16:30',
                                                     utc=True)
     sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
@@ -447,8 +467,8 @@ def test_xsequence(statebuf_tract, archive, statelog):
                                      pd.NaT)
     sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
     assert sequence.dt_range == input_sequence.dt_range
-    assert sequence.certification == nxtime.MIN
-    assert sequence.consumption == nxtime.MAX
+    assert sequence.certification is pd.NaT
+    assert sequence.consumption is pd.NaT
     statebuf_tract.update_subscriber(subscriber,
                                      '88:4A:EA:69:35:BD',
                                      '2018-4-15 00:16:30')
@@ -459,6 +479,11 @@ def test_xsequence(statebuf_tract, archive, statelog):
     assert len(sequence) == 5
     archived = archive[STATEBUF].query(id='88:4A:EA:69:35:BD').data()
     assert len(archived) == 8
+    statebuf_tract.teardown('88:4A:EA:69:35:BD')
+    archived = archive[STATEBUF].query(id='88:4A:EA:69:35:BD').data()
+    record = archived[-1]
+    assert record.datetime == sequence.certification
+    assert record.label is None
 
 
 def test_xbuffer_query(statebuf_tract, statelog):

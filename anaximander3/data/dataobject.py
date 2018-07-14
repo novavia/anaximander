@@ -56,16 +56,18 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
     """Base class for data objects."""
     __schema__ = None  # placeholder for specialized type parameter
 
-    def __new__(cls, data, *, schema=None, cast=True, flex=True,
+    def __new__(cls, data=None, *, schema=None, cast=True, flex=True,
                 validate=False, **metadata):
         if schema is not None:
             try:
                 type_ = cls[schema]
             except KeyError:
                 type_ = cls
+        else:
+            type_ = cls
         return super().__new__(type_)
 
-    def __init__(self, data, *, schema=None, cast=True, flex=True,
+    def __init__(self, data=None, *, schema=None, cast=True, flex=True,
                  validate=False, **metadata):
         if schema is not None:
             if isinstance(schema, type):
@@ -80,7 +82,7 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
             msg = f"Improper schema supplied to {type(self).__name__}. " + \
                   f"It must be of type {self.__schema__.__name__}"
             raise ConformityError(msg)
-        self.metadata = metadata
+        self._metadata = metadata
         if cast:
             self._data = self.cast(data, flex=flex)
         else:
@@ -94,6 +96,10 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
     @property
     def data(self):
         return self._data.copy()
+
+    @property
+    def metadata(self):
+        return self._metadata.copy()
 
     @property
     def columns(self):

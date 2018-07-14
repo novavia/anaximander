@@ -84,8 +84,8 @@ class TestTimeInterval(TestCase):
         assert i0 & i2 == rge.EmptyTimeInterval()
         assert i0 & t0 == t0
         assert t0 & i0 == t0
-        assert i1 & t0 == rge.EmptyTimeInterval()
-        assert t0 & i1 == rge.EmptyTimeInterval()
+        assert i1 & t0 is None
+        assert t0 & i1 is None
 
     def test_union(self):
         l0 = '2018-4-23 15:40'

@@ -25,7 +25,7 @@ from redis import StrictRedis
 
 from ..utilities import nxtime, nxrange as rge, functions as fun, xprops
 from ..utilities.jsonmixin import serialize
-from ..data import records as rcd, datalogs as dtl
+from ..data import records as rcd, datalogs as dtl, nxschema as sch
 from .store import Store, Title, Tract, DataTract, Query, QueryException, \
     ReadException, WriteException
 
@@ -331,7 +331,7 @@ class BufferQuery(RedisDataQuery):
 
     @xprops.cachedproperty
     def certificates(self):
-        return {id: nxtime.MIN for id in self.id_range}
+        return {id: pd.NaT for id in self.id_range}
 
     def _metadata(self):
         """Fetches metadata for self."""
@@ -347,7 +347,7 @@ class BufferQuery(RedisDataQuery):
         for id, m in zip(id_range, metadata):
             self.dt_ranges[id] = rge.time_range(m.get('lower', pd.NaT),
                                                 m.get('upper', pd.NaT))
-            self.certificates[id] = dtget(m.get('certification'), nxtime.MIN)
+            self.certificates[id] = dtget(m.get('certification'))
 
     def __fetch__(self, **kwargs):
         """Returns an iterator of row indexes and data."""
@@ -360,16 +360,25 @@ class BufferQuery(RedisDataQuery):
         if isinstance(self.id_range, rge.Levels):
             data = []
             for id in self.id_range:
-                sequence = super_data[id]
-                sequence.metadata['dt_range'] = self.dt_ranges[id]
-                sequence.metadata['certification'] = self.certificates[id]
+                super_sequence = super_data[id]
+                metadata = super_sequence.metadata
+                metadata['dt_range'] = self.dt_ranges[id]
+                metadata['certification'] = self.certificates[id]
+                sequence = dtl.DataSequence(super_sequence.data,
+                                            schema=self.schema,
+                                            **metadata)
                 data.append(sequence)
             return data
         else:
             id = self.id_range.level
-            super_data.metadata['dt_range'] = self.dt_ranges[id]
-            super_data.metadata['certification'] = self.certificates[id]
-            return super_data
+            super_sequence = super_data[id]
+            metadata = super_sequence.metadata
+            metadata['dt_range'] = self.dt_ranges[id]
+            metadata['certification'] = self.certificates[id]
+            sequence = dtl.DataSequence(super_sequence.data,
+                                        schema=self.schema,
+                                        **metadata)
+            return sequence
 
 
 class NotInStoreException(ReadException):
@@ -399,32 +408,12 @@ class RedisBuffer(RedisTract):
         self.data_tract = RedisDataTract(store, data_title, register=False)
 
     def setup(self, id):
-        """Sets up storage for supplied id."""
-        dt_range = self._archive_retrieve_range(id)
-        try:
-            sequence = self._load_from_archive(id, dt_range)
-        except NoArchive:
-        # XXX: specify default empty sequence here
-            sequence = None
+        """Setup storage for supplied id."""
+        now = nxtime.now()
+        sequence = dtl.DataSequence(schema=self.schema,
+                                    id_range=id,
+                                    dt_range=(now, now))
         self.write(sequence)
-
-    def _archive_retrieve_range(self, id):
-        """The range of the archive query."""
-        return None
-
-    def _load_from_archive(self, id, dt_range):
-        archive_store = self.store.archive
-        if archive_store is None:
-            msg = "Cannot retrieve from non-existing archive."
-            raise NoArchive(msg)
-        else:
-            try:
-                archive_tract = archive_store[self.title]
-            except KeyError:
-                msg = f"Cannot retrieve data from {archive_store} " + \
-                      f"because it doesn't feature a table for {self.title}."
-                raise NoArchive(msg)
-        return archive_tract.query(id=id, datetime=dt_range).sequence()
 
     def teardown(self, id):
         """Discards storage for supplied id."""
@@ -442,7 +431,7 @@ class RedisBuffer(RedisTract):
     def sequence(self, id, lower=None):
         """Fetches data for id, optionally above lower datetime."""
         pipe = self.client.pipeline()
-        pipe.exists(self.meta_storage_key(id))
+        pipe.exists(self.data_tract.storage_key(id))
         self.__get_metadata__(pipe, id)
         self.__get_data__(pipe, id, lower=lower)
         id_exists, meta_, data_ = pipe.execute()
@@ -458,6 +447,8 @@ class RedisBuffer(RedisTract):
                 v = metadata.pop(k)
                 consumption = min((consumption, v))
         metadata['dt_range'] = dt_range
+        if consumption == nxtime.MAX:
+            consumption = pd.NaT
         metadata['consumption'] = consumption
         data = [json.loads(d) for d in data_]
         df = pd.DataFrame(data)
@@ -496,6 +487,33 @@ class RedisApplicationBuffer(RedisBuffer):
         super().__init__(store, title, register)
         self.depth = pd.Timedelta(depth)
 
+    def setup(self, id):
+        """Sets up storage for supplied id."""
+        try:
+            sequence = self._load_from_archive(id)
+        except NoArchive:
+            now = nxtime.now()
+            sequence = dtl.DataSequence(schema=self.schema,
+                                        id_range=id,
+                                        dt_range=(now, now))
+        self.write(sequence)
+
+    def _load_from_archive(self, id):
+        archive_store = self.store.archive
+        if archive_store is None:
+            msg = "Cannot retrieve from non-existing archive."
+            raise NoArchive(msg)
+        else:
+            try:
+                archive_tract = archive_store[self.title]
+            except KeyError:
+                msg = f"Cannot retrieve data from {archive_store} " + \
+                      f"because it doesn't feature a table for {self.title}."
+                raise NoArchive(msg)
+        end = nxtime.now()
+        start = end - self.depth
+        return archive_tract.query(id=id, datetime=(start, end)).sequence()
+
     def write(self, sequence, old_certificate=None):
         """Writes the buffer by supplying a sequence.
 
@@ -512,18 +530,43 @@ class RedisApplicationBuffer(RedisBuffer):
         id = sequence.id
         pipe = self.client.pipeline()
         pipe.delete(self.data_tract.storage_key(id))
-        certification = dtget(sequence.certification, nxtime.MIN)
-        sequence = sequence[certification:]
         self.data_tract.__append__(pipe, sequence)
         lower, upper = sequence.dt_range
         metadata = {'lower': str(lower),
                     'upper': str(upper),
-                    'certification': str(certification)}
+                    'certification': str(sequence.certification)}
         pipe.hmset(self.meta_storage_key(id), metadata)
         pipe.execute()
 
 
 class RedisProcessBuffer(RedisBuffer):
+
+    def teardown(self, id):
+        """Discards storage for supplied id.
+
+        For state logs we archive an nan stitch.
+        """
+        if isinstance(self.schema, sch.StateLogsSchema):
+            try:
+                sequence = self.sequence(id)
+                cert = sequence.certification
+                assert not pd.isna(cert)
+                record = sequence[cert].nulled_copy(cert)
+                archive_store = self.store.archive
+                archive_tract = archive_store[self.title]
+                archive_tract.update(record)
+            except:
+                pass
+        super().teardown(id)
+
+    def setup_subscriber(self, subscriber, id):
+        """Sets up metadata for subscriber.
+
+        Params:
+            subscriber: a RedisBuffer instance
+            id: the target id
+        """
+        self.update_subscriber(subscriber, id, pd.NaT)
 
     def update_subscriber(self, subscriber, id, datetime):
         """Updates metadata for subscriber.
@@ -589,7 +632,7 @@ class RedisProcessBuffer(RedisBuffer):
         lower, upper = sequence.dt_range
         metadata = {'lower': str(lower),
                     'upper': str(upper),
-                    'certification': str(certification)}
+                    'certification': str(sequence.certification)}
         pipe.hmset(self.meta_storage_key(id), metadata)
         pipe.execute()
 

@@ -175,7 +175,7 @@ class Interval(ContinuousRange, Iterable):
     def __and__(self, other):
         """Implements intersection at the instance level."""
         if isinstance(other, Singleton):
-            return other if other.position in self else self.__empty__()
+            return other if other.position in self else None
         elif isinstance(other, MultiInterval):
             return other.__and__(self)
         return self.intersection(self, other)

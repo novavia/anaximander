@@ -207,7 +207,6 @@ def test_logs(featurelog, featurelog_partial, featurelog_no_device,
     with pytest.raises(dtl.ConformityError):
         log = dtl.DataLog(featurelog_invalid, schema=FeatureSchema,
                           id_range=FEATURE_IDS, dt_range=FEATURE_TME)
-#    assert not log.validate()
 
 
 def test_json_round_trip(featurelog):
@@ -322,6 +321,8 @@ def test_samples():
     assert dtl.DataLog.json_loads(log.json_dumps()) == log
     r = log[0]
     assert r.data['charge'] == 0
+    empty_log = dtl.DataLog(schema=SampleSchema)
+    assert empty_log.data.empty
 
 
 def test_events():
@@ -343,6 +344,12 @@ def test_events():
                                         id_range=r.id,
                                         dt_range=(r.datetime,))
     assert seq[0] == r
+    empty_log = dtl.DataLog(schema=EventSchema)
+    assert empty_log.empty
+    with pytest.raises(ValueError):  # No id
+        dtl.DataSequence(schema=EventSchema)
+    empty_seq = dtl.DataSequence(schema=EventSchema, id_range=IDS[0])
+    assert empty_seq.empty
 
 
 def test_states():
@@ -356,6 +363,14 @@ def test_states():
                       dt_range=STATES_TME)
     assert log['88:4A:EA:69:35:BD'][-1].label is None
     assert log['88:4A:EA:69:35:BD']['2018-4-15 00:16:10'].label == 'Loading'
+    seq = dtl.DataSequence.from_records(list(log['88:4A:EA:69:35:BD']),
+                                        id_range='88:4A:EA:69:35:BD',
+                                        dt_range=STATES_TME)
+    assert seq == log['88:4A:EA:69:35:BD']
+    with pytest.raises(KeyError):
+        log['88:4A:EA:69:35:BD']['2018-4-15 00:16:05']
+    with pytest.raises(KeyError):
+        log['88:4A:EA:69:35:BD']['2018-4-15 00:17:05']
     t0 = '2018-4-15 00:16:10'
     t1 = '2018-4-15 00:16:30'
     assert len(log['88:4A:EA:69:35:BD'][t0:t1]) == 5
@@ -369,6 +384,8 @@ def test_states():
     assert log['2018-4-13':'2018-4-14'].empty
     assert len(log['2018-4-15 00:16:59.999':'2018-4-17']) == 2
     assert log['2018-4-16':'2018-4-17'].empty
+    empty_seq = dtl.DataSequence(schema=StateSchema, id_range=IDS[0])
+    assert empty_seq.empty
 
 
 def test_sessions():

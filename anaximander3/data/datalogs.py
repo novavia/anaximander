@@ -17,7 +17,7 @@ from itertools import cycle
 
 import pandas as pd
 
-from ..utilities import xprops, nxrange as rge, nxtime
+from ..utilities import xprops, nxrange as rge, functions as fun, nxtime
 from ..utilities.jsonmixin import jsonio
 from .exceptions import ConformityError
 from .dataobject import DataObjectType, DataObject
@@ -40,7 +40,7 @@ class DataLogsBase(DataObject, Sequence):
     __id_range__ = None  # placeholder for expected id range type
     __dt_range__ = None  # placeholder for expected time range type
 
-    def __init__(self, data, *, schema=None, id_range=None, dt_range=None,
+    def __init__(self, data=None, *, schema=None, id_range=None, dt_range=None,
                  cast=True, flex=True, validate=False, force=False,
                  certification=None, consumption=None, **metadata):
         id_range = rge.cat_range(id_range)
@@ -61,10 +61,10 @@ class DataLogsBase(DataObject, Sequence):
             raise ValueError(msg)
         metadata.update({'id_range': id_range,
                          'dt_range': dt_range})
-        if certification:
-            metadata['certification'] = pd.to_datetime(certification, utc=True)
-        if consumption:
-            metadata['consumption'] = pd.to_datetime(consumption, utc=True)
+        certification = fun.get(certification, pd.NaT)
+        metadata['certification'] = pd.to_datetime(certification, utc=True)
+        consumption = fun.get(consumption, pd.NaT)
+        metadata['consumption'] = pd.to_datetime(consumption, utc=True)
         super().__init__(data, schema=schema, cast=cast, flex=flex,
                          validate=validate, **metadata)
 
@@ -78,11 +78,11 @@ class DataLogsBase(DataObject, Sequence):
 
     @property
     def certification(self):
-        return self.metadata.get('certification', pd.NaT)
+        return self.metadata['certification']
 
     @property
     def consumption(self):
-        return self.metadata.get('consumption', pd.NaT)
+        return self.metadata['consumption']
 
     @property
     def tabulated(self):
@@ -159,7 +159,9 @@ class DataLogsBase(DataObject, Sequence):
         are missing;
         * recasts columns to the dtype specified in the schema if necessary;
         * reorders columns to match the schema if necessary;
-        * Verifies that all records have an id that belongs to the id_range.
+        * Verifies that all records have an id that belongs to the id_range;
+        * Verifies that the certification is anterior to the end of the
+        date range.
 
         The force flag will silently handle incorrect inputs, such as
         unreadable datetime, and treat them as missing values.
@@ -170,6 +172,11 @@ class DataLogsBase(DataObject, Sequence):
             if any(df['id'].isna()):
                 unknowns = df['id'][df['id'].isna()].unique()
                 msg = f"Unknown ids {unknowns} supplied to {self}."
+                raise ConformityError(msg)
+        if not pd.isna(self.certification):
+            if not self.dt_range.upper >= self.certification:
+                msg = "A certification line cannot be posterior to the " + \
+                      "upper range of a data log."
                 raise ConformityError(msg)
         df.set_index(self._index_columns, drop=True, inplace=True)
         return df.sort_index()
@@ -206,7 +213,7 @@ class DataLogsBase(DataObject, Sequence):
             dt_range = rge.time_range(dt_slice)
         else:
             dt_range = rge.time_range(dt_slice) & self.dt_range
-        metadata = self.metadata.copy()
+        metadata = self.metadata
         metadata['id_range'] = id_range
         metadata['dt_range'] = dt_range
         return metadata
@@ -235,12 +242,25 @@ class DataLogsBase(DataObject, Sequence):
         if archetype_ is Record:
             metadata.pop('id_range', None)
             metadata.pop('dt_range', None)
-            certification = metadata.pop('certification', None)
-            consumption = metadata.pop('consumption', None)
+            certification = metadata.pop('certification', pd.NaT)
+            consumption = metadata.pop('consumption', pd.NaT)
+            if not pd.isna(certification):
+                if certification >= dt_range.position:
+                    metadata['certified'] = True
+            if not pd.isna(consumption):
+                if consumption >= dt_range.position:
+                    metadata['consumed'] = True
+        else:
+            if isinstance(dt_range, rge.Interval):
+                upper = dt_range.upper
+            else:
+                upper = dt_range.position
+            certification = metadata.pop('certification', pd.NaT)
+            consumption = metadata.pop('consumption', pd.NaT)
             if certification:
-                metadata['certified'] = True
+                metadata['certification'] = min(certification, upper)
             if consumption:
-                metadata['consumed'] = True
+                metadata['consumption'] = min(consumption, upper)
         return archetype_(data, schema=self.schema, **metadata)
 
     def __len__(self):
@@ -337,7 +357,7 @@ class DataLogsBase(DataObject, Sequence):
 
     def certify(self, datetime):
         """Adds / update certification line."""
-        self.metadata['certification'] = pd.to_datetime(datetime, utc=True)
+        self._metadata['certification'] = pd.to_datetime(datetime, utc=True)
 
     def __repr__(self):
         return f"<{type(self).__name__} id_range:{str(self.id_range)} " + \
@@ -527,6 +547,8 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         return self.data.loc[key]
 
     def _dataslice(self, key, dt_range):
+        if dt_range is None:
+            raise KeyError
         if self.schema.xindex:
             return self._xdataslice(key, dt_range)
         if isinstance(key, slice):
