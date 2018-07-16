@@ -66,7 +66,7 @@ class RedisTract(Tract):
 
     def __empty__(self):
         """Tests whether the resource is empty or not."""
-        for k in self.client.scan_iter(match=self.name + '#*'):
+        for k in self.client.keys(self.name + '*'):
             try:
                 next(self.client.zscan_iter(k))
             except StopIteration:
@@ -79,9 +79,23 @@ class RedisTract(Tract):
         pass
 
     def __drop__(self, force=False, **kwargs):
-        keys = list(self.client.scan_iter(match=self.name + '#*'))
+        keys = self.client.keys(self.name + '*')
         if keys:
             self.client.delete(*keys)
+
+    def migrate(self, store, batch_size=100):
+        """Migrates a tract to the supplied destination store."""
+        keys = self.client.keys(self.name + '*')
+        for batch in fun.batch(keys, batch_size):
+            org_pipe = self.client.pipeline()
+            for key in batch:
+                org_pipe.dump(key)
+            values = org_pipe.execute()
+            dst_pipe = store.io.pipeline()
+            for key, value in zip(batch, values):
+                if value is not None:
+                    dst_pipe.restore(key, 0, value, replace=True)
+            dst_pipe.execute()
 
 
 class RedisDataTract(DataTract, RedisTract):
@@ -641,6 +655,12 @@ class RedisStore(Store):
 
     def __interface__(self, host, port, password):
         return StrictRedis(host=host, port=port, password=password)
+
+    def migrate(self, destination):
+        """Requires a destination store."""
+        for title, tract in self.items():
+            destination.tract(tract.title)
+            tract.migrate(destination)
 
     def __repr__(self):
         conn_kwargs = self.io.connection_pool.connection_kwargs

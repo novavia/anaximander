@@ -133,6 +133,13 @@ def test_merge_setmaps():
     assert fun.merge_setmaps(m0, m1, m2) == result
 
 
+def test_batch():
+    l = range(10)
+    assert list(fun.batch(l, 4)) == [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9]]
+    l = range(5)
+    assert list(fun.batch(l)) == [[0, 1, 2, 3, 4]]
+
+
 class TestDecorators(TestCase):
 
     def test_args_or_kwargs(self):

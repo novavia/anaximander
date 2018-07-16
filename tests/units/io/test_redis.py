@@ -30,6 +30,9 @@ HOST = 'redis-15511.c1.us-central1-2.gce.cloud.redislabs.com'
 PORT = 15511
 PWD = '73wDWoBe'
 
+ALT_HOST = 'redis-11587.c1.us-central1-2.gce.cloud.redislabs.com'
+ALT_PORT = 11587
+
 NXPATH = os.path.dirname(nx.__path__[0])
 TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
 LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
@@ -120,6 +123,14 @@ def procstore(archive):
     """Creates a redis application store for testing purposes."""
     store = nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
                                   archive=archive)
+    yield store
+    cleanup(store)
+
+
+@pytest.fixture(scope="session")
+def backupstore(archive):
+    """Creates a redis application store for testing purposes."""
+    store = nxr.RedisProcessStore(host=ALT_HOST, port=ALT_PORT, password=PWD)
     yield store
     cleanup(store)
 
@@ -497,6 +508,12 @@ def test_xbuffer_query(statebuf_tract, statelog):
     assert len(query_data) == 2
     assert query_data[1].empty
     assert query_data[0].data.equals(input_sequence.data)
+
+
+def test_migrate(procstore, backupstore):
+    procstore.migrate(backupstore)
+    sequence = backupstore['buffer'].sequence('68:9E:19:07:DE:C3')
+    assert len(sequence) == 3
 
 
 if __name__ == '__main__':

@@ -250,6 +250,29 @@ def merge_setmaps(*setmaps):
     keys = set.union(*[set(s.keys()) for s in setmaps])
     return {k: set.union(*[s.get(k, set()) for s in setmaps]) for k in keys}
 
+
+def batch(iterable, size=0):
+    """Generates fixed-size batches as lists from iterable.
+
+    If size is 0, then the entire iterable is generated in the first step.
+    The last batch will usually be shorter than the specified size and there
+    is no filling in, so size is not guaranteed.
+    """
+    iterator = iter(iterable)
+    if size == 0:
+        yield list(iterator)
+    else:
+        try:
+            while True:
+                batch = []
+                counter = 0
+                while counter < size:
+                    batch.append(next(iterator))
+                    counter += 1
+                yield batch
+        except StopIteration:
+            yield batch
+
 # =============================================================================
 # Function decorators
 # =============================================================================
