@@ -120,7 +120,7 @@ def archive():
 
 @pytest.fixture(scope="session")
 def procstore(archive):
-    """Creates a redis application store for testing purposes."""
+    """Creates a redis process store for testing purposes."""
     store = nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
                                   archive=archive)
     yield store
@@ -128,9 +128,18 @@ def procstore(archive):
 
 
 @pytest.fixture(scope="session")
-def backupstore(archive):
-    """Creates a redis application store for testing purposes."""
+def backupstore():
+    """Creates a backup process store for testing purposes."""
     store = nxr.RedisProcessStore(host=ALT_HOST, port=ALT_PORT, password=PWD)
+    yield store
+    cleanup(store)
+
+
+@pytest.fixture(scope="session")
+def appstore(archive):
+    """Creates a redis application store for testing purposes."""
+    store = nxr.RedisApplicationStore(host=ALT_HOST, port=ALT_PORT,
+                                      password=PWD, archive=archive)
     yield store
     cleanup(store)
 
@@ -196,6 +205,22 @@ def statebuf_tract(procstore):
     tract.create(warn=False, overwrite=True, force=True)
     for id in IDS:
         tract.setup(id)
+    return tract
+
+
+@pytest.fixture(scope="module")
+def app_full_tract(appstore):
+    """Yields an empty buffer."""
+    tract = appstore.tract(FULL, '2m')
+    tract.create(warn=False, overwrite=True, force=True)
+    return tract
+
+
+@pytest.fixture(scope="module")
+def app_state_tract(appstore):
+    """Yields an empty buffer."""
+    tract = appstore.tract(STATE, '2m')
+    tract.create(warn=False, overwrite=True, force=True)
     return tract
 
 # =============================================================================
@@ -514,6 +539,15 @@ def test_migrate(procstore, backupstore):
     procstore.migrate(backupstore)
     sequence = backupstore['buffer'].sequence('68:9E:19:07:DE:C3')
     assert len(sequence) == 3
+
+
+def test_load_from_archive(featurelog, statelog,
+                           app_full_tract, app_state_tract, appstore,
+                           full_tract, state_tract, archive):
+    for id in FEATURE_IDS:
+        app_full_tract.setup(id, '2016-09-14 10:05:30')
+    sequence = app_full_tract.sequence('88:4A:EA:69:DF:A2')
+    assert len(sequence) == 5
 
 
 if __name__ == '__main__':

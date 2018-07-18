@@ -445,7 +445,7 @@ class RedisBuffer(RedisTract):
     def sequence(self, id, lower=None):
         """Fetches data for id, optionally above lower datetime."""
         pipe = self.client.pipeline()
-        pipe.exists(self.data_tract.storage_key(id))
+        pipe.exists(self.meta_storage_key(id))
         self.__get_metadata__(pipe, id)
         self.__get_data__(pipe, id, lower=lower)
         id_exists, meta_, data_ = pipe.execute()
@@ -501,18 +501,21 @@ class RedisApplicationBuffer(RedisBuffer):
         super().__init__(store, title, register)
         self.depth = pd.Timedelta(depth)
 
-    def setup(self, id):
+    def setup(self, id, when=None):
         """Sets up storage for supplied id."""
+        if when is None:
+            when = nxtime.now()
+        else:
+            when = pd.to_datetime(when, utc=True)
         try:
-            sequence = self._load_from_archive(id)
+            sequence = self._load_from_archive(id, when=when)
         except NoArchive:
-            now = nxtime.now()
             sequence = dtl.DataSequence(schema=self.schema,
                                         id_range=id,
-                                        dt_range=(now, now))
+                                        dt_range=(when, when))
         self.write(sequence)
 
-    def _load_from_archive(self, id):
+    def _load_from_archive(self, id, when):
         archive_store = self.store.archive
         if archive_store is None:
             msg = "Cannot retrieve from non-existing archive."
@@ -524,9 +527,8 @@ class RedisApplicationBuffer(RedisBuffer):
                 msg = f"Cannot retrieve data from {archive_store} " + \
                       f"because it doesn't feature a table for {self.title}."
                 raise NoArchive(msg)
-        end = nxtime.now()
-        start = end - self.depth
-        return archive_tract.query(id=id, datetime=(start, end)).sequence()
+        start = when - self.depth
+        return archive_tract.query(id=id, datetime=(start, when)).data()
 
     def write(self, sequence, old_certificate=None):
         """Writes the buffer by supplying a sequence.
@@ -679,6 +681,10 @@ class RedisApplicationStore(RedisStore):
         """Archive is an optional archive store."""
         self.archive = archive
         return StrictRedis(host=host, port=port, password=password)
+
+    def tract(self, title, depth):
+        """Instantiates a tract for self."""
+        return self.__tract__(self, title, depth)
 
 
 class RedisProcessStore(RedisStore):
