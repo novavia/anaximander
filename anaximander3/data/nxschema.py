@@ -136,9 +136,6 @@ class ColumnMap(Mapping, metaclass=ColumnMapType):
         self._columns = coldict
         for k, v in self._columns.items():
             setattr(self, k, v)
-        if not self._columns:
-            msg = "Cannot instantiate column-less schema."
-            raise SchemaError(msg)
 
     def __getitem__(self, key):
         return self._columns[key]

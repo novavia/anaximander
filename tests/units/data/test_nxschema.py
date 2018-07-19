@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import pytest
 
 from anaximander3.data.nxcolumns import Integer, String, Text, DateTime, \
-    Float, EventLabel
+    Float, Percentage, EventLabel
 from anaximander3.data import nxschema as sch
 
 # =============================================================================
@@ -150,10 +150,6 @@ def test_multi_schema():
 
 def test_errors():
     with pytest.raises(sch.SchemaError):
-        class ColMap(sch.ColumnMap):
-            pass
-        ColMap()
-    with pytest.raises(sch.SchemaError):
         class Schema(sch.Schema, index=MyIndex):
             x = Integer(index='nominal')
             y = Text()
@@ -185,6 +181,10 @@ class GenericSchema(sch.SampleLogsSchema):
     feature = Float(generic=True)
 
 
+class ChildGenericSchema(GenericSchema):
+    charge = Percentage()
+
+
 def test_generic_column():
     schema = GenericSchema('feature#temperature',
                            'feature#audio')
@@ -193,6 +193,10 @@ def test_generic_column():
     assert isinstance(schema.payload['temperature'], Float)
     assert schema.payload.temperature.generic is \
         GenericSchema.__nxcolumns__['feature']
+    schema = ChildGenericSchema()
+    assert list(schema) == ['id', 'datetime', 'charge']
+    with pytest.raises(sch.SchemaError):
+        ChildGenericSchema('feature')
 
 
 if __name__ == '__main__':

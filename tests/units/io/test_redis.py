@@ -67,6 +67,21 @@ class RdSchema(sch.SampleLogsSchema):
         return (id[::-1], dt)
 
 
+class GnSchema(sch.SampleLogsSchema):
+    feature = cln.Measurement(generic=True)
+
+    def __rowkey__(self, index):
+        id, dt = index
+        postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
+        return '#'.join((id[::-1], postfix))
+
+    def __rowidx__(self, key):
+        id, postfix = key.split('#')
+        dt = pd.Timestamp(1e6 * nxtime.MAX_TIMESTAMP - int(postfix),
+                          tz='UTC', unit='us')
+        return (id[::-1], dt)
+
+
 class StateSchema(sch.StateLogsSchema):
     label = cln.StateLabel(('Loading', 'Executing'))
 
@@ -78,6 +93,7 @@ REFUSE = Title('refuse', RdSchema)
 STATE = Title('state', StateSchema)
 BUFFER = Title('buffer', RdSchema)
 STATEBUF = Title('statebuf', StateSchema)
+GENERIC = Title('generic', GnSchema)
 
 
 @pytest.fixture(scope="module")
@@ -102,6 +118,21 @@ def statelog():
     return log
 
 
+@pytest.fixture(scope="module")
+def genlog():
+    """Returns a nominal dataframe."""
+    dataframe = pd.read_csv(LOGFILE_PATH)
+    dataframe.rename(columns={'timestamp': 'datetime',
+                              'device': 'id',
+                              'Feature_Value_1': 'accel_x',
+                              'Feature_Value_2': 'accel_y'},
+                     inplace=True)
+    schema = GnSchema('feature#accel_x', 'feature#accel_y')
+    log = dtl.DataLog(dataframe, schema=schema,
+                      id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+    return log
+
+
 def cleanup(store):
     """Cleans up the Redis instance."""
     store.io.flushdb()
@@ -114,6 +145,7 @@ def archive():
     store = nxr.RedisArchive(host=HOST, port=PORT, password=PWD)
     store.tract(BUFFER)
     store.tract(STATEBUF)
+    store.tract(GENERIC)
     yield store
     cleanup(store)
 
@@ -185,6 +217,16 @@ def state_tract(archive, statelog):
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(statelog)
+    return tract
+
+
+@pytest.fixture(scope="module")
+def gen_tract(archive, genlog):
+    """Yields a populated tract to test generic columns."""
+    tract = archive.tract(GENERIC)
+    tract.create(warn=False, overwrite=True, force=True)
+    # Populates the tract with some data
+    tract.append(genlog)
     return tract
 
 
@@ -365,6 +407,12 @@ def test_xindex(state_tract):
     query = state_tract.query(id='88:4A:EA:69:35:BD', datetime=(start, end))
     log = query.data()
     assert len(log) == 4
+
+
+def test_generic(gen_tract):
+    query = gen_tract.query('feature#accel_x', id='88:4A:EA:69:DF:A2')
+    sequence = query.data()
+    assert list(sequence.payload) == ['accel_x']
 
 
 def test_buffer_setup_teardown(buffer_tract, featurelog):
