@@ -83,7 +83,7 @@ class RecordBase(DataObject):
                 msg = f"Data is missing index fields {missing_idxflds}."
                 raise ConformityError(msg)
             if flex:
-                schema = type(self.schema)(*self.schema.payload,
+                schema = type(self.schema)(*self.schema.schema_columns,
                                            exclude=missing_fields)
                 self.schema = schema
             else:
@@ -142,6 +142,10 @@ class RecordBase(DataObject):
                 'data': self.payload,
                 'schema': self.schema.to_dict(),
                 'metadata': self.metadata}
+
+    def to_data_dict(self):
+        return {'index': self.idx,
+                'data': self.payload}
 
     @classmethod
     def from_dict(cls, dict_, **kwargs):

@@ -177,6 +177,10 @@ class PeriodSchema(sch.PeriodLogsSchema):
     quota = cln.Bool()
 
 
+class GenericSchema(sch.SampleLogsSchema):
+    feature = cln.Float(generic=True)
+
+
 def test_logs(featurelog, featurelog_partial, featurelog_no_device,
               featurelog_shuffled, featurelog_superfluous,
               featurelog_invalid):
@@ -408,6 +412,17 @@ def test_periods():
                        dt_range=PERIODS_TME)
     assert log3[0].validate()
     assert not log3[1].validate()
+
+
+def test_generic():
+    schema = GenericSchema('feature#Feature_Value_0',
+                           'feature#Feature_Value_1',
+                           'feature#Feature_Value_2')
+    log = dtl.DataLog(LOG, schema=schema,
+                      id_range=FEATURE_IDS,
+                      dt_range=FEATURE_TME)
+    assert len(log.data.columns) == 3
+    assert log == dtl.DataLog.json_loads(log.json_dumps())
 
 
 def plots():

@@ -114,13 +114,18 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
 
     def __call__(self, *columns, exclude=None):
         """Returns a subset of self with regards to columns."""
-        selfcols = set(self.schema.payload)
+        selfcols = list(self.schema.schema_columns)
         if not columns:
-            columns = selfcols
+            columns_ = selfcols
         else:
-            columns = set(columns)
-            if columns - selfcols:
-                raise ValueError(f"Unknown columns in {columns}.")
-            columns &= selfcols
-        schema = type(self.schema)(*columns, exclude=exclude)
+            columns_ = []
+            for c in columns:
+                if c in selfcols:
+                    columns_.append(c)
+                elif c in self.payload:
+                    col = self.schema.payload[c]
+                    columns._append('#'.join((col.generic.name, c)))
+                else:
+                    raise ValueError(f"Unknown columns in {columns}.")
+        schema = type(self.schema)(*columns_, exclude=exclude)
         return type(self)(self.data, schema=schema, **self.metadata)

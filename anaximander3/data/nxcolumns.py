@@ -180,6 +180,11 @@ class NxColumn(Registrable):
         * The value that must be validated.
         * optionally it can return a formatted string used to pubish error
         messages when validation fails.
+    The generic flag declares a column to be generic. In that case, concrete
+    columns derive from the generic column by suffixing its name, separated
+    by a # sign. For example, if a schema declares 'feature' as a Flot,
+    then it can create an instance with a column 'feature#temperature'. In
+    datalogs, the column will be stored as 'temperature'
     """
     __registry__ = '__nxcolumns__'
     __counter__ = count()
@@ -191,7 +196,7 @@ class NxColumn(Registrable):
     data_range = None  # placeholder for a range function from nxrange
 
     def __init__(self, *, index=None, required=False, default=None,
-                 missing=None, validate=None, **metadata):
+                 missing=None, validate=None, generic=False, **metadata):
         super().__init__()
         self.index = index
         if index:
@@ -211,6 +216,7 @@ class NxColumn(Registrable):
                 self.validators = [validate]
         else:
             self.validators = []
+        self.generic = generic
         self.metadata = metadata
 
     def match_type(self, typemap):
@@ -283,12 +289,12 @@ class Integer(Numeric):
     ctype = 'int'
 
     def __init__(self, *, index=None, required=False, default=0,
-                 validate=None, **metadata):
+                 validate=None, generic=False, **metadata):
         if not isinstance(default, int):
             msg = "Integer column type can only accepts integers as default."
             raise TypeError(msg)
         super().__init__(index=index, required=required, default=default,
-                         validate=validate, **metadata)
+                         validate=validate, generic=generic, **metadata)
 
 
 class Bool(NxColumn):
@@ -303,12 +309,12 @@ class Bool(NxColumn):
     ctype = 'bool'
 
     def __init__(self, *, index=None, required=False, default=False,
-                 validate=None, **metadata):
+                 validate=None, generic=False, **metadata):
         if not isinstance(default, bool):
             msg = "Boolean column type can only accepts booleans as default."
             raise TypeError(msg)
         super().__init__(index=index, required=required, default=default,
-                         validate=validate, **metadata)
+                         validate=validate, generic=generic, **metadata)
 
     def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
@@ -344,9 +350,10 @@ class Float(Numeric):
     _serial_attrs = ['decimals']
 
     def __init__(self, decimals=None, *, index=None, required=False,
-                 default=None, validate=None, **metadata):
+                 default=None, validate=None, generic=False, **metadata):
         super().__init__(index=index, required=required, default=default,
-                         missing=np.nan, validate=validate, **metadata)
+                         missing=np.nan, validate=validate, generic=generic,
+                         **metadata)
         self.decimals = decimals
 
     def rcast(self, value, force=False):
@@ -382,9 +389,11 @@ class Measurement(Float):
     _serial_attrs = ['decimals', 'units']
 
     def __init__(self, decimals=None, units=None, *, index=None,
-                 required=False, default=None, validate=None, **metadata):
+                 required=False, default=None, validate=None, generic=False,
+                 **metadata):
         super().__init__(decimals=decimals, index=index, required=required,
-                         default=default, validate=validate, **metadata)
+                         default=default, validate=validate, generic=generic,
+                         **metadata)
         self.units = units
 
     @property
@@ -400,9 +409,10 @@ class Percentage(Float):
     ctype = 'percentage'
 
     def __init__(self, decimals=1, *, index=None, required=False,
-                 default=None, validate=None, **metadata):
+                 default=None, validate=None, generic=False, **metadata):
         super().__init__(decimals, index=index, required=required,
-                         default=default, validate=validate, **metadata)
+                         default=default, validate=validate, generic=generic,
+                         **metadata)
         self.validator(RangeValidator(0., 100.))
 
 
@@ -414,7 +424,7 @@ class String(NxColumn):
     data_range = staticmethod(nxrange.cat_range)
 
     def __init__(self, *, index=None, required=False, default=None,
-                 missing=np.nan, validate=None, **metadata):
+                 missing=np.nan, validate=None, generic=False, **metadata):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate,
                          **metadata)
@@ -425,7 +435,7 @@ class Text(String):
     ctype = 'text'
 
     def __init__(self, *, index=None, required=False, default='',
-                 missing=None, validate=None, **metadata):
+                 missing=None, validate=None, generic=False, **metadata):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate,
                          **metadata)
@@ -443,7 +453,8 @@ class Categorical(NxColumn):
     data_range = staticmethod(nxrange.cat_range)
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=False, default=None, validate=None, **metadata):
+                 required=False, default=None, validate=None, generic=False,
+                 **metadata):
         super().__init__(index=index, required=required,
                          default=default, missing=np.nan, validate=validate,
                          **metadata)
@@ -468,9 +479,11 @@ class StateLabel(Categorical):
     ctype = 'state'
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, validate=None, **metadata):
+                 required=True, default=None, validate=None, generic=False,
+                 **metadata):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, validate=validate, **metadata)
+                         default=default, validate=validate, generic=generic,
+                         **metadata)
 
 
 class EventLabel(Categorical):
@@ -478,9 +491,11 @@ class EventLabel(Categorical):
     ctype = 'event'
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, validate=None, **metadata):
+                 required=True, default=None, validate=None, generic=False,
+                 **metadata):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, validate=validate, **metadata)
+                         default=default, validate=validate, generic=generic,
+                         **metadata)
 
 
 class SessionLabel(Categorical):
@@ -488,9 +503,11 @@ class SessionLabel(Categorical):
     ctype = 'session'
 
     def __init__(self, categories=None, ordered=False, *, index=None,
-                 required=True, default=None, validate=None, **metadata):
+                 required=True, default=None, validate=None, generic=False,
+                 **metadata):
         super().__init__(categories, ordered, index=index, required=required,
-                         default=default, validate=validate, **metadata)
+                         default=default, validate=validate, generic=generic,
+                         **metadata)
 
 
 class DateTimeBase(NxColumn):
@@ -500,9 +517,10 @@ class DateTimeBase(NxColumn):
     data_range = staticmethod(nxrange.time_range)
 
     def __init__(self, tz='UTC', *, index=False, required=False,
-                 default=None, validate=None, **metadata):
+                 default=None, validate=None, generic=False, **metadata):
         super().__init__(index=index, required=required, default=default,
-                         missing=pd.NaT, validate=validate, **metadata)
+                         missing=pd.NaT, validate=validate, generic=generic,
+                         **metadata)
         self.tz = tz
         self.dtype = DatetimeTZDtype(tz=tz, unit='ns')
 
@@ -547,9 +565,10 @@ class TimeDelta(NxColumn):
     data_range = staticmethod(nxrange.float_range)
 
     def __init__(self, *, index=False, required=False, default=None,
-                 validate=None, **metadata):
+                 validate=None, generic=False, **metadata):
         super().__init__(index=index, required=required, default=default,
-                         missing=pd.NaT, validate=validate, **metadata)
+                         missing=pd.NaT, validate=validate, generic=generic,
+                         **metadata)
 
     def rcast(self, value, force=False):
         """Casts a scalar to the appropriate type."""
@@ -569,9 +588,10 @@ class ObjectID(Integer):
     data_range = staticmethod(nxrange.cat_range)
 
     def __init__(self, otype, *, index=None, required=False, default=0,
-                 validate=None, **metadata):
+                 validate=None, generic=False, **metadata):
         super().__init__(index=index, required=required,
-                         default=default, validate=validate, **metadata)
+                         default=default, validate=validate, generic=generic,
+                         **metadata)
         self.otype = otype
 
 # =============================================================================

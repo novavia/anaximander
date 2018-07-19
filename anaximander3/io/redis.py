@@ -114,7 +114,10 @@ class RedisDataTract(DataTract, RedisTract):
         if not recs:
             return
         storage_key = self.name + '#' + str(id)
-        data = {r.datetime.timestamp(): json.dumps(r.tabulated,
+#        data = {r.datetime.timestamp(): json.dumps(r.tabulated,
+#                                                   default=serialize)
+#                for r in recs}
+        data = {r.datetime.timestamp(): json.dumps(r.to_data_dict(),
                                                    default=serialize)
                 for r in recs}
         pipe.zadd(storage_key, *chain(*data.items()))
@@ -156,21 +159,21 @@ class RedisDataTract(DataTract, RedisTract):
 
     def __update__(self, pipe, id, recs, **kwargs):
         storage_key = self.name + '#' + str(id)
-        updates = {r.datetime.timestamp(): r.tabulated for r in recs}
+        updates = {r.datetime.timestamp(): r.to_data_dict() for r in recs}
         min_score, max_score = min(updates), max(updates)
         extant = self.client.zrangebyscore(storage_key, min_score, max_score,
                                            withscores=True)
         extant = {s: data for data, s in extant}
-        for score, tab in updates.items():
+        for score, dict_ in updates.items():
             try:
                 elm = extant[score]
             except KeyError:
                 pipe.zadd(storage_key, score,
-                          json.dumps(tab, default=serialize))
+                          json.dumps(dict_, default=serialize))
             else:
                 load = json.loads(elm)
                 pipe.zrem(storage_key, elm)
-                load.update(tab)
+                load['data'].update(dict_['data'])
                 pipe.zadd(storage_key, score,
                           json.dumps(load, default=serialize))
 
@@ -244,11 +247,7 @@ class RedisDataTract(DataTract, RedisTract):
         if not result:
             msg = f"No row found with index {idx}."
             raise KeyError(msg)
-        data = json.loads(result[0])
-        data.pop('id')
-        data.pop('datetime')
-        dict_ = {'data': data}
-        dict_['index'] = idx
+        dict_ = json.loads(result[0])
         dict_['schema'] = self.schema
         return rcd.Record.from_dict(dict_)
 
@@ -320,10 +319,9 @@ class RedisDataQuery(Query):
                 if score == lower:
                     if id == prev_id:
                         continue
-                data = json.loads(res)
-                idx = (data.pop('id'),
-                       pd.to_datetime(data.pop('datetime'), utc=True))
-                yield idx, {'data': data}
+                dict_ = json.loads(res)
+                idx = dict_.pop('index')
+                yield idx, dict_
             prev_id = id
 
 
@@ -444,6 +442,9 @@ class RedisBuffer(RedisTract):
 
     def sequence(self, id, lower=None):
         """Fetches data for id, optionally above lower datetime."""
+        if self.schema.xindex and lower is not None:
+            msg = "Cannot fetch partial sequence on an xindex schema."
+            raise ValueError(msg)
         pipe = self.client.pipeline()
         pipe.exists(self.meta_storage_key(id))
         self.__get_metadata__(pipe, id)
@@ -464,7 +465,12 @@ class RedisBuffer(RedisTract):
         if consumption == nxtime.MAX:
             consumption = pd.NaT
         metadata['consumption'] = consumption
-        data = [json.loads(d) for d in data_]
+        data = []
+        for res in data_:
+            dict_ = json.loads(res)
+            dt = dict_['data']
+            dt['id'], dt['datetime'] = dict_['index']
+            data.append(dt)
         df = pd.DataFrame(data)
         return dtl.DataSequence(df, schema=self.schema,
                                 id_range=id, **metadata)

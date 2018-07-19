@@ -132,7 +132,7 @@ class DataLogsBase(DataObject, Sequence):
                 msg = f"Data is missing index columns {missing_idxcols}."
                 raise ConformityError(msg)
             if flex:
-                schema = type(self.schema)(*self.schema.payload,
+                schema = type(self.schema)(*self.schema.schema_columns,
                                            exclude=missing_columns)
                 self.schema = schema
             else:

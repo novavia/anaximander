@@ -11,8 +11,6 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
-from collections import OrderedDict
-
 import pytest
 
 from anaximander3.data.nxcolumns import Integer, String, Text, DateTime, \
@@ -181,6 +179,20 @@ def test_redefined_schemas():
     schema = SessionSchema()
     assert isinstance(schema.index, sch.TimeSeriesIndex)
     assert list(schema) == ['id', 'datetime', 'duration', 'label']
+
+
+class GenericSchema(sch.SampleLogsSchema):
+    feature = Float(generic=True)
+
+
+def test_generic_column():
+    schema = GenericSchema('feature#temperature',
+                           'feature#audio')
+    assert list(schema) == ['id', 'datetime', 'temperature', 'audio']
+    assert schema.payload.temperature != schema.payload.audio
+    assert isinstance(schema.payload['temperature'], Float)
+    assert schema.payload.temperature.generic is \
+        GenericSchema.__nxcolumns__['feature']
 
 
 if __name__ == '__main__':

@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import Mapping, OrderedDict, defaultdict
+import itertools
 import types
 
 import pandas as pd
@@ -58,6 +59,11 @@ class ColumnMapType(abc.ABCMeta):
                                        cls.__nxcolumns__))
 
     @property
+    def generic_columns(cls):
+        return OrderedDict(fun.vfilter(lambda f: f.generic,
+                                       cls.__nxcolumns__))
+
+    @property
     def payload_columns(cls):
         columns = OrderedDict()
         for k, v in cls.__nxcolumns__.items():
@@ -88,21 +94,46 @@ class ColumnMap(Mapping, metaclass=ColumnMapType):
     """
 
     def __init__(self, *columns, exclude=None):
+        coldict = OrderedDict()
         colnames = set(self.__nxcolumns__)
-        include = set(columns) if columns else colnames
+        if columns:
+            include = set(columns)
+        else:
+            include = colnames - set(type(self).generic_columns)
         exclude = set(fun.get(exclude, set()))
-        names = include | exclude
-        if any(n not in colnames for n in names):
-            msg = f"Unrecognized column names passed to {type(self)}."
-            raise SchemaError(msg)
         include = include - exclude
+
         if any(n not in include for n in type(self).required_columns):
             msg = f"Cannot instantiate column map without required " + \
                   f"fields {type(self).required_columns}"
             raise SchemaError(msg)
-        cols = OrderedDict((k, v) for k, v in self.__nxcolumns__.items()
-                           if k in include)
-        self._columns = cols
+
+        roster = itertools.chain(columns, self.__nxcolumns__)
+        for name in roster:
+            if name not in include or name in coldict:
+                continue
+            if name not in colnames:
+                try:
+                    key, suffix = name.split('#')
+                    gcol = self.__nxcolumns__[key]
+                    assert gcol.generic is True
+                except (ValueError, KeyError, AssertionError):
+                    msg = f"Unrecognized column name {name} passed " + \
+                          f"to {type(self)}."
+                    raise SchemaError(msg)
+                else:
+                    col = gcol.copy()
+                    col.bind(name, col.cls)
+                    col.generic = gcol
+                    coldict[suffix] = col
+            else:
+                col = self.__nxcolumns__[name]
+                if col.generic is True:
+                    msg = f"Cannot instantiate column map with generic column."
+                    raise SchemaError(msg)
+                coldict[name] = self.__nxcolumns__[name]
+
+        self._columns = coldict
         for k, v in self._columns.items():
             setattr(self, k, v)
         if not self._columns:
@@ -366,10 +397,21 @@ class Schema(SchemaBase, metaclass=SchemaType):
         self.payload = self.__payload__(*columns, exclude=exclude)
         self._columns.update(self.payload._columns)
 
+    @property
+    def schema_columns(self):
+        names = []
+        for k, v in self.payload._columns.items():
+            if v.generic:
+                name = '#'.join((v.generic.name, k))
+            else:
+                name = k
+            names.append(name)
+        return names
+
     def to_dict(self, **kwargs):
         return {'class': type(self).regkey,
                 'supertype': type(self).supertype,
-                'columns': list(self.payload)}
+                'columns': list(self.schema_columns)}
 
     @classmethod
     def from_dict(cls, dict_, **kwargs):
