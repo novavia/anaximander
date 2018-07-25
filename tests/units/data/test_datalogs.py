@@ -463,6 +463,14 @@ def test_multi_events():
     assert len(sub0) == 1
     sub1 = seq['2018-04-15 00:15:27.1']
     assert isinstance(sub1, dtl.DataRecordSet)
+    assert sub1[['heartbeat', 'alert']] == sub1
+    record = sub1['heartbeat']
+    assert isinstance(record, rec.EventRecord)
+    record = seq['2018-04-15 00:17:43.1']
+    assert isinstance(record, rec.EventRecord)
+    assert record.idx == ('88:4A:EA:69:35:BD',
+                          pd.to_datetime('2018-04-15 00:17:43.1', utc=True),
+                          'heartbeat')
 
 
 def plots():

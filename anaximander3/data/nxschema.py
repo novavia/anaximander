@@ -702,10 +702,10 @@ class MultiLogsSchema(LogsSchema, index=MultiTimeSeriesIndex):
     pass
 
 
-class MultiEventLogsSchema(MultiLogsSchema):
+class MultiEventLogsSchema(MultiLogsSchema, EventLogsSchema):
     supertype = 'event'
 
 
-class MultiSessionLogsSchema(MultiLogsSchema):
+class MultiSessionLogsSchema(MultiLogsSchema, SessionLogsSchema):
     supertype = 'session'
     twin_index = True

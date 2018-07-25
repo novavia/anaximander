@@ -242,7 +242,9 @@ class DataLogsBase(DataObject, Sequence):
             data.reset_index(inplace=True)
             archetype_ = archetype(id_range, dt_range, len(data))
             if archetype_ is Record:
-                data = data.iloc[0]
+                data = pd.Series(data.iloc[0])
+                data['id'] = id_range.level
+                data['datetime'] = dt_range.position
         elif isinstance(data, pd.Series):
             archetype_ = archetype(id_range, dt_range)
             data['id'] = id_range.level
@@ -887,6 +889,8 @@ class DataRecordSet(DataLogsBase, metaclass=RecordSetType):
                         key = slice(ix[0], ix[-1])
             metadata = self.metadata
             data = self.data.loc[key]
+            if isinstance(data, pd.Series):
+                data['label'] = data.name
             return self._slice(data, metadata)
         except (ValueError, KeyError):
             raise KeyError(str(key))

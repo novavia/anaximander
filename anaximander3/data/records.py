@@ -100,12 +100,15 @@ class RecordBase(DataObject):
 
     @property
     def idx(self):
-        """Returns a series of indexing tuples."""
-        return (self._data.id, self._data.datetime)
+        """Returns indexing tuple."""
+        if isinstance(self.schema, sch.MultiLogsSchema):
+            return (self._data.id, self._data.datetime, self._data.label)
+        else:
+            return (self._data.id, self._data.datetime)
 
     @property
     def key(self):
-        """Returns a series of row keys, indexed by self's index."""
+        """Returns row key."""
         return self.schema.rowkey(self.idx)
 
     @xprops.cachedproperty
@@ -162,7 +165,10 @@ class RecordBase(DataObject):
         else:
             schema = sch.Schema.from_dict(schema_)
         validate = kwargs.get('validate', False)
-        data_['id'], data_['datetime'] = index_
+        if isinstance(schema, sch.MultiLogsSchema):
+            data_['id'], data_['datetime'], data_['label'] = index_
+        else:
+            data_['id'], data_['datetime'] = index_
         return cls(data_, schema=schema, validate=validate, **metadata)
 
     def __eq__(self, other):
