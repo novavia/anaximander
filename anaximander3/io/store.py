@@ -357,7 +357,6 @@ class Query:
 
     def data(self, **kwargs):
         """Returns the data."""
-        cls = dtl.archetype(self.id_range, self.dt_range)
         try:
             index, data = zip(*self.fetch(**kwargs))
         except ValueError:
@@ -368,6 +367,7 @@ class Query:
             data = pd.DataFrame(payload)
             data['id'] = id
             data['datetime'] = datetime
+        cls = dtl.archetype(self.id_range, self.dt_range, len(data))
         return cls(data, schema=self.schema,
                    id_range=self.id_range, dt_range=self.dt_range,
                    **self.metadata)

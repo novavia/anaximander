@@ -21,8 +21,8 @@ import pandas as pd
 from ..utilities import functions as fun, nxtime
 from ..utilities.jsonmixin import jsonio
 from .exceptions import SchemaError
-from .nxcolumns import NxColumn, DateTime, TimeDelta, String, EventLabel, \
-    StateLabel, SessionLabel
+from .nxcolumns import NxColumn, DateTime, TimeDelta, String, Categorical, \
+    EventLabel, StateLabel, SessionLabel
 
 
 __all__ = ['Schema', 'MultiSchema', 'LogsSchema', 'SampleLogsSchema',
@@ -51,6 +51,11 @@ class ColumnMapType(abc.ABCMeta):
     @property
     def identifier_columns(cls):
         return OrderedDict(fun.vfilter(lambda f: f.index == 'nominal',
+                                       cls.__nxcolumns__))
+
+    @property
+    def suffix_columns(cls):
+        return OrderedDict(fun.vfilter(lambda f: f.index == 'suffix',
                                        cls.__nxcolumns__))
 
     @property
@@ -167,8 +172,12 @@ class SchemaIndexType(ColumnMapType):
         cmap = ColumnMapType(name, (), namespace)
         identifier = bool(cmap.identifier_columns)
         sequencer = bool(cmap.sequencer_columns)
+        suffix = bool(cmap.suffix_columns)
         if identifier and sequencer:
-            metaclass = DualSchemaIndexType
+            if suffix:
+                metaclass = SuffixedDualSchemaIndexType
+            else:
+                metaclass = DualSchemaIndexType
         elif identifier:
             metaclass = NominalSchemaIndexType
         elif sequencer:
@@ -189,6 +198,9 @@ class SchemaIndexType(ColumnMapType):
         if len(cls.sequencer_columns) > 1:
             msg = "SchemaIndex classes feature at most one sequencer column."
             raise SchemaError(msg)
+        if len(cls.suffix_columns) > 1:
+            msg = "SchemaIndex classes feature at most one suffix column."
+            raise SchemaError(msg)
         cls.rowkey = cls.__rowkey__
         cls.rowidx = cls.__rowidx__
 
@@ -201,12 +213,14 @@ class EmptySchemaIndexType(SchemaIndexType):
         try:
             assert not cls.identifier_columns
             assert not cls.sequencer_columns
+            assert not cls.suffix_columns
         except AssertionError:
             msg = "Incorrect index columns specification."
             raise SchemaError(msg)
         else:
             cls._identifer = None
             cls._sequencer = None
+            cls._suffix = None
 
 
 class NominalSchemaIndexType(SchemaIndexType):
@@ -217,12 +231,14 @@ class NominalSchemaIndexType(SchemaIndexType):
         try:
             assert cls.identifier_columns
             assert not cls.sequencer_columns
+            assert not cls.suffix_columns
         except AssertionError:
             msg = "Incorrect index columns specification."
             raise SchemaError(msg)
         else:
             cls._identifier = list(cls.identifier_columns)[0]
             cls._sequencer = None
+            cls._suffix = None
 
 
 class SequentialSchemaIndexType(SchemaIndexType):
@@ -233,12 +249,14 @@ class SequentialSchemaIndexType(SchemaIndexType):
         try:
             assert not cls.identifier_columns
             assert cls.sequencer_columns
+            assert not cls.suffix_columns
         except AssertionError:
             msg = "Incorrect index columns specification."
             raise SchemaError(msg)
         else:
             cls._identifier = None
             cls._sequencer = list(cls.sequencer_columns)[0]
+            cls._suffix = None
 
 
 class DualSchemaIndexType(SchemaIndexType):
@@ -249,18 +267,39 @@ class DualSchemaIndexType(SchemaIndexType):
         try:
             assert cls.identifier_columns
             assert cls.sequencer_columns
+            assert not cls.suffix_columns
         except AssertionError:
             msg = "Incorrect index columns specification."
             raise SchemaError(msg)
         else:
             cls._identifier = list(cls.identifier_columns)[0]
             cls._sequencer = list(cls.sequencer_columns)[0]
+            cls._suffix = None
+
+
+class SuffixedDualSchemaIndexType(SchemaIndexType):
+    """A schema index with a nominal and a sequential column."""
+
+    def __init__(cls, name, bases, namespace):
+        super().__init__(name, bases, namespace)
+        try:
+            assert cls.identifier_columns
+            assert cls.sequencer_columns
+            assert cls.suffix_columns
+        except AssertionError:
+            msg = "Incorrect index columns specification."
+            raise SchemaError(msg)
+        else:
+            cls._identifier = list(cls.identifier_columns)[0]
+            cls._sequencer = list(cls.sequencer_columns)[0]
+            cls._suffix = list(cls.suffix_columns)[0]
 
 
 class SchemaIndex(ColumnMap, metaclass=SchemaIndexType):
     """Base class for SchemaIndex objects."""
     _identifier = None
     _sequencer = None
+    _suffix = None
 
     def __init__(self):
         super().__init__()
@@ -272,6 +311,10 @@ class SchemaIndex(ColumnMap, metaclass=SchemaIndexType):
     @property
     def identifier(self):
         return self._identifier
+
+    @property
+    def suffix(self):
+        return self._suffix
 
     @abc.abstractmethod
     def __rowkey__(self, index):
@@ -341,6 +384,10 @@ class SchemaBase(ColumnMap, metaclass=SchemaBaseType):
     @property
     def identifier(self):
         return self.index._identifier
+
+    @property
+    def suffix(self):
+        return self.index._suffix
 
     def rowkey(self, idx):
         """Method to compute the row key from index tuple."""
@@ -594,6 +641,7 @@ class TimeSeriesIndex(SchemaIndex):
 class LogsSchema(Schema, index=TimeSeriesIndex):
     """Base schema for time series."""
     xindex = False  # xindex requires a previous record lookup in range queries
+    twin_index = False  # twin_index has forward and backward indexes
 
 
 class SampleLogsSchema(LogsSchema):
@@ -627,3 +675,37 @@ class PeriodLogsSchema(LogsSchema):
     supertype = 'period'
     xindex = True
     freq = None  # Frequency
+
+
+class MultiTimeSeriesIndex(SchemaIndex):
+    id = String(index='nominal')
+    datetime = DateTime(tz='UTC', index='sequential')
+    label = Categorical(index='suffix')
+
+    def __rowkey__(self, index):
+        id, dt, label = index
+        postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
+        return '#'.join((id, postfix, label))
+
+    def __rowidx__(self, key):
+        id, postfix, label = key.split('#')
+        dt = pd.Timestamp(1e6 * nxtime.MAX_TIMESTAMP - int(postfix),
+                          tz='UTC', unit='us')
+        return (id, dt, label)
+
+
+TimeSeriesIndexes = (TimeSeriesIndex, MultiTimeSeriesIndex)
+
+
+class MultiLogsSchema(LogsSchema, index=MultiTimeSeriesIndex):
+    """Base schema for multi-time series."""
+    pass
+
+
+class MultiEventLogsSchema(MultiLogsSchema):
+    supertype = 'event'
+
+
+class MultiSessionLogsSchema(MultiLogsSchema):
+    supertype = 'session'
+    twin_index = True

@@ -154,9 +154,10 @@ class NxColumn(Registrable):
     NxColumn inherit name, cls and registration_id attributes from Registrable.
     NxColumn can be marked as index: index columns are featured in a schema's
     index whereas other are payload columns (or column families in the case
-    of a multi-schema). Index columns come in two flavors: sequential or
-    nominal. A sequential index sets ordering between records that otherwise
-    share the same nominal index values.
+    of a multi-schema). Index columns come in three flavors: sequential,
+    nominal or suffix. A sequential index sets ordering between records that
+    otherwise share the same nominal index values. Suffix columns are further
+    appended to the index to prevent index collisions.
     A payload column can be marked as required, in which case instances of a
     Schema type that features that column must include the column. Columns
     that are not marked as required may be excluded -the primary use case

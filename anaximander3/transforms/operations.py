@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 
 from ..utilities import xprops
-from ..data.datalogs import DataLogsBase
+from ..data import datalogs as dtl
 from . import logger as LOGGER
 from .exceptions import InputError
 
@@ -69,18 +69,41 @@ class Operation(abc.ABC):
 
 
 class Identity(Operation):
-    __inputs__ = (DataLogsBase,)
-    __output__ = DataLogsBase
+    __inputs__ = (dtl.DataLogsBase,)
+    __output__ = dtl.DataLogsBase
 
     def __operate__(self):
         return self.inputs[0]
 
 
 class LoggerIdentity(Operation):
-    __inputs__ = (DataLogsBase,)
-    __output__ = DataLogsBase
+    __inputs__ = (dtl.DataLogsBase,)
+    __output__ = dtl.DataLogsBase
 
     def __operate__(self):
         msg = f"Processing {self.inputs[0]} in {type(self).__name__}."
         self.logger.debug(msg)
         return self.inputs[0]
+
+
+class Threshold(Operation):
+    __inputs__ = (dtl.SampleSequence)
+    
+    def __init__(self, sample_sequence, threshold=0):
+        self.sample_sequence = sample_sequence
+        self.threshold = threshold
+
+    def __call__(self, plot=False, **kwargs):
+        dataframe = self.sample_sequence.data
+        events = dataframe[dataframe.samples >= self.threshold].copy()
+        events['event'] = 'peaking'
+        output = EventSequence(events[['timestamp', 'event']],
+                               lower=self.sample_sequence.lower,
+                               upper=self.sample_sequence.upper)
+        if plot:
+            self.__plot__(output)
+        return output
+
+    def __plot__(self, output, **kwargs):
+        ax = plot_series(self.sample_sequence.samples())
+        plot_marks(output, self.threshold, ax=ax)

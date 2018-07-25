@@ -38,7 +38,7 @@ class DataObjectType(abc.ABCMeta):
         for stype in schema_type.__mro__:
             try:
                 type_ = cls._registry[stype]
-                assert issubclass(type_, cls)
+#                assert issubclass(type_, cls)
                 return type_
             except KeyError:
                 continue

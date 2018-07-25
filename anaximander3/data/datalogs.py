@@ -106,7 +106,10 @@ class DataLogsBase(DataObject, Sequence):
         df = pd.DataFrame(data).reset_index()
         if df.empty:
             return self.empty_frame(self.schema).reset_index()
-        df.drop_duplicates(subset=['id', 'datetime'], inplace=True)
+        if isinstance(self.schema, sch.MultiLogsSchema):
+            df.drop_duplicates(subset=['datetime', 'label'], inplace=True)
+        else:
+            df.drop_duplicates(subset=['id', 'datetime'], inplace=True)
         missing_columns = []
         mistyped_columns = []
         for name, col in self.columns.items():
@@ -160,6 +163,7 @@ class DataLogsBase(DataObject, Sequence):
         * recasts columns to the dtype specified in the schema if necessary;
         * reorders columns to match the schema if necessary;
         * Verifies that all records have an id that belongs to the id_range;
+        * Verifies that index columns have non-NA values
         * Verifies that the certification is anterior to the end of the
         date range.
 
@@ -172,6 +176,14 @@ class DataLogsBase(DataObject, Sequence):
             if any(df['id'].isna()):
                 unknowns = df['id'][df['id'].isna()].unique()
                 msg = f"Unknown ids {unknowns} supplied to {self}."
+                raise ConformityError(msg)
+        if 'datetime' in df:
+            if any(df['datetime'].isna()):
+                msg = f"Missing datetime index values in {self}."
+                raise ConformityError(msg)
+        if 'label' in df and self.schema['label'].index:
+            if any(df['label'].isna()):
+                msg = f"Missing label index values in {self}."
                 raise ConformityError(msg)
         if not pd.isna(self.certification):
             if not self.dt_range.upper >= self.certification:
@@ -226,15 +238,17 @@ class DataLogsBase(DataObject, Sequence):
         """Returns a dataobject slice from data and metadata."""
         id_range = metadata['id_range']
         dt_range = metadata['dt_range']
-        archetype_ = archetype(id_range, dt_range)
         if isinstance(data, pd.DataFrame):
             data.reset_index(inplace=True)
+            archetype_ = archetype(id_range, dt_range, len(data))
             if archetype_ is Record:
                 data = data.iloc[0]
         elif isinstance(data, pd.Series):
+            archetype_ = archetype(id_range, dt_range)
             data['id'] = id_range.level
             data['datetime'] = dt_range.position
         else:  # Single index of single column
+            archetype_ = archetype(id_range, dt_range)
             col_name = list(self.columns)[-1]
             data = {'id': id_range.level,
                     'datetime': dt_range.position,
@@ -322,20 +336,28 @@ class DataLogsBase(DataObject, Sequence):
         except KeyError:
             msg = f"Invalid mapping."
             raise ValueError(msg)
-        if index_:
-            id_, datetime = zip(*index_)
-        else:
-            id_, datetime = [], []
-        data = pd.DataFrame.from_dict(data_)
-        data['id'] = id_
-        data['datetime'] = datetime
         if isinstance(schema_, sch.Schema):
             schema = schema_
         else:
             schema = sch.Schema.from_dict(schema_)
+        data = pd.DataFrame.from_dict(data_)
+        if isinstance(schema, sch.MultiLogsSchema):
+            if index_:
+                datetime, label = zip(*index_)
+            else:
+                datetime, label = [], []
+            data['datetime'] = datetime
+            data['label'] = label
+        else:
+            if index_:
+                id_, datetime = zip(*index_)
+            else:
+                id_, datetime = [], []
+            data['id'] = id_
+            data['datetime'] = datetime
         id_range = rge.cat_range(metadata.pop('id_range', None))
         dt_range = rge.time_range(metadata.pop('dt_range', None))
-        cls = archetype(id_range, dt_range)
+        cls = archetype(id_range, dt_range, len(data))
         validate = kwargs.get('validate', False)
         return cls(data, schema=schema, id_range=id_range,
                    dt_range=dt_range, validate=validate, **metadata)
@@ -373,6 +395,10 @@ class SequenceType(DataObjectType):
 
 
 class ArrayType(DataObjectType):
+    _registry = dict()
+
+
+class RecordSetType(DataObjectType):
     _registry = dict()
 
 
@@ -492,6 +518,10 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
     __schema__ = sch.LogsSchema
     __id_range__ = rge.Level
     __dt_range__ = rge.TimeInterval
+
+
+class BasicDataSequence(DataSequence):
+    """A single-id dataframe container, indexed by datetime."""
     _index_columns = ['datetime']
 
     @property
@@ -608,6 +638,118 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
         return rval
 
 
+class SuffixedDataSequence(DataSequence):
+    """A single-id dataframe container, indexed by datetime and a label."""
+    __schema__ = sch.MultiLogsSchema
+    _index_columns = ['datetime', 'label']
+
+    @property
+    def id(self):
+        return self.id_range.level
+
+    @property
+    def datetime(self):
+        return self._data.index.get_level_values(0).copy()
+
+    @property
+    def label(self):
+        return self._data.index.get_level_values(1).copy()
+
+    @property
+    def columns(self):
+        cols = OrderedDict(self.schema)
+        del cols['id']
+        return cols
+
+    @property
+    def idx(self):
+        idx_ = list(zip([self.id_range.level], self.datetime, self.label))
+        return pd.DataFrame({'idx': idx_}, index=self.index).idx
+
+    @property
+    def tabulated(self):
+        """Returns a normalized, unindexed dataframe."""
+        df = self._data.reset_index()
+        df.insert(0, 'id', self.id_range.level)
+        return df
+
+    @classmethod
+    def empty_frame(cls, schema=None):
+        """Returns an empty but conform dataframe."""
+        if schema is None:
+            schema = cls.__schema__()
+        index = pd.MultiIndex([[], []], [[], []], names=['datetime', 'label'])
+        return pd.DataFrame(columns=schema.payload, index=index)
+
+    @property
+    def _empty(self):
+        """Returns an empty but conform dataframe."""
+        return self.empty_frame(self.schema)
+
+    def _twin_dataslice(self, key, dt_range):
+        if isinstance(dt_range, rge.TimeInterval):
+            lower = self._previous(dt_range.lower)
+            upper = dt_range.upper
+            key = slice(lower, upper)
+        elif isinstance(dt_range, rge.TimeSingleton):
+            position = self._previous(dt_range.position)
+            if position is None:
+                raise KeyError
+            else:
+                key = position
+        return self.data.loc[key]
+
+    def _dataslice(self, key, dt_range):
+        if dt_range is None:
+            raise KeyError
+        if self.schema.twin_index:
+            return self._twin_dataslice(key, dt_range)
+        if isinstance(key, slice):
+            start, stop = key.start, key.stop
+            key = slice(pd.to_datetime(start, utc=True),
+                        pd.to_datetime(stop, utc=True))
+        return self.data.loc[key]
+
+    def __getitem__(self, key):
+        xrecord = False  # flag for metadata slicing
+        try:
+            if isinstance(key, int):
+                key = self.index[key]
+                xrecord = True
+            elif isinstance(key, slice):
+                if any(isinstance(a, int) for a in [key.start,
+                                                    key.stop,
+                                                    key.step]):
+                    ix = self.index[key]
+                    if ix.empty:
+                        key = slice(nxtime.MIN, nxtime.MIN)
+                    else:
+                        key = slice(ix[0], ix[-1])
+            dt_slice = key
+            metadata = self._metaslice(dt_slice=dt_slice, xrecord=xrecord)
+            dt_range = metadata['dt_range']
+            data = self._dataslice(key, dt_range)
+            return self._slice(data, metadata)
+        except (ValueError, KeyError):
+            raise KeyError(str(key))
+
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        pass
+
+    def plot(self, staff=None, tz=None, **kwargs):
+        if staff is None:
+            score = plot.SimpleScore(tz=tz)
+            staff = score.staves[0]
+            rval = score
+        else:
+            rval = None
+        self._plot(staff, **kwargs)
+        if rval is None and tz is not None:
+            staff.score.tz = tz
+        return rval
+
+
 class DataArray(DataLogsBase, metaclass=ArrayType):
     """A single datetime dataframe container, indexed by id."""
     __schema__ = sch.LogsSchema
@@ -676,11 +818,90 @@ class DataArray(DataLogsBase, metaclass=ArrayType):
             raise KeyError(str(key))
 
 
-def archetype(id_range, dt_range):
+class DataRecordSet(DataLogsBase, metaclass=RecordSetType):
+    """A single-id, single-datetime dataframe container, indexed by label."""
+    __schema__ = sch.MultiLogsSchema
+    __id_range__ = rge.Level
+    __dt_range__ = rge.TimeSingleton
+    _index_columns = ['label']
+
+    @property
+    def id(self):
+        return self.id_range.level
+
+    @property
+    def datetime(self):
+        return self.dt_range.position
+
+    @property
+    def label(self):
+        return self._data.index.copy()
+
+    @property
+    def columns(self):
+        cols = OrderedDict(self.schema)
+        del cols['id']
+        del cols['datetime']
+        return cols
+
+    @property
+    def idx(self):
+        idx_ = list(zip([self.id_range.level],
+                        [self.dt_range.position],
+                        self.label))
+        return pd.DataFrame({'idx': idx_}, index=self.index).idx
+
+    @property
+    def tabulated(self):
+        """Returns a normalized, unindexed dataframe."""
+        df = self._data.reset_index()
+        df.insert(0, 'datetime', self.dt_range.position)
+        df.insert(0, 'id', self.id_range.level)
+        return df
+
+    @classmethod
+    def empty_frame(cls, schema=None):
+        """Returns an empty but conform dataframe."""
+        if schema is None:
+            schema = cls.__schema__()
+        index = pd.DatetimeIndex([], name='label')
+        return pd.DataFrame(columns=schema.payload, index=index)
+
+    @property
+    def _empty(self):
+        """Returns an empty but conform dataframe."""
+        return self.empty_frame(self.schema)
+
+    def __getitem__(self, key):
+        try:
+            if isinstance(key, int):
+                key = self.index[key]
+            elif isinstance(key, slice):
+                if any(isinstance(a, int) for a in [key.start,
+                                                    key.stop,
+                                                    key.step]):
+                    ix = self.index[key]
+                    if ix.empty:
+                        key = slice('', '')
+                    else:
+                        key = slice(ix[0], ix[-1])
+            metadata = self.metadata
+            data = self.data.loc[key]
+            return self._slice(data, metadata)
+        except (ValueError, KeyError):
+            raise KeyError(str(key))
+
+
+def archetype(id_range, dt_range, cardinality=None):
     """Selects an archetype based on the type of ranges supplied."""
     if isinstance(id_range, rge.Level):
         if isinstance(dt_range, rge.TimeSingleton):
-            return Record
+            try:
+                assert cardinality > 1
+            except (TypeError, AssertionError):
+                return Record
+            else:
+                return DataRecordSet
         elif isinstance(dt_range, rge.TimeInterval) or dt_range is None:
             return DataSequence
     elif isinstance(id_range, rge.Levels) or id_range is None:
@@ -727,7 +948,7 @@ class PeriodLog(DataLog):
     __schema__ = sch.PeriodLogsSchema
 
 
-class SampleSequence(DataSequence):
+class SampleSequence(BasicDataSequence):
     __schema__ = sch.SampleLogsSchema
 
     def _plot(self, staff, column, **kwargs):
@@ -752,7 +973,7 @@ class SampleSequence(DataSequence):
         return rval
 
 
-class EventSequence(DataSequence):
+class EventSequence(BasicDataSequence):
     __schema__ = sch.EventLogsSchema
 
     def _plot(self, staff, **kwargs):
@@ -760,7 +981,11 @@ class EventSequence(DataSequence):
         staff.plot_event_sequence(self, **kwargs)
 
 
-class StateSequence(DataSequence):
+class MultiEventSequence(SuffixedDataSequence):
+    __schema__ = sch.MultiEventLogsSchema
+
+
+class StateSequence(BasicDataSequence):
     __schema__ = sch.StateLogsSchema
 
     @property
@@ -784,7 +1009,7 @@ class StateSequence(DataSequence):
         staff.plot_state_sequence(self, **kwargs)
 
 
-class SessionSequence(DataSequence):
+class SessionSequence(BasicDataSequence):
     __schema__ = sch.SessionLogsSchema
 
     @property
@@ -802,7 +1027,7 @@ class SessionSequence(DataSequence):
         staff.plot_session_sequence(self, **kwargs)
 
 
-class PeriodSequence(DataSequence):
+class PeriodSequence(BasicDataSequence):
     __schema__ = sch.PeriodLogsSchema
 
     def _plot(self, staff, **kwargs):

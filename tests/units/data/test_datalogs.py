@@ -35,17 +35,20 @@ FEATURELOG_SHUFFLED_PATH = os.path.join(TEST_DATA_DIR,
 FEATURELOG_SUPERFLUOUS_PATH = os.path.join(TEST_DATA_DIR,
                                            'featurelog_superfluous.csv')
 FEATURELOG_INVALID_PATH = os.path.join(TEST_DATA_DIR, 'featurelog_invalid.csv')
+FEATURELOG_MISS_DT_PATH = os.path.join(TEST_DATA_DIR, 'featurelog_miss_dt.csv')
 SAMPLES_PATH = os.path.join(TEST_DATA_DIR, 'samples.csv')
 EVENTS_PATH = os.path.join(TEST_DATA_DIR, 'events.csv')
 STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
 SESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'sessions.csv')
 PERIODS_PATH = os.path.join(TEST_DATA_DIR, 'periods.csv')
+MULTIEVENTS_PATH = os.path.join(TEST_DATA_DIR, 'multievents.csv')
 
 SAMPLES = pd.read_csv(SAMPLES_PATH)
 EVENTS = pd.read_csv(EVENTS_PATH)
 STATES = pd.read_csv(STATES_PATH)
 SESSIONS = pd.read_csv(SESSIONS_PATH)
 PERIODS = pd.read_csv(PERIODS_PATH)
+MULTIEVENTS = pd.read_csv(MULTIEVENTS_PATH)
 
 
 FEATURE_IDS = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
@@ -127,6 +130,15 @@ def featurelog_invalid():
     return dataframe
 
 
+@pytest.fixture(scope="module")
+def featurelog_miss_dt():
+    """Returns a dataframe with a missing datetime."""
+    dataframe = pd.read_csv(FEATURELOG_MISS_DT_PATH)
+    dataframe.rename(columns={'timestamp': 'datetime',
+                              'device': 'id'}, inplace=True)
+    return dataframe
+
+
 class FeatureSchema(sch.SampleLogsSchema):
     id = cln.String(index='nominal', validate=cln.RegExValidator(MAC_PATTERN))
     datetime = cln.DateTime('UTC', index='sequential')
@@ -177,13 +189,18 @@ class PeriodSchema(sch.PeriodLogsSchema):
     quota = cln.Bool()
 
 
+class MultiEventSchema(sch.MultiEventLogsSchema):
+    message = cln.Text()
+    latency = cln.Float()
+
+
 class GenericSchema(sch.SampleLogsSchema):
     feature = cln.Float(generic=True)
 
 
 def test_logs(featurelog, featurelog_partial, featurelog_no_device,
               featurelog_shuffled, featurelog_superfluous,
-              featurelog_invalid):
+              featurelog_invalid, featurelog_miss_dt):
     log = dtl.DataLog(featurelog, schema=FeatureSchema,
                       id_range=FEATURE_IDS, dt_range=FEATURE_TME)
     assert log.data.equals(LOG)
@@ -210,6 +227,9 @@ def test_logs(featurelog, featurelog_partial, featurelog_no_device,
     assert log.data.equals(LOG)
     with pytest.raises(dtl.ConformityError):
         log = dtl.DataLog(featurelog_invalid, schema=FeatureSchema,
+                          id_range=FEATURE_IDS, dt_range=FEATURE_TME)
+    with pytest.raises(dtl.ConformityError):
+        log = dtl.DataLog(featurelog_miss_dt, schema=FeatureSchema,
                           id_range=FEATURE_IDS, dt_range=FEATURE_TME)
 
 
@@ -423,6 +443,26 @@ def test_generic():
                       dt_range=FEATURE_TME)
     assert len(log.data.columns) == 3
     assert log == dtl.DataLog.json_loads(log.json_dumps())
+
+
+def test_multi_events():
+    ME = MULTIEVENTS.copy()
+    ME['label'][0] = np.nan
+    with pytest.raises(dtl.ConformityError):
+        dtl.DataSequence(ME, schema=MultiEventSchema,
+                         id_range='88:4A:EA:69:35:BD',
+                         dt_range=EVENTS_TME)
+    seq = dtl.DataSequence(MULTIEVENTS, schema=MultiEventSchema,
+                           id_range='88:4A:EA:69:35:BD',
+                           dt_range=EVENTS_TME)
+    assert list(seq.index.names) == ['datetime', 'label']
+    assert len(seq) == 6
+    assert seq == dtl.DataSequence.json_loads(seq.json_dumps())
+    sub0 = seq['2018-04-15 00:15:30':'2018-04-15 00:16:30']
+    assert isinstance(sub0, dtl.MultiEventSequence)
+    assert len(sub0) == 1
+    sub1 = seq['2018-04-15 00:15:27.1']
+    assert isinstance(sub1, dtl.DataRecordSet)
 
 
 def plots():
