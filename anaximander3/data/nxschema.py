@@ -709,3 +709,4 @@ class MultiEventLogsSchema(MultiLogsSchema, EventLogsSchema):
 class MultiSessionLogsSchema(MultiLogsSchema, SessionLogsSchema):
     supertype = 'session'
     twin_index = True
+    duration = TimeDelta(required=True)

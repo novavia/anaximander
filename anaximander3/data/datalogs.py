@@ -242,7 +242,10 @@ class DataLogsBase(DataObject, Sequence):
             data.reset_index(inplace=True)
             archetype_ = archetype(id_range, dt_range, len(data))
             if archetype_ is Record:
-                data = pd.Series(data.iloc[0])
+                try:
+                    data = pd.Series(data.iloc[0])
+                except IndexError:
+                    raise KeyError
                 data['id'] = id_range.level
                 data['datetime'] = dt_range.position
         elif isinstance(data, pd.Series):
@@ -521,6 +524,22 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
     __id_range__ = rge.Level
     __dt_range__ = rge.TimeInterval
 
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        pass
+
+    def plot(self, staff=None, tz=None, **kwargs):
+        if staff is None:
+            score = plot.SimpleScore(tz=tz)
+            staff = score.staves[0]
+            rval = score
+        else:
+            rval = None
+        self._plot(staff, **kwargs)
+        if rval is None and tz is not None:
+            staff.score.tz = tz
+        return rval
+
 
 class BasicDataSequence(DataSequence):
     """A single-id dataframe container, indexed by datetime."""
@@ -623,22 +642,6 @@ class BasicDataSequence(DataSequence):
         else:
             return None
 
-    def _plot(self, staff, **kwargs):
-        """Plot primitive, type-dependent."""
-        pass
-
-    def plot(self, staff=None, tz=None, **kwargs):
-        if staff is None:
-            score = plot.SimpleScore(tz=tz)
-            staff = score.staves[0]
-            rval = score
-        else:
-            rval = None
-        self._plot(staff, **kwargs)
-        if rval is None and tz is not None:
-            staff.score.tz = tz
-        return rval
-
 
 class SuffixedDataSequence(DataSequence):
     """A single-id dataframe container, indexed by datetime and a label."""
@@ -689,17 +692,11 @@ class SuffixedDataSequence(DataSequence):
         return self.empty_frame(self.schema)
 
     def _twin_dataslice(self, key, dt_range):
-        if isinstance(dt_range, rge.TimeInterval):
-            lower = self._previous(dt_range.lower)
-            upper = dt_range.upper
-            key = slice(lower, upper)
-        elif isinstance(dt_range, rge.TimeSingleton):
-            position = self._previous(dt_range.position)
-            if position is None:
-                raise KeyError
-            else:
-                key = position
-        return self.data.loc[key]
+        data = self.data
+        data['start'] = self.datetime
+        data['stop'] = data.start + data.duration
+        lower, upper = dt_range.bounds
+        return data[(data.start <= upper) & (data.stop > lower)]
 
     def _dataslice(self, key, dt_range):
         if dt_range is None:
@@ -734,22 +731,6 @@ class SuffixedDataSequence(DataSequence):
             return self._slice(data, metadata)
         except (ValueError, KeyError):
             raise KeyError(str(key))
-
-    def _plot(self, staff, **kwargs):
-        """Plot primitive, type-dependent."""
-        pass
-
-    def plot(self, staff=None, tz=None, **kwargs):
-        if staff is None:
-            score = plot.SimpleScore(tz=tz)
-            staff = score.staves[0]
-            rval = score
-        else:
-            rval = None
-        self._plot(staff, **kwargs)
-        if rval is None and tz is not None:
-            staff.score.tz = tz
-        return rval
 
 
 class DataArray(DataLogsBase, metaclass=ArrayType):
@@ -988,6 +969,10 @@ class EventSequence(BasicDataSequence):
 class MultiEventSequence(SuffixedDataSequence):
     __schema__ = sch.MultiEventLogsSchema
 
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        staff.plot_multi_event_sequence(self, **kwargs)
+
 
 class StateSequence(BasicDataSequence):
     __schema__ = sch.StateLogsSchema
@@ -1029,6 +1014,24 @@ class SessionSequence(BasicDataSequence):
     def _plot(self, staff, **kwargs):
         """Plot primitive, type-dependent."""
         staff.plot_session_sequence(self, **kwargs)
+
+
+class MultiSessionSequence(SuffixedDataSequence):
+    __schema__ = sch.MultiSessionLogsSchema
+
+    @property
+    def start(self):
+        """Start times of sessions."""
+        return pd.Series(self.datetime, self.index)
+
+    @property
+    def stop(self):
+        """Stop times of sessions."""
+        return self.start + self.duration
+
+    def _plot(self, staff, **kwargs):
+        """Plot primitive, type-dependent."""
+        staff.plot_multi_session_sequence(self, **kwargs)
 
 
 class PeriodSequence(BasicDataSequence):

@@ -19,8 +19,8 @@ import numpy as np
 import pandas as pd
 
 import anaximander3 as nx
-from ..utilities import nxrange, xprops
-from . import nxcolumns as cln
+from ..utilities import nxrange, xprops, functions as fun
+from . import nxcolumns as cln, nxschema as sch
 from .dataobject import DataObject
 
 if nx.INTERACTIVE:
@@ -206,9 +206,15 @@ class Staff:
     def _plot_sequence(self, sequence, **kwargs):
         self.dt_range = sequence.dt_range
 
-    def _label_styles(self, sequence, **kwargs):
+    def _label_styles(self, sequence, ysplit=False, **kwargs):
         label_styles = defaultdict(dict)
         categories = sequence.label.dtype.categories
+        if ysplit and len(categories):
+            splits = np.arange(0, 1, 1 / len(categories))
+            yranges = list(fun.pairwise(list(splits) + [1.]))
+            for l, r in zip(categories, yranges):
+                yrange = {k: v for k, v in zip(('ymin', 'ymax'), r)}
+                label_styles[l].update(yrange)
         for l, c in zip(categories, cycle(PALETTE)):
             label_styles[l]['color'] = c
         label_styles[np.nan]['color'] = GREY
@@ -271,9 +277,19 @@ class Staff:
         self._label_plot(vlines, events.data, styles)
         self._plot_sequence(events)
 
+    def plot_multi_event_sequence(self, events, **kwargs):
+        styles = self._label_styles(events, ysplit=True, **kwargs)
+        self._label_plot(vlines, events.data.reset_index(1), styles)
+        self._plot_sequence(events)
+
     def plot_session_sequence(self, sessions, **kwargs):
         styles = self._label_styles(sessions, **kwargs)
         self._label_plot(vspans, sessions.data, styles)
+        self._plot_sequence(sessions)
+
+    def plot_multi_session_sequence(self, sessions, **kwargs):
+        styles = self._label_styles(sessions, ysplit=True, **kwargs)
+        self._label_plot(vspans, sessions.data.reset_index(1), styles)
         self._plot_sequence(sessions)
 
     def plot_state_sequence(self, states, **kwargs):

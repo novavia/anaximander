@@ -42,6 +42,7 @@ STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
 SESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'sessions.csv')
 PERIODS_PATH = os.path.join(TEST_DATA_DIR, 'periods.csv')
 MULTIEVENTS_PATH = os.path.join(TEST_DATA_DIR, 'multievents.csv')
+MULTISESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'multisessions.csv')
 
 SAMPLES = pd.read_csv(SAMPLES_PATH)
 EVENTS = pd.read_csv(EVENTS_PATH)
@@ -49,6 +50,7 @@ STATES = pd.read_csv(STATES_PATH)
 SESSIONS = pd.read_csv(SESSIONS_PATH)
 PERIODS = pd.read_csv(PERIODS_PATH)
 MULTIEVENTS = pd.read_csv(MULTIEVENTS_PATH)
+MULTISESSIONS = pd.read_csv(MULTISESSIONS_PATH)
 
 
 FEATURE_IDS = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
@@ -192,6 +194,10 @@ class PeriodSchema(sch.PeriodLogsSchema):
 class MultiEventSchema(sch.MultiEventLogsSchema):
     message = cln.Text()
     latency = cln.Float()
+
+
+class MultiSessionSchema(sch.MultiSessionLogsSchema):
+    pass
 
 
 class GenericSchema(sch.SampleLogsSchema):
@@ -416,6 +422,15 @@ def test_sessions():
     log = dtl.DataLog(SESSIONS, schema=SessionSchema, id_range=IDS,
                       dt_range=SESSIONS_TME)
     assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    seq = log['88:4A:EA:69:35:BD']
+    assert seq[0].datetime == pd.to_datetime('2018-04-15 00:15:15.060+00:00',
+                                             utc=True)
+    assert len(seq[1:3]) == 2
+    assert len(seq['2018-04-15 00:15:20':'2018-04-15 00:15:40']) == 3
+    assert seq['2018-04-15 00:15:30':'2018-04-15 00:15:33'].empty
+    with pytest.raises(KeyError):
+        seq['2018-04-15 00:15:30']
+    assert isinstance(seq['2018-04-15 00:15:35'], rec.SessionRecord)
 
 
 def test_periods():
@@ -473,6 +488,28 @@ def test_multi_events():
                           'heartbeat')
 
 
+def test_multi_sessions():
+    seq = dtl.DataSequence(MULTISESSIONS, schema=MultiSessionSchema,
+                           id_range='88:4A:EA:69:35:BD',
+                           dt_range=SESSIONS_TME)
+    assert isinstance(seq, dtl.MultiSessionSequence)
+    assert len(seq) == 10
+    sub0 = seq['2018-4-15 00:16':'2018-4-15 00:17']
+    assert len(sub0) == 7
+    sub1 = seq['2018-4-15 00:16:10':'2018-4-15 00:16:15']
+    assert len(sub1) == 1
+    sub2 = seq['2018-4-15 00:16:06':'2018-4-15 00:16:07']
+    assert sub2.empty
+    sub3 = seq['2018-4-15 00:16:15']
+    assert isinstance(sub3, rec.SessionRecord)
+    sub4 = seq['2018-4-15 00:15:50']
+    assert isinstance(sub4, dtl.DataRecordSet)
+    assert sub4[['a', 'b']] == sub4
+    assert isinstance(sub4['a'], rec.SessionRecord)
+    with pytest.raises(KeyError):
+        seq['2018-4-15 00:16:07']
+
+
 def plots():
     samples = dtl.DataLog(SAMPLES, schema=SampleSchema, id_range=IDS,
                           dt_range=SAMPLES_TME)
@@ -501,6 +538,15 @@ def plots():
                                      color={'Loading': 'grey',
                                             'Executing': 'green'},
                                      ymin=0., ymax=0.5)
+
+    me = dtl.DataSequence(MULTIEVENTS, schema=MultiEventSchema,
+                          id_range='88:4A:EA:69:35:BD',
+                          dt_range=EVENTS_TME)
+    me.plot()
+    ms = dtl.DataSequence(MULTISESSIONS, schema=MultiSessionSchema,
+                          id_range='88:4A:EA:69:35:BD',
+                          dt_range=SESSIONS_TME)
+    ms.plot()
 
 
 if __name__ == '__main__':
