@@ -410,6 +410,7 @@ class RecordSetType(DataObjectType):
 class DataLog(DataLogsBase, metaclass=LogType):
     """A doubly-index log -multiple ids and datetimes."""
     __schema__ = sch.LogsSchema
+    __schema_exclusions__ = [sch.MultiLogsSchema]
     __id_range__ = rge.Levels
     __dt_range__ = rge.TimeInterval
     _index_columns = ['id', 'datetime']
@@ -513,7 +514,14 @@ class DataLog(DataLogsBase, metaclass=LogType):
             return dt
         dt_ix = dt_index.searchsorted(dt)
         if dt_ix > 0:
-            return dt_index[dt_ix - 1]
+            prev_dt = dt_index[dt_ix - 1]
+            if isinstance(self.schema, sch.SessionLogsSchema):
+                stop = prev_dt + self._data.loc[id, prev_dt].duration
+                if stop > dt:
+                    return prev_dt
+                else:
+                    return dt
+            return prev_dt
         else:
             return None
 
@@ -543,6 +551,7 @@ class DataSequence(DataLogsBase, metaclass=SequenceType):
 
 class BasicDataSequence(DataSequence):
     """A single-id dataframe container, indexed by datetime."""
+    __schema_exclusions__ = [sch.MultiLogsSchema]
     _index_columns = ['datetime']
 
     @property
@@ -638,7 +647,14 @@ class BasicDataSequence(DataSequence):
             return dt
         dt_ix = index.searchsorted(dt)
         if dt_ix > 0:
-            return index[dt_ix - 1]
+            prev_dt = index[dt_ix - 1]
+            if isinstance(self.schema, sch.SessionLogsSchema):
+                stop = prev_dt + self._data.loc[prev_dt].duration
+                if stop > dt:
+                    return prev_dt
+                else:
+                    return dt
+            return prev_dt
         else:
             return None
 
@@ -714,6 +730,7 @@ class SuffixedDataSequence(DataSequence):
         try:
             if isinstance(key, int):
                 key = self.index[key]
+                dt_slice = key[0]
                 xrecord = True
             elif isinstance(key, slice):
                 if any(isinstance(a, int) for a in [key.start,
@@ -722,9 +739,19 @@ class SuffixedDataSequence(DataSequence):
                     ix = self.index[key]
                     if ix.empty:
                         key = slice(nxtime.MIN, nxtime.MIN)
+                        dt_slice = key
                     else:
                         key = slice(ix[0], ix[-1])
-            dt_slice = key
+                        dt_lower = ix[0][0]
+                        dt_upper = ix[-1][0]
+                        if dt_lower == dt_upper:
+                            dt_slice = dt_lower
+                        else:
+                            dt_slice = slice(dt_lower, dt_upper)
+                else:
+                    dt_slice = key
+            else:
+                dt_slice = key
             metadata = self._metaslice(dt_slice=dt_slice, xrecord=xrecord)
             dt_range = metadata['dt_range']
             data = self._dataslice(key, dt_range)
@@ -736,6 +763,7 @@ class SuffixedDataSequence(DataSequence):
 class DataArray(DataLogsBase, metaclass=ArrayType):
     """A single datetime dataframe container, indexed by id."""
     __schema__ = sch.LogsSchema
+    __schema_exclusions__ = [sch.MultiLogsSchema]
     __id_range__ = rge.Levels
     __dt_range__ = rge.TimeSingleton
     _index_columns = ['id']
@@ -918,6 +946,24 @@ class StateLog(DataLog):
 class SessionLog(DataLog):
     __schema__ = sch.SessionLogsSchema
 
+    def cast(self, data, flex=True, force=False):
+        df = super().cast(data, flex=flex, force=force)
+        if df.empty:
+            return df
+        copy = df.copy()
+        copy['start'] = copy.index.get_level_values(1)
+        copy['stop'] = copy['start'] + copy['duration']
+        grouped = copy.groupby(level='id')
+        try:
+            for id, g in grouped:
+                if g.empty:
+                    continue
+                assert all(g['start'].shift(-1)[:-1] >= g['stop'][:-1])
+        except AssertionError:
+            msg = "Sessions cannot overlap."
+            raise ConformityError(msg)
+        return df
+
     @property
     def start(self):
         """Start times of sessions."""
@@ -1001,6 +1047,20 @@ class StateSequence(BasicDataSequence):
 class SessionSequence(BasicDataSequence):
     __schema__ = sch.SessionLogsSchema
 
+    def cast(self, data, flex=True, force=False):
+        df = super().cast(data, flex=flex, force=force)
+        if df.empty:
+            return df
+        copy = df.copy()
+        copy['start'] = copy.index
+        copy['stop'] = copy['start'] + copy['duration']
+        try:
+            assert all(copy['start'].shift(-1)[:-1] >= copy['stop'][:-1])
+        except AssertionError:
+            msg = "Sessions cannot overlap."
+            raise ConformityError(msg)
+        return df
+
     @property
     def start(self):
         """Start times of sessions."""
@@ -1018,6 +1078,24 @@ class SessionSequence(BasicDataSequence):
 
 class MultiSessionSequence(SuffixedDataSequence):
     __schema__ = sch.MultiSessionLogsSchema
+
+    def cast(self, data, flex=True, force=False):
+        df = super().cast(data, flex=flex, force=force)
+        if df.empty:
+            return df
+        copy = df.copy()
+        copy['start'] = copy.index.get_level_values(0)
+        copy['stop'] = copy['start'] + copy['duration']
+        grouped = copy.groupby(level='label')
+        try:
+            for label, g in grouped:
+                if g.empty:
+                    continue
+                assert all(g['start'].shift(-1)[:-1] >= g['stop'][:-1])
+        except AssertionError:
+            msg = "Same-label sessions cannot overlap."
+            raise ConformityError(msg)
+        return df
 
     @property
     def start(self):

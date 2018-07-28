@@ -15,6 +15,8 @@ import abc
 from collections import OrderedDict
 
 from ..utilities.jsonmixin import JsonMixin
+from .exceptions import ConformityError
+
 
 __all__ = ['DataObjectType', 'DataObject']
 
@@ -38,7 +40,6 @@ class DataObjectType(abc.ABCMeta):
         for stype in schema_type.__mro__:
             try:
                 type_ = cls._registry[stype]
-#                assert issubclass(type_, cls)
                 return type_
             except KeyError:
                 continue
@@ -47,14 +48,10 @@ class DataObjectType(abc.ABCMeta):
         raise KeyError
 
 
-class ConformityError(Exception):
-    """Raised if data supplied to a DataObject doesn't conform."""
-    pass
-
-
 class DataObject(JsonMixin, metaclass=DataObjectType):
     """Base class for data objects."""
     __schema__ = None  # placeholder for specialized type parameter
+    __schema_exclusions__ = []
 
     def __new__(cls, data=None, *, schema=None, cast=True, flex=True,
                 validate=False, **metadata):
@@ -81,6 +78,10 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
         except AssertionError:
             msg = f"Improper schema supplied to {type(self).__name__}. " + \
                   f"It must be of type {self.__schema__.__name__}"
+            raise ConformityError(msg)
+        if any((isinstance(self.schema, s)
+               for s in self.__schema_exclusions__)):
+            msg = msg = f"Improper schema supplied to {type(self).__name__}."
             raise ConformityError(msg)
         self._metadata = metadata
         if cast:

@@ -422,6 +422,8 @@ def test_sessions():
     log = dtl.DataLog(SESSIONS, schema=SessionSchema, id_range=IDS,
                       dt_range=SESSIONS_TME)
     assert dtl.DataLog.json_loads(log.json_dumps()) == log
+    assert len(log[slice(None),
+                   '2018-04-15 00:15:20':'2018-04-15 00:15:40']) == 3
     seq = log['88:4A:EA:69:35:BD']
     assert seq[0].datetime == pd.to_datetime('2018-04-15 00:15:15.060+00:00',
                                              utc=True)
@@ -431,6 +433,16 @@ def test_sessions():
     with pytest.raises(KeyError):
         seq['2018-04-15 00:15:30']
     assert isinstance(seq['2018-04-15 00:15:35'], rec.SessionRecord)
+    OL_SESSIONS = SESSIONS.copy()
+    OL_SESSIONS.loc[13, 'duration'] = pd.Timedelta('1m')
+    with pytest.raises(dtl.ConformityError):
+        dtl.DataLog(OL_SESSIONS, schema=SessionSchema, id_range=IDS,
+                    dt_range=SESSIONS_TME)
+    OL_SEQUENCE = seq.data
+    OL_SEQUENCE.loc[seq.index[0], 'duration'] = pd.Timedelta('1m')
+    with pytest.raises(dtl.ConformityError):
+        dtl.DataSequence(OL_SEQUENCE, schema=SessionSchema,
+                         id_range='88:4A:EA:69:35:BD', dt_range=SESSIONS_TME)
 
 
 def test_periods():
@@ -486,6 +498,9 @@ def test_multi_events():
     assert record.idx == ('88:4A:EA:69:35:BD',
                           pd.to_datetime('2018-04-15 00:17:43.1', utc=True),
                           'heartbeat')
+    with pytest.raises(dtl.ConformityError):
+        dtl.DataLog(MULTIEVENTS, schema=MultiEventSchema, id_range=IDS,
+                    dt_range=EVENTS_TME)
 
 
 def test_multi_sessions():
@@ -508,6 +523,15 @@ def test_multi_sessions():
     assert isinstance(sub4['a'], rec.SessionRecord)
     with pytest.raises(KeyError):
         seq['2018-4-15 00:16:07']
+    assert seq[0].label == 'b'
+    assert len(seq[0:2]) == 2
+    assert isinstance(seq[3:5], dtl.DataRecordSet)
+    OL_MULTISESSIONS = MULTISESSIONS.copy()
+    OL_MULTISESSIONS.loc[0, 'label'] = 'b'
+    with pytest.raises(dtl.ConformityError):
+        dtl.DataSequence(OL_MULTISESSIONS, schema=MultiSessionSchema,
+                         id_range='88:4A:EA:69:35:BD',
+                         dt_range=SESSIONS_TME)
 
 
 def plots():
