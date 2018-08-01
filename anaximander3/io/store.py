@@ -101,9 +101,9 @@ class Store(Mapping):
     def __len__(self):
         return self._tracts.__len__()
 
-    def tract(self, title):
+    def tract(self, title, **kwargs):
         """Instantiates a tract for self."""
-        return self.__tract__(self, title)
+        return self.__tract__(self, title, **kwargs)
 
 
 class Tract(StorageResource):

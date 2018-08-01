@@ -38,6 +38,8 @@ TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
 LOGFILE_PATH = os.path.join(TEST_DATA_DIR, 'featurelog.csv')
 STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
 STATES = pd.read_csv(STATES_PATH)
+SESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'sessions.csv')
+SESSIONS = pd.read_csv(SESSIONS_PATH)
 
 FEATURE_IDS = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
@@ -45,6 +47,7 @@ MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
 IDS = ['88:4A:EA:69:35:BD', '88:4A:EA:69:38:1A']
 STATES_TME = ['2018-4-15 00:16:00', '2018-4-15 00:17:00']
+SESSIONS_TME = ['2018-4-15 00:15:00', '2018-4-15 00:18:00']
 
 # =============================================================================
 # Environment
@@ -71,6 +74,10 @@ class StateSchema(sch.StateLogsSchema):
     label = cln.StateLabel(('Loading', 'Executing'))
 
 
+class SessionSchema(sch.SessionLogsSchema):
+    part_id = cln.Integer()
+
+
 class GnSchema(sch.SampleLogsSchema):
     feature = cln.Measurement(generic=True)
 
@@ -91,6 +98,7 @@ EMPTY = Title('empty', BtSchema)
 FULL = Title('full', BtSchema)
 REFUSE = Title('refuse', BtSchema)
 STATE = Title('state', StateSchema)
+SESSION = Title('session', SessionSchema)
 GENERIC = Title('generic', GnSchema)
 
 
@@ -113,6 +121,14 @@ def statelog():
     """Returns a nominal dataframe."""
     log = dtl.DataLog(STATES, schema=StateSchema, id_range=IDS,
                       dt_range=STATES_TME)
+    return log
+
+
+@pytest.fixture(scope="module")
+def sessionlog():
+    """Returns a nominal dataframe."""
+    log = dtl.DataLog(SESSIONS, schema=SessionSchema, id_range=IDS,
+                      dt_range=SESSIONS_TME)
     return log
 
 
@@ -198,6 +214,16 @@ def state_tract(store, statelog):
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(statelog)
+    return tract
+
+
+@pytest.fixture(scope="module")
+def session_tract(store, sessionlog):
+    """Yields a populated tract to test session queries."""
+    tract = gbt.BigTableTract(store, SESSION)
+    tract.create(warn=False, overwrite=True, force=True)
+    # Populates the tract with some data
+    tract.append(sessionlog)
     return tract
 
 
@@ -343,6 +369,19 @@ def test_xindex(state_tract):
     query = state_tract.query(id='88:4A:EA:69:35:BD', datetime=(start, end))
     log = query.data()
     assert len(log) == 4
+
+
+def test_session(session_tract):
+    start = '2018-4-15 00:16'
+    end = '2018-4-15 00:17'
+    query = session_tract.query(id=IDS, datetime=(start, end))
+    log = query.data()
+    assert len(log) == 9
+    start = '2018-4-15 00:16:10'
+    end = '2018-4-15 00:17'
+    query = session_tract.query(id=IDS, datetime=(start, end))
+    log = query.data()
+    assert len(log) == 8
 
 
 def test_generic(gen_tract):

@@ -428,7 +428,7 @@ class String(NxColumn):
                  missing=np.nan, validate=None, generic=False, **metadata):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate,
-                         **metadata)
+                         generic=generic, **metadata)
 
 
 class Text(String):
@@ -439,7 +439,7 @@ class Text(String):
                  missing=None, validate=None, generic=False, **metadata):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate,
-                         **metadata)
+                         generic=generic, **metadata)
 
 
 class Categorical(NxColumn):
@@ -458,7 +458,7 @@ class Categorical(NxColumn):
                  **metadata):
         super().__init__(index=index, required=required,
                          default=default, missing=np.nan, validate=validate,
-                         **metadata)
+                         generic=generic, **metadata)
         if categories is not None:
             self.categories = tuple(categories)
             self.dtype = CategoricalDtype(categories, ordered)
@@ -594,6 +594,19 @@ class ObjectID(Integer):
                          default=default, validate=validate, generic=generic,
                          **metadata)
         self.otype = otype
+
+
+class Dictionary(NxColumn):
+    """Column containing mapping fields."""
+    dtype = np.dtype('object')
+    rtype = dict
+    ctype = 'dict'
+
+    def __init__(self, *, index=None, required=False, default=None,
+                 missing=None, validate=None, generic=False, **metadata):
+        super().__init__(index=index, required=required,
+                         default=default, missing=missing, validate=validate,
+                         generic=generic, **metadata)
 
 # =============================================================================
 # Type map class

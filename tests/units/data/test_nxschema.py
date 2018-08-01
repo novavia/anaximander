@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import pytest
 
 from anaximander3.data.nxcolumns import Integer, String, Text, DateTime, \
-    Float, Percentage, EventLabel
+    Float, Percentage, EventLabel, Dictionary
 from anaximander3.data import nxschema as sch
 
 # =============================================================================
@@ -197,6 +197,15 @@ def test_generic_column():
     assert list(schema) == ['id', 'datetime', 'charge']
     with pytest.raises(sch.SchemaError):
         ChildGenericSchema('feature')
+
+
+class DictSchema(sch.EventLogsSchema):
+    params = Dictionary()
+
+
+def test_dict_column():
+    schema = DictSchema()
+    assert list(schema) == ['id', 'datetime', 'label', 'params']
 
 
 if __name__ == '__main__':

@@ -25,9 +25,10 @@ from google.cloud.bigtable.row_data import PartialRowsData
 from google.cloud.bigtable.instance import Instance
 from google.cloud.bigtable.row_filters import ColumnQualifierRegexFilter, \
     RowFilterUnion
+import pandas as pd
 
 from ..utilities import xprops, functions as fun, nxtime
-from ..data.nxschema import Schema, MultiSchema
+from ..data.nxschema import Schema, MultiSchema, SessionLogsSchema
 from .store import Store, DataTract, Query, QueryException, \
     WriteException, StorageAdminException, EmptyQueryException
 
@@ -191,16 +192,6 @@ class BigTableTract(DataTract):
         super().__init__(store, title, register)
         self._retention = dt.timedelta(retention) if retention else retention
 
-    @xprops.cachedproperty
-    def table(self):
-        """Caches an instance of table in the bigtable API."""
-        table = self.store.io.table(self.name)
-        return table
-
-    @property
-    def table_id(self):
-        return self.table.table_id
-
     @property
     def client(self):
         return self.store.io._client
@@ -224,6 +215,16 @@ class BigTableTract(DataTract):
         """Garbage collection rule, implementing retention policy."""
         if self.retention is not None:
             return MaxAgeGCRule(dt.timedelta(self.retention))
+
+    @xprops.cachedproperty
+    def table(self):
+        """Caches an instance of table in the bigtable API."""
+        table = self.store.io.table(self.name)
+        return table
+
+    @property
+    def table_id(self):
+        return self.table.table_id
 
     def __exists__(self):
         """Tests existence of the resource. Must return True or False."""
@@ -357,6 +358,16 @@ class BigTableQuery(Query):
                       for c in self.schema]
         return RowFilterUnion(colfilters)
 
+    def first(self, **kwargs):
+        kwargs['limit'] = 1
+        return super().first(**kwargs)
+
+    def read_row(self, row):
+        data = {f: {k.decode(): v[0].value.decode() for k, v in d.items()}
+                for f, d in row.cells.items()}
+        idx = self.schema.rowidx(row.row_key.decode())
+        return (idx, data)
+
     def rowkeypairs(self):
         """A generator of rowkey pairs to slice the tract."""
         id_range = self.id_range.levels
@@ -367,16 +378,6 @@ class BigTableQuery(Query):
             end_key = self.schema.rowkey((id_, upper))
             bottom_key = self.schema.rowkey((id_, bottom))
             yield (start_key, end_key, bottom_key)
-
-    def read_row(self, row):
-        data = {f: {k.decode(): v[0].value.decode() for k, v in d.items()}
-                for f, d in row.cells.items()}
-        idx = self.schema.rowidx(row.row_key.decode())
-        return (idx, data)
-
-    def first(self, **kwargs):
-        kwargs['limit'] = 1
-        return super().first(**kwargs)
 
     def __fetch__(self, limit=None, **kwargs):
         """Fetch primitive.
@@ -430,7 +431,17 @@ class BigTableQuery(Query):
                     continue
                 nx_key, nx_row = next(iter(next_.rows.items()))
                 if not nx_key == key:
-                    yield self.read_row(nx_row)
+                    idx, data = self.read_row(nx_row)
+                    if isinstance(self.schema, SessionLogsSchema):
+                        try:
+                            duration = pd.Timedelta(data['data']['duration'])
+                            start = pd.to_datetime(idx[1], utc=True)
+                            if start + duration > self.dt_range.lower:
+                                yield (idx, data)
+                        except (KeyError, ValueError, TypeError):
+                            pass
+                    else:
+                        yield (idx, data)
 
 
 class BigTableStore(Store):

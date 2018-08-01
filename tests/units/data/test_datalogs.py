@@ -532,6 +532,9 @@ def test_multi_sessions():
         dtl.DataSequence(OL_MULTISESSIONS, schema=MultiSessionSchema,
                          id_range='88:4A:EA:69:35:BD',
                          dt_range=SESSIONS_TME)
+    assert len(seq.to_compound_state_sequence()) == 19
+    assert seq.to_compound_state_sequence(). \
+        to_multi_session_sequence(MultiSessionSchema) == seq
 
 
 def plots():

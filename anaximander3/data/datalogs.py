@@ -943,6 +943,10 @@ class StateLog(DataLog):
     __schema__ = sch.StateLogsSchema
 
 
+class CompoundStateLog(DataLog):
+    __schema__ = sch.CompoundStateLogsSchema
+
+
 class SessionLog(DataLog):
     __schema__ = sch.SessionLogsSchema
 
@@ -1044,6 +1048,32 @@ class StateSequence(BasicDataSequence):
         staff.plot_state_sequence(self, **kwargs)
 
 
+class CompoundStateSequence(BasicDataSequence):
+    __schema__ = sch.CompoundStateLogsSchema
+
+    def to_multi_session_sequence(self, schema):
+        upper = self.dt_range.upper
+        sessions = []
+        open_sessions = {}
+        for dt, v in dict(self.labels).items():
+            prev_keys = set(open_sessions)
+            next_keys = set(v)
+            new_keys = next_keys - prev_keys
+            closing = prev_keys - next_keys
+            for k in new_keys:
+                session = v[k].copy()
+                session['label'] = k
+                session['datetime'] = dt
+                session['duration'] = upper - dt
+                open_sessions[k] = session
+                sessions.append(session)
+            for k in closing:
+                session = open_sessions.pop(k)
+                session['duration'] = dt - session['datetime']
+        return MultiSessionSequence(data=sessions, schema=schema,
+                                    **self.metadata)
+
+
 class SessionSequence(BasicDataSequence):
     __schema__ = sch.SessionLogsSchema
 
@@ -1111,6 +1141,32 @@ class MultiSessionSequence(SuffixedDataSequence):
         """Plot primitive, type-dependent."""
         staff.plot_multi_session_sequence(self, **kwargs)
 
+    def to_compound_state_sequence(self):
+        onsets = self.data
+        onsets.drop('duration', axis=1, inplace=True)
+        onsets = onsets.apply(lambda r: r.to_dict(), axis=1).to_frame('data')
+        empty_dicts = [dict() for i in range(len(onsets))]
+        onsets['data'] = [x if not pd.isna(x) else y
+                          for x, y in zip(onsets['data'], empty_dicts)]
+        onsets.reset_index(level=1, inplace=True)
+        outsets = pd.Series(self.label, index=self.stop).to_frame('label')
+        combined = pd.concat((onsets, outsets)).sort_index()
+        combined.index.name = 'datetime'
+        content = {}
+        labels = []
+        for label, data in zip(combined.label, combined.data):
+            content = content.copy()
+            if pd.isna(data):
+                del content[label]
+            else:
+                content[label] = data
+            labels.append(content)
+        combined['labels'] = labels
+        combined = combined.reset_index().drop_duplicates('datetime',
+                                                          keep='last')
+        return CompoundStateSequence(data=combined[['datetime', 'labels']],
+                                     **self.metadata)
+
 
 class PeriodSequence(BasicDataSequence):
     __schema__ = sch.PeriodLogsSchema
@@ -1130,6 +1186,10 @@ class EventArray(DataArray):
 
 class StateArray(DataArray):
     __schema__ = sch.StateLogsSchema
+
+
+class CompoundStateArray(DataArray):
+    __schema__ = sch.CompoundStateLogsSchema
 
 
 class SessionArray(DataArray):

@@ -22,7 +22,7 @@ from ..utilities import functions as fun, nxtime
 from ..utilities.jsonmixin import jsonio
 from .exceptions import SchemaError
 from .nxcolumns import NxColumn, DateTime, TimeDelta, String, Categorical, \
-    EventLabel, StateLabel, SessionLabel
+    EventLabel, StateLabel, SessionLabel, Dictionary
 
 
 __all__ = ['Schema', 'MultiSchema', 'LogsSchema', 'SampleLogsSchema',
@@ -677,6 +677,13 @@ class PeriodLogsSchema(LogsSchema):
     freq = None  # Frequency
 
 
+class CompoundStateLogsSchema(LogsSchema):
+    """Schema for state transitions across multiple labels."""
+    supertype = 'state'
+    xindex = True
+    labels = Dictionary(required=True)
+
+
 class MultiTimeSeriesIndex(SchemaIndex):
     id = String(index='nominal')
     datetime = DateTime(tz='UTC', index='sequential')
@@ -710,3 +717,13 @@ class MultiSessionLogsSchema(MultiLogsSchema, SessionLogsSchema):
     supertype = 'session'
     twin_index = True
     duration = TimeDelta(required=True)
+
+    def altkey(self, index):
+        id, dt, label = index
+        postfix = str(int(1e6 * dt.timestamp()))
+        return '#'.join((id, postfix, label))
+
+    def altidx(self, key):
+        id, postfix, label = key.split('#')
+        dt = pd.Timestamp(int(postfix), tz='UTC', unit='us')
+        return (id, dt, label)

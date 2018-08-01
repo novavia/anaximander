@@ -114,9 +114,6 @@ class RedisDataTract(DataTract, RedisTract):
         if not recs:
             return
         storage_key = self.name + '#' + str(id)
-#        data = {r.datetime.timestamp(): json.dumps(r.tabulated,
-#                                                   default=serialize)
-#                for r in recs}
         data = {r.datetime.timestamp(): json.dumps(r.to_data_dict(),
                                                    default=serialize)
                 for r in recs}
@@ -314,13 +311,21 @@ class RedisDataQuery(Query):
         prev_id = None
         for id, sr in zip(id_sequence, sequence_results):
             for res, score in sr:
-                if score == upper:
-                    continue
-                if score == lower:
-                    if id == prev_id:
-                        continue
                 dict_ = json.loads(res)
                 idx = dict_.pop('index')
+                if score == upper:
+                    continue
+                if id == prev_id:
+                    if score == lower:
+                        continue
+                    elif isinstance(self.schema, sch.SessionLogsSchema):
+                        try:
+                            duration = pd.Timedelta(dict_['data']['duration'])
+                            start = pd.to_datetime(idx[1], utc=True)
+                            if start + duration <= self.dt_range.lower:
+                                continue
+                        except (KeyError, ValueError, TypeError):
+                            continue
                 yield idx, dict_
             prev_id = id
 
