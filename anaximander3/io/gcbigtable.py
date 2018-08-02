@@ -28,7 +28,7 @@ from google.cloud.bigtable.row_filters import ColumnQualifierRegexFilter, \
 import pandas as pd
 
 from ..utilities import xprops, functions as fun, nxtime
-from ..data.nxschema import Schema, MultiSchema, SessionLogsSchema
+from ..data.nxschema import Schema, MultiSchema, SessionLogsSchema, tskey
 from .store import Store, DataTract, Query, QueryException, \
     WriteException, StorageAdminException, EmptyQueryException
 
@@ -308,8 +308,8 @@ class BigTableTract(DataTract):
 
     def __discard__(self, id, dt_range, **kwargs):
         """Deletes ranges of rows within dt_range for specified id."""
-        start_key = self.schema.rowkey((id, dt_range.lower))
-        end_key = self.schema.rowkey((id, dt_range.upper))
+        start_key = tskey((id, dt_range.lower))
+        end_key = tskey((id, dt_range.upper))
         try:
             group = self.table.read_rows(start_key, end_key, reverse=True)
         except _Rendezvous:
@@ -374,9 +374,9 @@ class BigTableQuery(Query):
         lower, upper = self.dt_range
         bottom = nxtime.MIN
         for id_ in id_range:
-            start_key = self.schema.rowkey((id_, lower))
-            end_key = self.schema.rowkey((id_, upper))
-            bottom_key = self.schema.rowkey((id_, bottom))
+            start_key = tskey((id_, lower))
+            end_key = tskey((id_, upper))
+            bottom_key = tskey((id_, bottom))
             yield (start_key, end_key, bottom_key)
 
     def __fetch__(self, limit=None, **kwargs):

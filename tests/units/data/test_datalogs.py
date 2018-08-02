@@ -501,6 +501,9 @@ def test_multi_events():
     with pytest.raises(dtl.ConformityError):
         dtl.DataLog(MULTIEVENTS, schema=MultiEventSchema, id_range=IDS,
                     dt_range=EVENTS_TME)
+    record = seq[0]
+    assert isinstance(record, rec.EventRecord)
+    assert list(seq)[0] == record
 
 
 def test_multi_sessions():

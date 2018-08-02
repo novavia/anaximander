@@ -19,7 +19,7 @@ import pandas as pd
 
 from ..utilities import nxrange as rge, xprops, functions as fun
 from ..utilities.datastore import StorageResource
-from ..data.nxschema import Schema, MultiSchema
+from ..data.nxschema import Schema, MultiSchema, MultiLogsSchema
 from ..data import datalogs as dtl, records as rcd
 
 
@@ -362,9 +362,13 @@ class Query:
         except ValueError:
             data = pd.DataFrame(columns=self.schema)
         else:
-            id, datetime = zip(*index)
             payload = [elm['data'] for elm in data]
             data = pd.DataFrame(payload)
+            if isinstance(self.schema, MultiLogsSchema):
+                id, datetime, label = zip(*index)
+                data['label'] = label
+            else:
+                id, datetime = zip(*index)
             data['id'] = id
             data['datetime'] = datetime
         cls = dtl.archetype(self.id_range, self.dt_range, len(data))

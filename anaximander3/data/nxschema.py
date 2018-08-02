@@ -622,6 +622,13 @@ class MultiSchema(SchemaBase, metaclass=MultiSchemaType):
 # =============================================================================
 
 
+def tskey(index):
+    """Shortcut to TimeSeriesIndex.__rowkey__."""
+    id, dt = index
+    postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
+    return '#'.join((id, postfix))
+
+
 class TimeSeriesIndex(SchemaIndex):
     id = String(index='nominal')
     datetime = DateTime(tz='UTC', index='sequential')

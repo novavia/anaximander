@@ -755,6 +755,8 @@ class SuffixedDataSequence(DataSequence):
             metadata = self._metaslice(dt_slice=dt_slice, xrecord=xrecord)
             dt_range = metadata['dt_range']
             data = self._dataslice(key, dt_range)
+            if isinstance(data, pd.Series):
+                data['label'] = data.name[1]
             return self._slice(data, metadata)
         except (ValueError, KeyError):
             raise KeyError(str(key))
@@ -1063,13 +1065,12 @@ class CompoundStateSequence(BasicDataSequence):
             for k in new_keys:
                 session = v[k].copy()
                 session['label'] = k
-                session['datetime'] = dt
-                session['duration'] = upper - dt
+                if 'duration' not in session:
+                    session['duration'] = upper - dt
                 open_sessions[k] = session
                 sessions.append(session)
             for k in closing:
                 session = open_sessions.pop(k)
-                session['duration'] = dt - session['datetime']
         return MultiSessionSequence(data=sessions, schema=schema,
                                     **self.metadata)
 
@@ -1142,13 +1143,10 @@ class MultiSessionSequence(SuffixedDataSequence):
         staff.plot_multi_session_sequence(self, **kwargs)
 
     def to_compound_state_sequence(self):
-        onsets = self.data
-        onsets.drop('duration', axis=1, inplace=True)
-        onsets = onsets.apply(lambda r: r.to_dict(), axis=1).to_frame('data')
-        empty_dicts = [dict() for i in range(len(onsets))]
-        onsets['data'] = [x if not pd.isna(x) else y
-                          for x, y in zip(onsets['data'], empty_dicts)]
-        onsets.reset_index(level=1, inplace=True)
+        df = self.tabulated
+        sessions = df.to_dict(orient='records')
+        onsets = pd.DataFrame({'data': sessions, 'label': self.label},
+                              index=self.datetime)
         outsets = pd.Series(self.label, index=self.stop).to_frame('label')
         combined = pd.concat((onsets, outsets)).sort_index()
         combined.index.name = 'datetime'
