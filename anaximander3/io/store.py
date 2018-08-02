@@ -243,6 +243,8 @@ class DataTract(Tract):
         """Returns a record from its index."""
         if len(idx) == 1:
             idx = idx[0]
+        id, datetime, *_ = idx
+        idx = (id, pd.to_datetime(datetime, utc=True)) + tuple(_)
         try:
             data = self.__record__(idx, **kwargs)
         except NotImplementedError:

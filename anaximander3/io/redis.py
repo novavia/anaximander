@@ -114,10 +114,10 @@ class RedisDataTract(DataTract, RedisTract):
         if not recs:
             return
         storage_key = self.name + '#' + str(id)
-        data = {r.datetime.timestamp(): json.dumps(r.to_data_dict(),
-                                                   default=serialize)
-                for r in recs}
-        pipe.zadd(storage_key, *chain(*data.items()))
+        data = [(r.datetime.timestamp(), json.dumps(r.to_data_dict(),
+                                                    default=serialize))
+                for r in recs]
+        pipe.zadd(storage_key, *chain(*data))
 
     def insert(self, *records, validate=True, **kwargs):
         """Inserts one or more records into tract."""
@@ -155,24 +155,32 @@ class RedisDataTract(DataTract, RedisTract):
         return pipe.execute()
 
     def __update__(self, pipe, id, recs, **kwargs):
-        storage_key = self.name + '#' + str(id)
-        updates = {r.datetime.timestamp(): r.to_data_dict() for r in recs}
-        min_score, max_score = min(updates), max(updates)
-        extant = self.client.zrangebyscore(storage_key, min_score, max_score,
-                                           withscores=True)
-        extant = {s: data for data, s in extant}
-        for score, dict_ in updates.items():
+        extant = {r.idx: r for r in self.records(*[r.idx for r in recs],
+                                                 keyerrors=False)}
+        removals = []
+        appends = []
+        updates = []
+        for r in recs:
             try:
-                elm = extant[score]
+                old_rec = extant[r.idx]
+                assert old_rec == r
             except KeyError:
-                pipe.zadd(storage_key, score,
-                          json.dumps(dict_, default=serialize))
-            else:
-                load = json.loads(elm)
-                pipe.zrem(storage_key, elm)
-                load['data'].update(dict_['data'])
-                pipe.zadd(storage_key, score,
-                          json.dumps(load, default=serialize))
+                appends.append(r)
+            except AssertionError:
+                removals.append(old_rec)
+                updates.append((old_rec, r))
+        storage_key = self.name + '#' + str(id)
+        for r in removals:
+            data = json.dumps(r.to_data_dict(), default=serialize)
+            pipe.zrem(storage_key, data)
+        self.__insert__(pipe, id, appends)
+        for old, new in updates:
+            old_data = old.to_data_dict()
+            new_data = new.to_data_dict()
+            old_data['data'].update(new_data['data'])
+            score = old.datetime.timestamp()
+            pipe.zadd(storage_key, score,
+                      json.dumps(old_data, default=serialize))
 
     def update(self, *records, **kwargs):
         """Updates rows in place from records, or inserts if not found."""
@@ -192,29 +200,17 @@ class RedisDataTract(DataTract, RedisTract):
             self.__update__(pipe, id, recs, **kwargs)
         return pipe.execute()
 
-    def __delete__(self, pipe, id, datetimes, **kwargs):
-        storage_key = self.name + '#' + str(id)
-        scores = [dt.timestamp() for dt in datetimes]
-        min_score, max_score = min(scores), max(scores)
-        records = self.client.zrangebyscore(storage_key,
-                                            min_score, max_score,
-                                            withscores=True)
-        records = {s: data for data, s in records}
-        for s in scores:
-            try:
-                pipe.zrem(storage_key, records[s])
-            except KeyError:
-                pass
+    def __delete__(self, pipe, record, **kwargs):
+        storage_key = self.name + '#' + str(record.id)
+        data = json.dumps(record.to_data_dict(), default=serialize)
+        pipe.zrem(storage_key, data)
 
     def delete(self, *idxs, **kwargs):
         """Deletes the specified rows based on their index."""
-        rmap = defaultdict(list)
-        for idx in idxs:
-            rmap[idx[0]].append(idx[1])
-
+        records = self.records(*idxs, **kwargs)
         pipe = self.client.pipeline()
-        for id, recs in rmap.items():
-            self.__delete__(pipe, id, recs, **kwargs)
+        for rec in records:
+            self.__delete__(pipe, rec, **kwargs)
         return pipe.execute()
 
     def __discard__(self, pipe, id, dt_range, **kwargs):
@@ -234,7 +230,7 @@ class RedisDataTract(DataTract, RedisTract):
         return pipe.execute()
 
     def __record__(self, pipe, idx, **kwargs):
-        id, datetime = idx
+        id, datetime, *_ = idx
         storage_key = self.name + '#' + str(id)
         score = datetime.timestamp()
         pipe.zrangebyscore(storage_key, score, score)
@@ -244,7 +240,17 @@ class RedisDataTract(DataTract, RedisTract):
         if not result:
             msg = f"No row found with index {idx}."
             raise KeyError(msg)
-        dict_ = json.loads(result[0])
+        for r in result:
+            dict_ = json.loads(r)
+            ridx = dict_['index']
+            ridx[1] = pd.to_datetime(ridx[1], utc=True)
+            if tuple(ridx) == idx:
+                break
+            else:
+                continue
+        else:
+            msg = f"No row found with index {idx}."
+            raise KeyError(msg)
         dict_['schema'] = self.schema
         return rcd.Record.from_dict(dict_)
 
@@ -252,19 +258,27 @@ class RedisDataTract(DataTract, RedisTract):
         """Returns a record from its index."""
         if len(idx) == 1:
             idx = idx[0]
+        id, datetime, *_ = idx
+        idx = (id, pd.to_datetime(datetime, utc=True)) + tuple(_)
         pipe = self.client.pipeline()
         self.__record__(pipe, idx, **kwargs)
         result = pipe.execute()[0]
         return self._record(idx, result)
 
-    def records(self, *idxs, **kwargs):
+    def records(self, *idxs, keyerrors=True, **kwargs):
         """Returns a records iterator from their index."""
         pipe = self.client.pipeline()
         for idx in idxs:
             self.__record__(pipe, idx, **kwargs)
         results = pipe.execute()
         for idx, result in zip(idxs, results):
-            yield self._record(idx, result)
+            try:
+                yield self._record(idx, result)
+            except KeyError:
+                if not keyerrors:
+                    continue
+                else:
+                    raise
 
 
 class RedisQueryException(QueryException):

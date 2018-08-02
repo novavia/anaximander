@@ -40,6 +40,8 @@ STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
 STATES = pd.read_csv(STATES_PATH)
 SESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'sessions.csv')
 SESSIONS = pd.read_csv(SESSIONS_PATH)
+MULTIEVENTS_PATH = os.path.join(TEST_DATA_DIR, 'multievents.csv')
+MULTISESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'multisessions.csv')
 
 FEATURE_IDS = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
@@ -47,7 +49,10 @@ MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
 DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
 IDS = ['88:4A:EA:69:35:BD', '88:4A:EA:69:38:1A']
 STATES_TME = ['2018-4-15 00:16:00', '2018-4-15 00:17:00']
+EVENTS_TME = ['2018-4-15 00:15:00', '2018-4-15 00:18:00']
 SESSIONS_TME = ['2018-4-15 00:15:00', '2018-4-15 00:18:00']
+MULTIEVENTS = pd.read_csv(MULTIEVENTS_PATH)
+MULTISESSIONS = pd.read_csv(MULTISESSIONS_PATH)
 
 # =============================================================================
 # Environment
@@ -58,31 +63,9 @@ class RdSchema(sch.SampleLogsSchema):
     accel_x = cln.Measurement()
     accel_y = cln.Measurement()
 
-    def __rowkey__(self, index):
-        id, dt = index
-        postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-        return '#'.join((id[::-1], postfix))
-
-    def __rowidx__(self, key):
-        id, postfix = key.split('#')
-        dt = pd.Timestamp(1e6 * nxtime.MAX_TIMESTAMP - int(postfix),
-                          tz='UTC', unit='us')
-        return (id[::-1], dt)
-
 
 class GnSchema(sch.SampleLogsSchema):
     feature = cln.Measurement(generic=True)
-
-    def __rowkey__(self, index):
-        id, dt = index
-        postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-        return '#'.join((id[::-1], postfix))
-
-    def __rowidx__(self, key):
-        id, postfix = key.split('#')
-        dt = pd.Timestamp(1e6 * nxtime.MAX_TIMESTAMP - int(postfix),
-                          tz='UTC', unit='us')
-        return (id[::-1], dt)
 
 
 class StateSchema(sch.StateLogsSchema):
@@ -93,12 +76,27 @@ class SessionSchema(sch.SessionLogsSchema):
     part_id = cln.Integer()
 
 
+class MultiEventSchema(sch.MultiEventLogsSchema):
+    message = cln.Text()
+    latency = cln.Float()
+
+
+class MultiSessionSchema(sch.MultiSessionLogsSchema):
+    pass
+
+
+class CompoundStateSchema(sch.CompoundStateLogsSchema):
+    pass
+
+
 GHOST = Title('ghost', RdSchema)
 EMPTY = Title('empty', RdSchema)
 FULL = Title('full', RdSchema)
 REFUSE = Title('refuse', RdSchema)
 STATE = Title('state', StateSchema)
 SESSION = Title('session', SessionSchema)
+EVENT = Title('event', MultiEventSchema)
+CSTATE = Title('cstate', CompoundStateSchema)
 BUFFER = Title('buffer', RdSchema)
 STATEBUF = Title('statebuf', StateSchema)
 GENERIC = Title('generic', GnSchema)
@@ -132,6 +130,23 @@ def sessionlog():
     log = dtl.DataLog(SESSIONS, schema=SessionSchema, id_range=IDS,
                       dt_range=SESSIONS_TME)
     return log
+
+
+@pytest.fixture(scope="module")
+def eventseq():
+    """Returns a nominal dataframe."""
+    seq = dtl.DataSequence(MULTIEVENTS, schema=MultiEventSchema,
+                           id_range='88:4A:EA:69:35:BD', dt_range=EVENTS_TME)
+    return seq
+
+
+@pytest.fixture(scope="module")
+def cstateseq():
+    """Returns a nominal dataframe."""
+    seq = dtl.DataSequence(MULTISESSIONS, schema=MultiSessionSchema,
+                           id_range='88:4A:EA:69:35:BD',
+                           dt_range=SESSIONS_TME).to_compound_state_sequence()
+    return seq
 
 
 @pytest.fixture(scope="module")
@@ -243,6 +258,26 @@ def session_tract(archive, sessionlog):
     tract.create(warn=False, overwrite=True, force=True)
     # Populates the tract with some data
     tract.append(sessionlog)
+    return tract
+
+
+@pytest.fixture(scope="module")
+def event_tract(archive, eventseq):
+    """Yields a populated tract to test multi-event queries."""
+    tract = archive.tract(EVENT)
+    tract.create(warn=False, overwrite=True, force=True)
+    # Populates the tract with some data
+    tract.append(eventseq)
+    return tract
+
+
+@pytest.fixture(scope="module")
+def cstate_tract(archive, cstateseq):
+    """Yields a populated tract to test multi-event queries."""
+    tract = archive.tract(CSTATE)
+    tract.create(warn=False, overwrite=True, force=True)
+    # Populates the tract with some data
+    tract.append(cstateseq)
     return tract
 
 
@@ -446,6 +481,23 @@ def test_session(session_tract):
     query = session_tract.query(id=IDS, datetime=(start, end))
     log = query.data()
     assert len(log) == 8
+
+
+def test_multi_event(event_tract):
+    start = '2018-04-15 00:15:30'
+    end = '2018-04-15 00:16:30'
+    query = event_tract.query(id='88:4A:EA:69:35:BD', datetime=(start, end))
+    seq = query.data()
+    assert isinstance(seq, dtl.MultiEventSequence)
+    assert len(seq) == 1
+    record = event_tract.record(('88:4A:EA:69:35:BD',
+                                 '2018-04-15 00:15:27.100000+00:00',
+                                 'heartbeat'))
+    assert record.label == 'heartbeat'
+    record = event_tract.record(('88:4A:EA:69:35:BD',
+                                 '2018-04-15 00:15:27.100000+00:00',
+                                 'alert'))
+    assert record.label == 'alert'
 
 
 def test_generic(gen_tract):

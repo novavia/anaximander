@@ -63,17 +63,6 @@ class BtSchema(sch.SampleLogsSchema):
     accel_x = cln.Measurement()
     accel_y = cln.Measurement()
 
-    def __rowkey__(self, index):
-        id, dt = index
-        postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-        return '#'.join((id[::-1], postfix))
-
-    def __rowidx__(self, key):
-        id, postfix = key.split('#')
-        dt = pd.Timestamp(1e6 * nxtime.MAX_TIMESTAMP - int(postfix),
-                          tz='UTC', unit='us')
-        return (id[::-1], dt)
-
 
 class StateSchema(sch.StateLogsSchema):
     label = cln.StateLabel(('Loading', 'Executing'))
@@ -98,17 +87,6 @@ class CompoundStateSchema(sch.CompoundStateLogsSchema):
 
 class GnSchema(sch.SampleLogsSchema):
     feature = cln.Measurement(generic=True)
-
-    def __rowkey__(self, index):
-        id, dt = index
-        postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-        return '#'.join((id[::-1], postfix))
-
-    def __rowidx__(self, key):
-        id, postfix = key.split('#')
-        dt = pd.Timestamp(1e6 * nxtime.MAX_TIMESTAMP - int(postfix),
-                          tz='UTC', unit='us')
-        return (id[::-1], dt)
 
 
 GHOST = Title('ghost', BtSchema)
@@ -448,6 +426,14 @@ def test_multi_event(event_tract):
     seq = query.data()
     assert isinstance(seq, dtl.MultiEventSequence)
     assert len(seq) == 1
+    record = event_tract.record(('88:4A:EA:69:35:BD',
+                                 '2018-04-15 00:15:27.100000+00:00',
+                                 'heartbeat'))
+    assert record.label == 'heartbeat'
+    record = event_tract.record(('88:4A:EA:69:35:BD',
+                                 '2018-04-15 00:15:27.100000+00:00',
+                                 'alert'))
+    assert record.label == 'alert'
 
 
 def test_generic(gen_tract):

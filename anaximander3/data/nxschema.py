@@ -623,10 +623,10 @@ class MultiSchema(SchemaBase, metaclass=MultiSchemaType):
 
 
 def tskey(index):
-    """Shortcut to TimeSeriesIndex.__rowkey__."""
+    """Primitive to TimeSeriesIndex.__rowkey__."""
     id, dt = index
     postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-    return '#'.join((id, postfix))
+    return '#'.join((id[::-1], postfix))
 
 
 class TimeSeriesIndex(SchemaIndex):
@@ -634,15 +634,13 @@ class TimeSeriesIndex(SchemaIndex):
     datetime = DateTime(tz='UTC', index='sequential')
 
     def __rowkey__(self, index):
-        id, dt = index
-        postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-        return '#'.join((id, postfix))
+        return tskey(index)
 
     def __rowidx__(self, key):
         id, postfix = key.split('#')
         dt = pd.Timestamp(1e6 * nxtime.MAX_TIMESTAMP - int(postfix),
                           tz='UTC', unit='us')
-        return (id, dt)
+        return (id[::-1], dt)
 
 
 class LogsSchema(Schema, index=TimeSeriesIndex):
@@ -699,13 +697,13 @@ class MultiTimeSeriesIndex(SchemaIndex):
     def __rowkey__(self, index):
         id, dt, label = index
         postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-        return '#'.join((id, postfix, label))
+        return '#'.join((id[::-1], postfix, label))
 
     def __rowidx__(self, key):
         id, postfix, label = key.split('#')
         dt = pd.Timestamp(1e6 * nxtime.MAX_TIMESTAMP - int(postfix),
                           tz='UTC', unit='us')
-        return (id, dt, label)
+        return (id[::-1], dt, label)
 
 
 TimeSeriesIndexes = (TimeSeriesIndex, MultiTimeSeriesIndex)
