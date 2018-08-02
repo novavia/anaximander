@@ -434,6 +434,9 @@ class MultiInterval(MultiRange, Sequence):
     def __or__(self, other):
         return self.union(self, other)
 
+    def __contains__(self, item):
+        return any(item in i for i in self._intervals)
+
     def __repr__(self):
         return "{0}({1})".format(type(self).__name__, self._intervals)
 
