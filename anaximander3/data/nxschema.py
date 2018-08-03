@@ -472,6 +472,20 @@ class Schema(SchemaBase, metaclass=SchemaType):
             raise TypeError(msg)
         return type_(*columns)
 
+    def stringify(self, column, value):
+        """Turns a value associated with named column to string."""
+        try:
+            return self._columns[column].stringify(value)
+        except (KeyError, AttributeError):
+            return str(value)
+
+    def unstringify(self, column, string):
+        """Turns a string associated with named column to value."""
+        try:
+            return self._columns[column].unstringify(string)
+        except (KeyError, AttributeError):
+            return string
+
 
 class IndexedColumnType(SchemaBaseType):
 

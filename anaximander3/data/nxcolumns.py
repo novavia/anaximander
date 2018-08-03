@@ -14,6 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 from collections import Mapping, Iterable
 from copy import deepcopy
 from itertools import count
+import json
 import re
 
 import numpy as np
@@ -22,7 +23,7 @@ from pandas.api.types import CategoricalDtype
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
 
 from ..utilities import nxrange
-from ..utilities.jsonmixin import jsonio
+from ..utilities.jsonmixin import jsonio, serialize
 from ..meta.nxdescriptors import Registrable
 
 
@@ -258,6 +259,14 @@ class NxColumn(Registrable):
                                  index=series.index)
             else:
                 raise
+
+    def stringify(self, value):
+        """Converts value to string for storage."""
+        return str(value)
+
+    def unstringify(self, string):
+        """Converts storage string to castable value."""
+        return string
 
     def to_dict(self, **kwargs):
         """Serialization format (one-way only)."""
@@ -607,6 +616,15 @@ class Dictionary(NxColumn):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate,
                          generic=generic, **metadata)
+
+    def stringify(self, value):
+        """Converts value to string for storage."""
+        return json.dumps(value, default=serialize)
+
+    def unstringify(self, string):
+        """Converts storage string to castable value."""
+        return json.loads(string)
+
 
 # =============================================================================
 # Type map class

@@ -81,10 +81,6 @@ class MultiSessionSchema(sch.MultiSessionLogsSchema):
     pass
 
 
-class CompoundStateSchema(sch.CompoundStateLogsSchema):
-    pass
-
-
 class GnSchema(sch.SampleLogsSchema):
     feature = cln.Measurement(generic=True)
 
@@ -96,7 +92,7 @@ REFUSE = Title('refuse', BtSchema)
 STATE = Title('state', StateSchema)
 SESSION = Title('session', SessionSchema)
 EVENT = Title('event', MultiEventSchema)
-CSTATE = Title('cstate', CompoundStateSchema)
+CSTATE = Title('cstate', sch.CompoundStateLogsSchema)
 GENERIC = Title('generic', GnSchema)
 
 
@@ -139,12 +135,18 @@ def eventseq():
 
 
 @pytest.fixture(scope="module")
-def cstateseq():
+def mstateseq():
     """Returns a nominal dataframe."""
     seq = dtl.DataSequence(MULTISESSIONS, schema=MultiSessionSchema,
                            id_range='88:4A:EA:69:35:BD',
-                           dt_range=SESSIONS_TME).to_compound_state_sequence()
+                           dt_range=SESSIONS_TME)
     return seq
+
+
+@pytest.fixture(scope="module")
+def cstateseq(mstateseq):
+    """Returns a nominal dataframe."""
+    return mstateseq.to_compound_state_sequence()
 
 
 @pytest.fixture(scope="module")
@@ -434,6 +436,18 @@ def test_multi_event(event_tract):
                                  '2018-04-15 00:15:27.100000+00:00',
                                  'alert'))
     assert record.label == 'alert'
+
+
+def test_multi_session(mstateseq, cstate_tract):
+    start = '2018-04-15 00:15:00'
+    end = '2018-04-15 00:17:00'
+    query = cstate_tract.query(id='88:4A:EA:69:35:BD', datetime=(start, end))
+    seq = query.data().to_multisession_sequence(schema=MultiSessionSchema)
+    assert seq == mstateseq
+    start = '2018-04-15 00:16:00'
+    query = cstate_tract.query(id='88:4A:EA:69:35:BD', datetime=(start, end))
+    seq = query.data().to_multisession_sequence(schema=MultiSessionSchema)
+    assert len(seq) == 7
 
 
 def test_generic(gen_tract):

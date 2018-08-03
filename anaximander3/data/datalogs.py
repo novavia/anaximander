@@ -1053,7 +1053,7 @@ class StateSequence(BasicDataSequence):
 class CompoundStateSequence(BasicDataSequence):
     __schema__ = sch.CompoundStateLogsSchema
 
-    def to_multi_session_sequence(self, schema):
+    def to_multisession_sequence(self, schema=None):
         upper = self.dt_range.upper
         sessions = []
         open_sessions = {}
@@ -1142,7 +1142,7 @@ class MultiSessionSequence(SuffixedDataSequence):
         """Plot primitive, type-dependent."""
         staff.plot_multi_session_sequence(self, **kwargs)
 
-    def to_compound_state_sequence(self):
+    def to_compound_state_sequence(self, schema=None):
         df = self.tabulated
         sessions = df.to_dict(orient='records')
         onsets = pd.DataFrame({'data': sessions, 'label': self.label},
@@ -1163,7 +1163,7 @@ class MultiSessionSequence(SuffixedDataSequence):
         combined = combined.reset_index().drop_duplicates('datetime',
                                                           keep='last')
         return CompoundStateSequence(data=combined[['datetime', 'labels']],
-                                     **self.metadata)
+                                     schema=schema, **self.metadata)
 
 
 class PeriodSequence(BasicDataSequence):

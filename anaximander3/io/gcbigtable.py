@@ -275,7 +275,8 @@ class BigTableTract(DataTract):
         for family in self.table.list_column_families():
             data = dump.get(family, {})
             for k, v in data.items():
-                row.set_cell(family, k.encode('utf-8'), str(v).encode('utf-8'))
+                row.set_cell(family, k.encode('utf-8'),
+                             self.schema.stringify(k, v).encode('utf-8'))
         return row
 
     def __append__(self, logs, **kwargs):
@@ -334,8 +335,9 @@ class BigTableTract(DataTract):
             row = self.table.read_row(rowkey.encode())
         if row is None:
             raise EmptyQueryException()
-        data = {f: {k.decode(): v[0].value.decode() for k, v in d.items()}
-                for f, d in row.cells.items()}
+        data = {f: {k.decode(): self.schema.unstringify(k.decode(),
+                                                        v[0].value.decode())
+                for k, v in d.items()} for f, d in row.cells.items()}
         return data
 
 
@@ -363,8 +365,9 @@ class BigTableQuery(Query):
         return super().first(**kwargs)
 
     def read_row(self, row):
-        data = {f: {k.decode(): v[0].value.decode() for k, v in d.items()}
-                for f, d in row.cells.items()}
+        data = {f: {k.decode(): self.schema.unstringify(k.decode(),
+                                                        v[0].value.decode())
+                for k, v in d.items()} for f, d in row.cells.items()}
         idx = self.schema.rowidx(row.row_key.decode())
         return (idx, data)
 

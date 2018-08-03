@@ -537,7 +537,7 @@ def test_multi_sessions():
                          dt_range=SESSIONS_TME)
     assert len(seq.to_compound_state_sequence()) == 19
     assert seq.to_compound_state_sequence(). \
-        to_multi_session_sequence(MultiSessionSchema) == seq
+        to_multisession_sequence(MultiSessionSchema) == seq
 
 
 def plots():
