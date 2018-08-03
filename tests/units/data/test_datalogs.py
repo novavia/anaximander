@@ -611,14 +611,14 @@ def bokeh_plots():
     e.add_sessions(sessions)
 
     #Display a Plot (only one at a time)
-    # a.display()
+    a.display()
     # b.display()
     # c.display()
     # d.display()
-    e.display()
+    # e.display()
 ###################################
 
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
-#    plots()
-#    bokeh_plots()
+    # plots()
+    # bokeh_plots()
