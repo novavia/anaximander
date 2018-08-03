@@ -23,6 +23,8 @@ from anaximander3.utilities import nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
 
+from anaximander3.data import bokeh_plots as tzi
+
 
 NXPATH = os.path.dirname(nx.__path__[0])
 TEST_DATA_DIR = os.path.join(NXPATH, 'tests/data')
@@ -579,6 +581,44 @@ def plots():
     ms.plot()
 
 
+##################################
+def bokeh_plots():
+    #Figure 1
+    samples = dtl.DataLog(SAMPLES, schema=SampleSchema, id_range=IDS,
+                          dt_range=SAMPLES_TME)
+    sample = samples['88:4A:EA:69:35:BD']
+    a = tzi.GridStaff()
+    a.add_figs(sample)
+
+    #Figure 2
+    b = tzi.Staff(samples['88:4A:EA:69:35:BD'], 'accel_energy_512')
+    b.add_line_right(samples['88:4A:EA:69:35:BD'], 'temperature')
+
+    #Figure 3
+    c = tzi.Staff()
+
+    #Figure 4
+    events = dtl.DataLog(EVENTS, schema=EventSchema, id_range=IDS,
+                         dt_range=EVENTS_TME)['88:4A:EA:69:35:BD']
+    events._data.loc[events.index[0], 'label'] = None
+    d = tzi.Staff()
+    d.add_events(events)
+
+    #Figure 5
+    sessions = dtl.DataLog(SESSIONS, schema=SessionSchema, id_range=IDS,
+                           dt_range=SESSIONS_TME)
+    e = tzi.Staff()
+    e.add_sessions(sessions)
+
+    #Display a Plot (only one at a time)
+    a.display()
+    # b.display()
+    # c.display()
+    # d.display()
+    # e.display()
+###################################
+
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
-#    plots()
+    # plots()
+    # bokeh_plots()
