@@ -20,7 +20,7 @@ import pandas as pd
 
 import anaximander3 as nx
 from ..utilities import nxrange, xprops, functions as fun
-from . import nxcolumns as cln, nxschema as sch
+from . import nxcolumns as cln
 from .dataobject import DataObject
 
 if nx.INTERACTIVE:
@@ -329,7 +329,10 @@ class Score:
 
 class SimpleScore(Score):
     """A Score with a single staff."""
-    pass
+
+    @property
+    def staff(self):
+        return self.staves[0]
 
 
 class RowScore(Score):

@@ -104,12 +104,11 @@ class DataLogsBase(DataObject, Sequence):
     def _conform(self, data, flex=True, force=False):
         """Primitive for cast, returning a non-indexed dataframe."""
         df = pd.DataFrame(data).reset_index()
-        if df.empty:
-            return self.empty_frame(self.schema).reset_index()
-        if isinstance(self.schema, sch.MultiLogsSchema):
-            df.drop_duplicates(subset=['datetime', 'label'], inplace=True)
-        else:
-            df.drop_duplicates(subset=['id', 'datetime'], inplace=True)
+        if not df.empty:
+            if isinstance(self.schema, sch.MultiLogsSchema):
+                df.drop_duplicates(subset=['datetime', 'label'], inplace=True)
+            else:
+                df.drop_duplicates(subset=['id', 'datetime'], inplace=True)
         missing_columns = []
         mistyped_columns = []
         for name, col in self.columns.items():
@@ -170,6 +169,8 @@ class DataLogsBase(DataObject, Sequence):
         The force flag will silently handle incorrect inputs, such as
         unreadable datetime, and treat them as missing values.
         """
+        if data is None:
+            data = self.empty_frame(self.schema).reset_index()
         df = self._conform(data, flex=flex, force=force)
         if 'id' in df:
             df['id'] = pd.Categorical(df['id'], self.id_range.levels)
@@ -936,6 +937,10 @@ def archetype(id_range, dt_range, cardinality=None):
 class SampleLog(DataLog):
     __schema__ = sch.SampleLogsSchema
 
+    @property
+    def features(self):
+        return [k for k, v in self.columns.items() if isinstance(v, cln.Float)]
+
 
 class EventLog(DataLog):
     __schema__ = sch.EventLogsSchema
@@ -988,14 +993,16 @@ class PeriodLog(DataLog):
 class SampleSequence(BasicDataSequence):
     __schema__ = sch.SampleLogsSchema
 
+    @property
+    def features(self):
+        return [k for k, v in self.columns.items() if isinstance(v, cln.Float)]
+
     def _plot(self, staff, column, **kwargs):
         """Plot primitive, type-dependent."""
         staff.plot_sample_sequence(self, column, **kwargs)
 
     def plot(self, *staves, columns=None, tz=None, **kwargs):
-        if columns is None:
-            columns = [k for k, v in self.columns.items()
-                       if isinstance(v, cln.Float)]
+        columns = fun.get(columns, self.features)
         if not staves:
             score = plot.RowScore(len(columns), tz=tz)
             staves = score.staves
@@ -1024,6 +1031,11 @@ class MultiEventSequence(SuffixedDataSequence):
     def _plot(self, staff, **kwargs):
         """Plot primitive, type-dependent."""
         staff.plot_multi_event_sequence(self, **kwargs)
+
+    def event_sequence(self, label, schema=None):
+        """Returns an EventSequence for a single selected label."""
+        data = self.data[self.label == label]
+        return EventSequence(data, schema=schema, **self.metadata)
 
 
 class StateSequence(BasicDataSequence):
@@ -1176,6 +1188,10 @@ class PeriodSequence(BasicDataSequence):
 
 class SampleArray(DataArray):
     __schema__ = sch.SampleLogsSchema
+
+    @property
+    def features(self):
+        return [k for k, v in self.columns.items() if isinstance(v, cln.Float)]
 
 
 class EventArray(DataArray):
