@@ -141,12 +141,17 @@ class Staff:
         baseline = pd.Series([0, 1], index=baserange)
         baseline.plot(ax=self.ax)
         self.ax.lines[0].remove()
-        self.ax.fmt_xdata = mdates.DateFormatter('%Y-%m-%d %X %Z')
+        self.ax.fmt_xdata = mdates.DateFormatter('%Y-%m-%d %H:%M:%S.%f %Z')
         self._yrange = nxrange.float_range()
         self._twin_yrange = nxrange.float_range()
 
     @xprops.weakproperty
     def score(self):
+        return None
+
+    @xprops.cachedproperty
+    def main(self):
+        """The main sequence for the considered Staff."""
         return None
 
     @property
@@ -204,7 +209,14 @@ class Staff:
         return self.ax.twinx()
 
     def _plot_sequence(self, sequence, **kwargs):
-        self.dt_range = sequence.dt_range
+        if self.main is None:
+            self._main = sequence
+            self.dt_range = sequence.dt_range
+            cert = sequence.certification
+            if not pd.isna(cert):
+                cert = mdates.date2num(cert)
+                self.ax.axvline(cert, c='r', lw=2, ls='--')
+                self.ax.axvspan(cert, cert + 1e9, facecolor='0.5', alpha=0.15)
 
     def _label_styles(self, sequence, ysplit=False, **kwargs):
         label_styles = defaultdict(dict)

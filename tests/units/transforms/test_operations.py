@@ -161,8 +161,24 @@ def test_multi_thresholder(samples):
 def test_sessionizer(samples):
     events = opr.Thresholder(samples['88:4A:EA:69:35:BD'],
                              column='accel_energy_512', threshold=95.3)()
+    events.certify('2018-4-15 00:15:05')
     op = opr.Sessionizer(events, max_gap='1s', logger=None)
-    assert len(op(plot=True)) == 5
+    assert len(op()) == 5
+    assert op().certification == pd.to_datetime('2018-04-15 00:15:04.6',
+                                                utc=True)
+    events.certify('2018-4-15 00:15:07.2')
+    op = opr.Sessionizer(events, max_gap='1s', logger=None)
+    assert len(op()) == 5
+    assert op().certification == events.certification
+    events.certify('2018-4-15 00:15:01')
+    op = opr.Sessionizer(events, max_gap='1s', logger=None)
+    assert len(op()) == 5
+    assert op().certification == op().dt_range.lower
+    events = events[:'2018-4-15 00:15:01.5']
+    events.certify('2018-4-15 00:15:01.5')
+    op = opr.Sessionizer(events, max_gap='1s', logger=None)
+    assert len(op()) == 0
+    assert op().certification == events.certification
 
 
 if __name__ == '__main__':

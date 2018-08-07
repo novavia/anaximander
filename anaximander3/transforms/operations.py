@@ -13,7 +13,6 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 import copy
-from itertools import chain
 
 import pandas as pd
 
@@ -194,7 +193,20 @@ class Sessionizer(Operation):
         sessions = pd.DataFrame({'datetime': [s.lower for s in qspans],
                                  'duration': [s.duration for s in qspans],
                                  'label': self.params['label']})
-        return dtl.SessionSequence(sessions, **self.input.metadata)
+        metadata = self.input.metadata
+        input_certif = self.input.certification
+        if not pd.isna(input_certif):
+            try:
+                newest_certified = self.input[:input_certif][-1]
+            except IndexError:
+                lower_bound = self.input.dt_range.lower
+            else:
+                lower_bound = newest_certified.datetime
+            if input_certif - lower_bound > max_gap:
+                metadata['certification'] = input_certif
+            else:
+                metadata['certification'] = lower_bound
+        return dtl.SessionSequence(sessions, **metadata)
 
     def __plot__(self, **kwargs):
         score = self.input.plot()
