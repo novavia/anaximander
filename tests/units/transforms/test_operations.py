@@ -147,7 +147,7 @@ def test_identity(samples):
 def test_thresholder(samples):
     op = opr.Thresholder(samples['88:4A:EA:69:35:BD'],
                          column='accel_energy_512', threshold=95.3)
-    assert len(op(plot=True)) == 12
+    assert len(op()) == 12
 
 
 def test_multi_thresholder(samples):
@@ -155,7 +155,14 @@ def test_multi_thresholder(samples):
                   'temperature': 45}
     op = opr.MultiThresholder(samples['88:4A:EA:69:35:BD'],
                               thresholds=thresholds)
-    assert len(op(plot=True)) == 12
+    assert len(op()) == 12
+
+
+def test_sessionizer(samples):
+    events = opr.Thresholder(samples['88:4A:EA:69:35:BD'],
+                             column='accel_energy_512', threshold=95.3)()
+    op = opr.Sessionizer(events, max_gap='1s', logger=None)
+    assert len(op(plot=True)) == 5
 
 
 if __name__ == '__main__':

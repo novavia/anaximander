@@ -13,10 +13,11 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 import copy
+from itertools import chain
 
 import pandas as pd
 
-from ..utilities import xprops, functions as fun
+from ..utilities import xprops, functions as fun, nxrange as rge
 from ..data import datalogs as dtl
 from . import logger as LOGGER
 from .exceptions import InputError
@@ -77,6 +78,8 @@ class Operation(abc.ABC):
         try:
             output = self.__operate__()
         except:
+            if self.logger is None:
+                raise
             msg = f"{type(self).__name__} operation error on {self.inputs}."
             self.logger.exception(msg, exc_info=True)
             return None
@@ -156,3 +159,44 @@ class MultiThresholder(Operation):
             label = 'peaking_' + c
             events = self.output.event_sequence(label)
             events.plot(staff=staff)
+
+
+class Sessionizer(Operation):
+    __inputs__ = (dtl.EventSequence,)
+    __output__ = dtl.SessionSequence
+    # Params takes an optional onset session
+    __params__ = {'label': 'session', 'max_gap': '0s', 'min_span': '0s',
+                  'onset': None}
+
+    def __operate__(self):
+        max_gap = pd.Timedelta(self.params['max_gap'])
+        min_span = pd.Timedelta(self.params['min_span'])
+        # Extract the timestamp series of the events
+        timestamps = pd.Series(self.input.datetime,
+                               index=self.input.index)
+        # Compute consecutive differences and mark gaps
+        gaps = timestamps.diff() > max_gap
+        # The cumulative sum of gaps provide clusters of events
+        clusters = gaps.cumsum()
+        groups = clusters.groupby(clusters).groups
+        # Session spans provided by first and last index of each group
+        spans = [rge.TimeInterval(g[0], g[-1]) for g in groups.values()]
+        onset = self.params['onset']
+        # Check for onset sessions, and merge it if necessary
+        if onset is not None:
+            onset_span = rge.TimeInterval(onset.start, onset.stop)
+            spans.append(onset_span)
+        # Normalize spans
+        spans = rge.MultiTimeInterval(spans, tolerance=max_gap).intervals
+        # Extract qualified spans based on min_span
+        qspans = [s for s in spans if s.duration >= min_span]
+        # Turn spans into state transitions
+        sessions = pd.DataFrame({'datetime': [s.lower for s in qspans],
+                                 'duration': [s.duration for s in qspans],
+                                 'label': self.params['label']})
+        return dtl.SessionSequence(sessions, **self.input.metadata)
+
+    def __plot__(self, **kwargs):
+        score = self.input.plot()
+        staff = score.staves[0]
+        self.output.plot(staff=staff)

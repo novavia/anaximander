@@ -568,16 +568,16 @@ class MultiInterval(MultiRange, Sequence):
     """An object representing a union of intervals."""
     tolerance = None  # Optional tolerance for interval overlap
 
-    def __init__(self, intervals=None):
+    def __init__(self, intervals=None, tolerance=None):
         intervals = get(intervals, [])
-        self._intervals = self.normalize(*intervals)
+        self._intervals = self.normalize(*intervals, tolerance=tolerance)
 
     @property
     def intervals(self):
         return list(self._intervals)
 
     @classmethod
-    def normalize(cls, *intervals):
+    def normalize(cls, *intervals, tolerance=None):
         """Normalizes intervals into an ordered, non-overlapping set."""
         intervals = list(i for i in intervals
                          if not isinstance(i, EmptyInterval))
@@ -595,10 +595,12 @@ class MultiInterval(MultiRange, Sequence):
         uppers = signature.index[is_upper]
         is_lower = is_upper.shift().fillna(True)
         lowers = signature.index[is_lower]
-        if cls.tolerance is not None:
+        if tolerance is None:
+            tolerance = cls.tolerance
+        if tolerance is not None:
             lowest, uppest = lowers[0], uppers[-1]
             interior = lowers[1:] - uppers[:-1]
-            keepers = interior > cls.tolerance
+            keepers = interior > tolerance
             lowers = [lowest] + list(lowers[1:][keepers])
             uppers = list(uppers[:-1][keepers]) + [uppest]
         return [cls.itype(lower, upper)
