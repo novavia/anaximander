@@ -102,6 +102,9 @@ class DataObject(JsonMixin, metaclass=DataObjectType):
     def metadata(self):
         return self._metadata.copy()
 
+    def copy(self):
+        return type(self)(self.data, schema=self.schema, **self.metadata)
+
     @property
     def columns(self):
         return OrderedDict(self.schema)

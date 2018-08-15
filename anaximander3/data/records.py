@@ -15,7 +15,7 @@ from collections import OrderedDict, Sequence
 
 import pandas as pd
 
-from ..utilities import xprops
+from ..utilities import xprops, nxrange as rge
 from ..utilities.jsonmixin import jsonio
 from .dataobject import DataObjectType, DataObject
 from .exceptions import ConformityError
@@ -246,6 +246,10 @@ class SessionRecord(Record):
     def stop(self):
         """Stop times of sessions."""
         return self.datetime + self.duration
+
+    @property
+    def span(self):
+        return rge.TimeInterval(self.start, self.stop)
 
     def __repr__(self):
         return f"<{type(self).__name__} id:{self.id} " + \

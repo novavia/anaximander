@@ -172,7 +172,7 @@ def cleanup(store):
     store.io.connection_pool.disconnect()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def archive():
     """Creates a redis store for testing purposes."""
     store = nxr.RedisArchive(host=HOST, port=PORT, password=PWD)
@@ -183,7 +183,7 @@ def archive():
     cleanup(store)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def procstore(archive):
     """Creates a redis process store for testing purposes."""
     store = nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
@@ -192,7 +192,7 @@ def procstore(archive):
     cleanup(store)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def backupstore():
     """Creates a backup process store for testing purposes."""
     store = nxr.RedisProcessStore(host=ALT_HOST, port=ALT_PORT, password=PWD)
@@ -200,7 +200,7 @@ def backupstore():
     cleanup(store)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def appstore(archive):
     """Creates a redis application store for testing purposes."""
     store = nxr.RedisApplicationStore(host=ALT_HOST, port=ALT_PORT,
@@ -397,6 +397,9 @@ def test_query(full_tract, featurelog):
     assert query.schema == RdSchema()
     assert len(list(query.fetch())) == len(featurelog)
     assert len(list(query.fetch(limit=1))) == 2
+    query = full_tract.query(id=DEVICES, datetime=(None,
+                                                   '2016-9-14 10:00:27.8'))
+    assert len(query.data()) == 3
 
 
 def test_first(full_tract):
@@ -584,12 +587,13 @@ def test_sequence(buffer_tract, archive, featurelog):
                                    '68:9E:19:07:DE:C3',
                                    '2016-9-14 10:01')
     sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
-    sequence.certify('2016-9-14 10:02')
+    sequence.certify('2016-9-14 10:01:32.99')
+    archive[BUFFER].discard('68:9E:19:07:DE:C3', rge.time_range((None, None)))
     buffer_tract.write(sequence)
     sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
     assert len(sequence) == 1
     archived = archive[BUFFER].query(id='68:9E:19:07:DE:C3').data()
-    assert len(archived) == 3
+    assert len(archived) == 2
 
 
 def test_buffer_query(buffer_tract, featurelog):

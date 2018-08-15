@@ -635,13 +635,6 @@ class RedisProcessBuffer(RedisBuffer):
                       f"because it doesn't feature a table for {self.title}."
                 raise NoArchive(msg)
         archive_bound = sequence[old_certificate:sequence.certification]
-        try:
-            first = archive_bound[0]
-        except IndexError:
-            pass
-        else:
-            if first.datetime == old_certificate:
-                archive_bound = archive_bound[1:]
         archive_tract.append(archive_bound)
 
     def write(self, sequence, old_certificate=None):

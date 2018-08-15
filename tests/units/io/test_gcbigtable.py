@@ -171,7 +171,7 @@ def cleanup(store):
     store.io.delete()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def store():
     """Creates a bigtable instance for testing purposes."""
     store = gbt.BigTableStore(project_id=PROJECT_ID,
@@ -184,8 +184,6 @@ def store():
         cleanup(store)
         store.create(INSTANCE_LOC)
     time.sleep(10)
-#    store = gbt.BigTableStore(project_id=PROJECT_ID,
-#                              instance_id=INSTANCE_ID, admin=True)
     yield store
     cleanup(store)
 

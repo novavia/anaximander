@@ -208,12 +208,13 @@ class Staff:
     def twinx(self):
         return self.ax.twinx()
 
-    def _plot_sequence(self, sequence, **kwargs):
-        if self.main is None:
+    def _plot_sequence(self, sequence, certificate=True, make_main=False,
+                       **kwargs):
+        if self.main is None or make_main is True:
             self._main = sequence
             self.dt_range = sequence.dt_range
             cert = sequence.certification
-            if not pd.isna(cert):
+            if certificate and not pd.isna(cert):
                 cert = mdates.date2num(cert)
                 self.ax.axvline(cert, c='r', lw=2, ls='--')
                 self.ax.axvspan(cert, cert + 1e9, facecolor='0.5', alpha=0.15)
@@ -259,7 +260,7 @@ class Staff:
             plotter(self.ax, seq, **style)
 
     def plot_sample_sequence(self, samples, column=None, twinx=False,
-                             **kwargs):
+                             certificate=True, make_main=False, **kwargs):
         if not column:
             columns = [k for k, v in samples.columns.items()
                        if isinstance(v, cln.Float)]
@@ -279,35 +280,46 @@ class Staff:
                 self.twin_yrange = nxrange.float_range(ymin, ymax)
             else:
                 self.yrange = nxrange.float_range(ymin, ymax)
-        self._plot_sequence(samples)
+        self._plot_sequence(samples, certificate=certificate,
+                            make_main=make_main)
         if not ax.get_ylabel():
             nxcol = samples.schema[column]
             ax.set_ylabel(nxcol.label)
 
-    def plot_event_sequence(self, events, **kwargs):
+    def plot_event_sequence(self, events, certificate=True,
+                            make_main=False, **kwargs):
         styles = self._label_styles(events, **kwargs)
         self._label_plot(vlines, events.data, styles)
-        self._plot_sequence(events)
+        self._plot_sequence(events, certificate=certificate,
+                            make_main=make_main)
 
-    def plot_multi_event_sequence(self, events, **kwargs):
+    def plot_multi_event_sequence(self, events, certificate=True,
+                                  make_main=False, **kwargs):
         styles = self._label_styles(events, ysplit=True, **kwargs)
         self._label_plot(vlines, events.data.reset_index(1), styles)
-        self._plot_sequence(events)
+        self._plot_sequence(events, certificate=certificate,
+                            make_main=make_main)
 
-    def plot_session_sequence(self, sessions, **kwargs):
+    def plot_session_sequence(self, sessions, certificate=True,
+                              make_main=False, **kwargs):
         styles = self._label_styles(sessions, **kwargs)
         self._label_plot(vspans, sessions.data, styles)
-        self._plot_sequence(sessions)
+        self._plot_sequence(sessions, certificate=certificate,
+                            make_main=make_main)
 
-    def plot_multi_session_sequence(self, sessions, **kwargs):
+    def plot_multi_session_sequence(self, sessions, certificate=True,
+                                    make_main=False, **kwargs):
         styles = self._label_styles(sessions, ysplit=True, **kwargs)
         self._label_plot(vspans, sessions.data.reset_index(1), styles)
-        self._plot_sequence(sessions)
+        self._plot_sequence(sessions, certificate=certificate,
+                            make_main=make_main)
 
-    def plot_state_sequence(self, states, **kwargs):
+    def plot_state_sequence(self, states, certificate=True,
+                            make_main=False, **kwargs):
         styles = self._label_styles(states, **kwargs)
         self._label_plot(vspans, states.spans, styles)
-        self._plot_sequence(states)
+        self._plot_sequence(states, certificate=certificate,
+                            make_main=make_main)
 
 # =============================================================================
 # Score class, wrapper for figure

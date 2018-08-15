@@ -622,5 +622,5 @@ def bokeh_plots():
 
 if __name__ == '__main__':
     pytest.main([__file__, '-x', '--pdb'])
-    # plots()
-    # bokeh_plots()
+#    plots()
+#    bokeh_plots()

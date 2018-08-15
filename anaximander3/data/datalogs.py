@@ -273,6 +273,8 @@ class DataLogsBase(DataObject, Sequence):
         else:
             if isinstance(dt_range, rge.Interval):
                 upper = dt_range.upper
+                if 'datetime' in data:
+                    data = data[data['datetime'] < upper]
             else:
                 upper = dt_range.position
             certification = metadata.pop('certification', pd.NaT)
@@ -632,7 +634,13 @@ class BasicDataSequence(DataSequence):
                     if ix.empty:
                         key = slice(nxtime.MIN, nxtime.MIN)
                     else:
-                        key = slice(ix[0], ix[-1])
+                        indices = key.indices(len(self.index))
+                        lower = ix[0]
+                        try:
+                            upper = self.index[indices[1]]
+                        except IndexError:
+                            upper = self.dt_range.upper
+                        key = slice(lower, upper)
             dt_slice = key
             metadata = self._metaslice(dt_slice=dt_slice, xrecord=xrecord)
             dt_range = metadata['dt_range']
@@ -742,9 +750,21 @@ class SuffixedDataSequence(DataSequence):
                         key = slice(nxtime.MIN, nxtime.MIN)
                         dt_slice = key
                     else:
-                        key = slice(ix[0], ix[-1])
-                        dt_lower = ix[0][0]
-                        dt_upper = ix[-1][0]
+                        indices = key.indices(len(self.index))
+                        lower_key = ix[0]
+                        dt_lower = lower_key[0]
+                        if ix[-1][0] == dt_lower:
+                            upper_key = ix[-1]
+                            dt_upper = dt_lower
+                        else:
+                            try:
+                                upper_key = self.index[indices[1]]
+                            except IndexError:
+                                upper_key = ix[-1]
+                                dt_upper = self.dt_range.upper
+                            else:
+                                dt_upper = upper_key[0]
+                        key = slice(lower_key, upper_key)
                         if dt_lower == dt_upper:
                             dt_slice = dt_lower
                         else:
@@ -1176,6 +1196,11 @@ class MultiSessionSequence(SuffixedDataSequence):
                                                           keep='last')
         return CompoundStateSequence(data=combined[['datetime', 'labels']],
                                      schema=schema, **self.metadata)
+
+    def session_sequence(self, label, schema=None):
+        """Returns a SessionSequence for a single selected label."""
+        data = self.data[self.label == label]
+        return SessionSequence(data, schema=schema, **self.metadata)
 
 
 class PeriodSequence(BasicDataSequence):

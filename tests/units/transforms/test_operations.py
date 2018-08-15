@@ -22,7 +22,7 @@ import pytest
 import anaximander3 as nx
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl
-from anaximander3.transforms import operations as opr
+from anaximander3.transforms import operations as ops
 
 
 NXPATH = os.path.dirname(nx.__path__[0])
@@ -32,12 +32,15 @@ EVENTS_PATH = os.path.join(TEST_DATA_DIR, 'events.csv')
 STATES_PATH = os.path.join(TEST_DATA_DIR, 'states.csv')
 SESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'sessions.csv')
 PERIODS_PATH = os.path.join(TEST_DATA_DIR, 'periods.csv')
+MULTIEVENTS_PATH = os.path.join(TEST_DATA_DIR, 'multievents.csv')
+MULTIEVENTS = pd.read_csv(MULTIEVENTS_PATH)
 
 SAMPLES = pd.read_csv(SAMPLES_PATH)
 EVENTS = pd.read_csv(EVENTS_PATH)
 STATES = pd.read_csv(STATES_PATH)
 SESSIONS = pd.read_csv(SESSIONS_PATH)
 PERIODS = pd.read_csv(PERIODS_PATH)
+
 
 IDS = ['88:4A:EA:69:35:BD', '88:4A:EA:69:38:1A']
 SAMPLES_TME = ['2018-4-15 00:15:00', '2018-4-15 00:15:10']
@@ -102,6 +105,11 @@ class GenericSchema(sch.SampleLogsSchema):
     feature = cln.Float(generic=True)
 
 
+class MultiEventSchema(sch.MultiEventLogsSchema):
+    message = cln.Text()
+    latency = cln.Float()
+
+
 @pytest.fixture(scope="module")
 def samples():
     return dtl.DataLog(SAMPLES, schema=SampleSchema, id_range=IDS,
@@ -131,21 +139,28 @@ def periods():
     return dtl.DataLog(PERIODS, schema=PeriodSchema, id_range=IDS,
                        dt_range=PERIODS_TME)
 
+
+@pytest.fixture(scope="module")
+def multi_events():
+    return dtl.DataSequence(MULTIEVENTS, schema=MultiEventSchema,
+                            id_range='88:4A:EA:69:35:BD',
+                            dt_range=EVENTS_TME)
+
 # =============================================================================
 # Test Cases
 # =============================================================================
 
 
 def test_identity(samples):
-    op = opr.LoggerIdentity(samples, logger=LOGGER)
+    op = ops.LoggerIdentity(samples, logger=LOGGER)
     assert op() == samples
     assert 'Processing' in LOG_FILE.getvalue()
-    with pytest.raises(opr.InputError):
-        opr.Identity(None, logger=LOGGER)
+    with pytest.raises(ops.InputError):
+        ops.Identity(None, logger=LOGGER)
 
 
 def test_thresholder(samples):
-    op = opr.Thresholder(samples['88:4A:EA:69:35:BD'],
+    op = ops.Thresholder(samples['88:4A:EA:69:35:BD'],
                          column='accel_energy_512', threshold=95.3)
     assert len(op()) == 12
 
@@ -153,32 +168,44 @@ def test_thresholder(samples):
 def test_multi_thresholder(samples):
     thresholds = {'accel_energy_512': 95.3,
                   'temperature': 45}
-    op = opr.MultiThresholder(samples['88:4A:EA:69:35:BD'],
+    op = ops.MultiThresholder(samples['88:4A:EA:69:35:BD'],
                               thresholds=thresholds)
     assert len(op()) == 12
 
 
 def test_sessionizer(samples):
-    events = opr.Thresholder(samples['88:4A:EA:69:35:BD'],
+    events = ops.Thresholder(samples['88:4A:EA:69:35:BD'],
                              column='accel_energy_512', threshold=95.3)()
     events.certify('2018-4-15 00:15:05')
-    op = opr.Sessionizer(events, max_gap='1s', logger=None)
+    op = ops.Sessionizer(events, max_gap='1s', logger=None)
     assert len(op()) == 5
-    assert op().certification == pd.to_datetime('2018-04-15 00:15:04.6',
+    assert op().certification == pd.to_datetime('2018-04-15 00:15:04.08',
                                                 utc=True)
     events.certify('2018-4-15 00:15:07.2')
-    op = opr.Sessionizer(events, max_gap='1s', logger=None)
+    op = ops.Sessionizer(events, max_gap='1s', logger=None)
     assert len(op()) == 5
     assert op().certification == events.certification
     events.certify('2018-4-15 00:15:01')
-    op = opr.Sessionizer(events, max_gap='1s', logger=None)
+    op = ops.Sessionizer(events, max_gap='1s', logger=None)
     assert len(op()) == 5
-    assert op().certification == op().dt_range.lower
+    assert op().certification == pd.to_datetime('2018-04-15 00:15:01',
+                                                utc=True)
     events = events[:'2018-4-15 00:15:01.5']
     events.certify('2018-4-15 00:15:01.5')
-    op = opr.Sessionizer(events, max_gap='1s', logger=None)
+    op = ops.Sessionizer(events, max_gap='1s', logger=None)
     assert len(op()) == 0
     assert op().certification == events.certification
+
+
+def test_multi_sessionizer(multi_events):
+    multi_events = multi_events.copy()
+    multi_events.certify('2018-4-15 00:16:30')
+    op = ops.MultiSessionizer(multi_events, max_gap='75s', logger=None)
+    sessions = op(plot=True)
+    assert isinstance(sessions, dtl.MultiSessionSequence)
+    assert len(sessions) == 4
+    assert sessions.certification == pd.to_datetime('2018-04-15 00:15:27.1',
+                                                    utc=True)
 
 
 if __name__ == '__main__':
