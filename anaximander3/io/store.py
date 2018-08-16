@@ -70,14 +70,24 @@ class Title:
                      convert=lambda s: s() if isinstance(s, type) else s)
 
 
-class Store(Mapping):
+class StoreType(abc.ABCMeta):
+    __registry__ = {}
+
+    def __getitem__(self, name):
+        return self.__registry__[name]
+
+
+class Store(Mapping, metaclass=StoreType):
     """A light wrapper for data stores with a mapping interface.
 
     The Store provides a mapping from Title name to Tract.
     """
     __tract__ = None  # The tract type associated with the Store class
 
-    def __init__(self, **kwargs):
+    def __init__(self, role=None, **kwargs):
+        self.role = role
+        if role is not None:
+            type(self).__registry__[role] = self
         self._io = self.__interface__(**kwargs)
         self._tracts = dict()
 

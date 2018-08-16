@@ -1192,8 +1192,12 @@ class MultiSessionSequence(SuffixedDataSequence):
                 content[label] = data
             labels.append(content)
         combined['labels'] = labels
-        combined = combined.reset_index().drop_duplicates('datetime',
-                                                          keep='last')
+        combined.reset_index(inplace=True)
+        if not combined.empty:
+            combined = combined.drop_duplicates('datetime', keep='last')
+        else:
+            combined.rename(index=str, columns={'index': 'datetime'},
+                            inplace=True)
         return CompoundStateSequence(data=combined[['datetime', 'labels']],
                                      schema=schema, **self.metadata)
 

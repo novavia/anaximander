@@ -25,7 +25,7 @@ from anaximander3.data import nxcolumns as cln, nxschema as sch, \
 from anaximander3.io.store import Title, EmptyQueryException
 from anaximander3.io import redis as nxr
 from anaximander3.transforms import operations as ops
-from anaximander3.transforms import tasks as tsk
+from anaximander3.transforms import tasks as tsk, jobs
 
 
 HOST = 'redis-15511.c1.us-central1-2.gce.cloud.redislabs.com'
@@ -285,35 +285,17 @@ class MachineEventAssessment(tsk.Task):
                                 dt_range=self.dt_range)
 
 
-def test_task_input():
-    ti_0 = tsk.TaskInput(FEATURE, 'devices')
-    ti_1 = tsk.TaskInput(FEATURE, 'devices')
-    ALT_FEATURE = Title('feature', RdSchema)
-    ti_2 = tsk.TaskInput(ALT_FEATURE, 'devices')
-    s = {ti_0, ti_1, ti_2}
-    assert len(s) == 1
+class DeviceUpdate(jobs.Job):
+    identity = jobs.JobTask(IdentityTask)
+    alerts = jobs.JobTask(FeatureAlertsAssessment)
+    __etype__ = Device
+    __input_store__ = 'archive'
 
 
-def test_nothing_task(archive, featurelog):
-    task = IdentityTask(D0, None, archive, logger=None)
-    output = task()
-    assert isinstance(output, dtl.DataSequence)
-    assert output.empty
-    task = IdentityTask(D0, FEATURE_TME, archive, logger=None)
-    output = task()
-    assert output == featurelog[D0.id]
-
-
-def test_feature_alerts(archive):
-    task = FeatureAlertsAssessment(D1, FEATURE_TME, 'archive', logger=None)
-    output = task()
-    assert len(output) == 5
-
-
-def test_machine_events(archive):
-    task = MachineEventAssessment(M0, FEATURE_TME, 'archive', logger=None)
-    output = task()
-    assert len(output) == 7
+def test_device_update(archive):
+    job = DeviceUpdate(D1, FEATURE_TME, logger=None)
+    job()
+    assert len(job.outputs['alerts']) == 5
 
 
 if __name__ == '__main__':

@@ -12,7 +12,9 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
+from collections import defaultdict
 
+from ..meta import nxdescriptors as nxd
 from . import logger as LOGGER
 from .exceptions import InputError
 
@@ -23,11 +25,41 @@ __all__ = []
 # =============================================================================
 
 
-class Job(abc.ABC):
-    __etype__ = None
+class JobTask(nxd.NxAttribute):
+    __registry__ = '__tasks__'
 
-    def __init__(self, entity, input_store=None, output_store=None,
-                 logger=LOGGER, **params):
+    def __init__(self, task_type, input_store=None, output_store=None):
+        self.task_type = task_type
+        super().__init__(type_=task_type)
+        self.input_store = input_store
+        self.output_store = output_store
+
+    def __set__(self, job, task):
+        try:
+            super().__set__(job, task)
+        except:
+            if job.logger is None:
+                raise
+            else:
+                msg = f"Cannot set task {self.name} for {job}."
+                self.logger.exception(msg, exc_info=True)
+        task.input_store = self.input_store or job.input_store
+        task.output_store = self.output_store or job.output_store
+
+
+class JobType(abc.ABCMeta):
+
+    def __init__(cls, name, bases, namespace):
+        JobTask.collect(cls, namespace)
+
+
+class Job(metaclass=JobType):
+    __etype__ = None
+    __input_store__ = None
+    __output_store__ = None
+
+    def __init__(self, entity, dt_range=None, input_store=None,
+                 output_store=None, logger=LOGGER, **params):
         try:
             assert isinstance(entity, self.__etype__)
             assert hasattr(entity, 'id')
@@ -36,18 +68,29 @@ class Job(abc.ABC):
                   f"{type(self).__name__} job."
             raise InputError(msg)
         self.entity = entity
-        self.input_store = input_store
-        self.output_store = output_store
+        self.dt_range = dt_range
+        self.input_store = input_store or self.__input_store__
+        self.output_store = output_store or self.__output_store__
         self.logger = logger
+        self.inputs = defaultdict(dict)
+        for name, desc in self.__tasks__.items():
+            task = desc.task_type(entity, dt_range, logger=logger)
+            setattr(self, name, task)
+            for ti in task.__inputs__.values():
+                self.inputs[task.input_store][ti] = None
+        self.outputs = dict()
 
     def retrieve_inputs(self):
-        pass
+        for store, task_inputs in self.inputs.items():
+            for ti in list(task_inputs):
+                task_inputs[ti] = ti.fetch(store, self.entity, self.dt_range)
 
-    @abc.abstractmethod
-    def __work__(self):
-        """Type-specific work method."""
-        return None
-
-    def __call__(self, plot=False):
+    def __call__(self):
         """Run interface."""
         self.retrieve_inputs()
+        for name in self.__tasks__:
+            task = getattr(self, name)
+            store = task.input_store
+            for k, v in task.__inputs__.items():
+                setattr(task, k, self.inputs[store][v])
+            self.outputs[name] = task()

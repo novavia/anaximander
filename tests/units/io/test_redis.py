@@ -22,7 +22,7 @@ import anaximander3 as nx
 from anaximander3.utilities import nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
-from anaximander3.io.store import Title, EmptyQueryException
+from anaximander3.io.store import Store, Title, EmptyQueryException
 from anaximander3.io import redis as nxr
 
 
@@ -175,7 +175,8 @@ def cleanup(store):
 @pytest.fixture(scope="module")
 def archive():
     """Creates a redis store for testing purposes."""
-    store = nxr.RedisArchive(host=HOST, port=PORT, password=PWD)
+    store = nxr.RedisArchive(role='archive',
+                             host=HOST, port=PORT, password=PWD)
     store.tract(BUFFER)
     store.tract(STATEBUF)
     store.tract(GENERIC)
@@ -186,7 +187,8 @@ def archive():
 @pytest.fixture(scope="module")
 def procstore(archive):
     """Creates a redis process store for testing purposes."""
-    store = nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
+    store = nxr.RedisProcessStore(role='process',
+                                  host=HOST, port=PORT, password=PWD,
                                   archive=archive)
     yield store
     cleanup(store)
@@ -195,7 +197,8 @@ def procstore(archive):
 @pytest.fixture(scope="module")
 def backupstore():
     """Creates a backup process store for testing purposes."""
-    store = nxr.RedisProcessStore(host=ALT_HOST, port=ALT_PORT, password=PWD)
+    store = nxr.RedisProcessStore(role='backup',
+                                  host=ALT_HOST, port=ALT_PORT, password=PWD)
     yield store
     cleanup(store)
 
@@ -203,7 +206,8 @@ def backupstore():
 @pytest.fixture(scope="module")
 def appstore(archive):
     """Creates a redis application store for testing purposes."""
-    store = nxr.RedisApplicationStore(host=ALT_HOST, port=ALT_PORT,
+    store = nxr.RedisApplicationStore(role='buffer',
+                                      host=ALT_HOST, port=ALT_PORT,
                                       password=PWD, archive=archive)
     yield store
     cleanup(store)
@@ -570,7 +574,8 @@ def test_metadata(buffer_tract, featurelog):
                                                        utc=True)
 
 
-def test_sequence(buffer_tract, archive, featurelog):
+def test_sequence(buffer_tract, featurelog):
+    archive = Store['archive']
     input_sequence = featurelog['68:9E:19:07:DE:C3']
     buffer_tract.write(input_sequence)
     subscriber = MagicMock()

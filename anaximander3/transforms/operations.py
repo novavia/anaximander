@@ -68,14 +68,14 @@ class Operation(abc.ABC):
         return self._params.copy()
 
     @abc.abstractmethod
-    def __operate__(self):
-        """Type-specific operation method."""
+    def __function__(self):
+        """Type-specific function."""
         return None
 
     def __call__(self, plot=False):
         """Run interface."""
         try:
-            output = self.__operate__()
+            output = self.__function__()
             assert isinstance(output, self.__output__)
         except:
             if self.logger is None:
@@ -102,7 +102,7 @@ class Identity(Operation):
     __inputs__ = (dtl.DataLogsBase,)
     __output__ = dtl.DataLogsBase
 
-    def __operate__(self):
+    def __function__(self):
         return self.inputs[0]
 
 
@@ -110,7 +110,7 @@ class LoggerIdentity(Operation):
     __inputs__ = (dtl.DataLogsBase,)
     __output__ = dtl.DataLogsBase
 
-    def __operate__(self):
+    def __function__(self):
         msg = f"Processing {self.inputs[0]} in {type(self).__name__}."
         self.logger.debug(msg)
         return self.inputs[0]
@@ -121,7 +121,7 @@ class Thresholder(Operation):
     __output__ = dtl.EventSequence
     __params__ = {'column': None, 'threshold': 0}
 
-    def __operate__(self):
+    def __function__(self):
         column, threshold = self.params['column'], self.params['threshold']
         df = self.input.data[[column]]
         df = df[df[column] >= threshold]
@@ -140,12 +140,11 @@ class MultiThresholder(Operation):
     __output__ = dtl.MultiEventSequence
     __params__ = {'columns': None, 'thresholds': {}}
 
-    def __operate__(self):
+    def __function__(self):
         columns = fun.get(self.params['columns'], self.input.features)
         df = self.input.data[columns]
         event_series = []
         for col in df.columns:
-            import pdb; pdb.set_trace()
             label = 'peaking_' + col
             index = df[df[col] >= self.params['thresholds'].get(col, 0)].index
             event_series.append(pd.DataFrame({'label': label}, index=index))
@@ -196,7 +195,7 @@ class Sessionizer(Operation):
     __params__ = {'label': 'session', 'max_gap': '0s', 'min_span': '0s',
                   'onset_span': None}
 
-    def __operate__(self):
+    def __function__(self):
         sessions_data = sessionize(self.input.datetime, **self.params)
         sessions = dtl.SessionSequence(sessions_data, **self.input.metadata)
         max_gap = pd.Timedelta(self.params['max_gap'])
@@ -220,7 +219,7 @@ class MultiSessionizer(Operation):
     __params__ = {'max_gap': '0s', 'min_span': '0s', 'labels': {},
                   'onset_spans': {}}
 
-    def __operate__(self):
+    def __function__(self):
         sessions_ = []
         max_gap = pd.Timedelta(self.params['max_gap'])
         min_span = pd.Timedelta(self.params['min_span'])
@@ -230,7 +229,10 @@ class MultiSessionizer(Operation):
             sessions_.append(sessionize(group.index.get_level_values(0),
                                         max_gap=max_gap, min_span=min_span,
                                         label=label, onset_span=onset_span))
-        sessions_ = pd.concat(sessions_)
+        if sessions_:
+            sessions_ = pd.concat(sessions_)
+        else:
+            sessions_ = None
         metadata = self.input.metadata
         sessions = dtl.MultiSessionSequence(sessions_, **metadata)
         input_certif = self.input.certification

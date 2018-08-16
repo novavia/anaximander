@@ -201,7 +201,7 @@ def test_multi_sessionizer(multi_events):
     multi_events = multi_events.copy()
     multi_events.certify('2018-4-15 00:16:30')
     op = ops.MultiSessionizer(multi_events, max_gap='75s', logger=None)
-    sessions = op(plot=True)
+    sessions = op()
     assert isinstance(sessions, dtl.MultiSessionSequence)
     assert len(sessions) == 4
     assert sessions.certification == pd.to_datetime('2018-04-15 00:15:27.1',
