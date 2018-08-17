@@ -19,7 +19,6 @@ import pandas as pd
 from ..utilities import xprops, functions as fun, nxrange as rge
 from ..data import datalogs as dtl
 from . import logger as LOGGER
-from .exceptions import InputError
 
 __all__ = []
 
@@ -41,7 +40,7 @@ class Operation(abc.ABC):
             itypes = tuple([t.__name__ for t in self.__inputs__])
             msg = f"Invalid inputs {inputs} to {type(self).__name__}, " + \
                   f"which expects types {itypes}."
-            raise InputError(msg)
+            raise IOError(msg)
         self._inputs = inputs
         self.logger = logger
         self._params = copy.deepcopy(self.__params__)

@@ -14,9 +14,9 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import defaultdict
 
+from ..utilities import nxrange as rge
 from ..meta import nxdescriptors as nxd
 from . import logger as LOGGER
-from .exceptions import InputError
 
 __all__ = []
 
@@ -59,16 +59,21 @@ class Job(metaclass=JobType):
     __output_store__ = None
 
     def __init__(self, entity, dt_range=None, input_store=None,
-                 output_store=None, logger=LOGGER, **params):
+                 output_store=None, stream_mode=False, logger=LOGGER,
+                 **params):
         try:
             assert isinstance(entity, self.__etype__)
             assert hasattr(entity, 'id')
         except AssertionError:
             msg = f"Improper entity {entity} supplied to " + \
                   f"{type(self).__name__} job."
-            raise InputError(msg)
+            raise TypeError(msg)
         self.entity = entity
-        self.dt_range = dt_range
+        self.stream_mode = stream_mode
+        if stream_mode:
+            self.dt_range = rge.time_range((None, None))
+        else:
+            self.dt_range = rge.time_range(dt_range)
         self.input_store = input_store or self.__input_store__
         self.output_store = output_store or self.__output_store__
         self.logger = logger
@@ -78,12 +83,24 @@ class Job(metaclass=JobType):
             setattr(self, name, task)
             for ti in task.__inputs__.values():
                 self.inputs[task.input_store][ti] = None
+            for to in task.__outputs__.values():
+                self.inputs[task.output_store][to] = None
         self.outputs = dict()
 
     def retrieve_inputs(self):
-        for store, task_inputs in self.inputs.items():
-            for ti in list(task_inputs):
-                task_inputs[ti] = ti.fetch(store, self.entity, self.dt_range)
+        for store, descriptors in self.inputs.items():
+            if store is None:
+                continue
+            for d in list(descriptors):
+                descriptors[d] = d.fetch(store, self.entity, self.dt_range)
+
+    @classmethod
+    def setup_streaming(cls, entity, input_store, output_store, logger=LOGGER):
+        for name, desc in cls.__tasks__.items():
+            in_store = desc.input_store or input_store
+            out_store = desc.output_store or output_store
+            desc.task_type.setup_streaming(entity, in_store, out_store,
+                                           logger=LOGGER)
 
     def __call__(self):
         """Run interface."""

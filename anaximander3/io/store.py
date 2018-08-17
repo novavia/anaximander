@@ -115,6 +115,12 @@ class Store(Mapping, metaclass=StoreType):
         """Instantiates a tract for self."""
         return self.__tract__(self, title, **kwargs)
 
+    def __eq__(self, other):
+        return self is other
+
+    def __hash__(self):
+        return id(self)
+
 
 class Tract(StorageResource):
     """Abstract base class for data storage resources.
@@ -155,6 +161,12 @@ class Tract(StorageResource):
         """Returns a Query object."""
         return self.__query__(*columns, **kwargs)
 
+    @abc.abstractmethod
+    def write(self, sequence, **kwargs):
+        """Universal method for storing sequences."""
+        if not isinstance(sequence, dtl.DataSequence):
+            raise TypeError()
+
 
 class DataTract(Tract):
     """A Tract that allows flexible operations on time series data."""
@@ -191,6 +203,10 @@ class DataTract(Tract):
             msg = f"Incorrect data schema supplied to {self}."
             raise ValueError(msg)
         return self.__append__(logs=logs, **kwargs)
+
+    def write(self, sequence, **kwargs):
+        super().write(sequence)
+        return self.append(sequence, **kwargs)
 
     def __update__(self, record, **kwargs):
         raise NotImplementedError

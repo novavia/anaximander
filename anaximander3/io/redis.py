@@ -517,7 +517,7 @@ class RedisBuffer(RedisTract):
 
     @abc.abstractmethod
     def write(self, sequence, old_certificate=None):
-        pass
+        super().write(sequence)
 
 
 class RedisApplicationBuffer(RedisBuffer):

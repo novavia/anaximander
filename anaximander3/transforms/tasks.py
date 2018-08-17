@@ -13,13 +13,13 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import Sequence
+from itertools import chain
 
-from ..utilities import xprops, nxrange as rge
+from ..utilities import nxrange as rge, xprops
 from ..meta import nxdescriptors as nxd
 from ..data import datalogs as dtl
 from ..io.store import Store
 from . import logger as LOGGER
-from .exceptions import InputError
 
 __all__ = []
 
@@ -28,8 +28,8 @@ __all__ = []
 # =============================================================================
 
 
-class TaskInput(nxd.NxAttribute):
-    __registry__ = '__inputs__'
+class TaskDescriptor(nxd.NxAttribute):
+    shortname = None
 
     def __init__(self, title, relation=None):
         self.title = title
@@ -58,16 +58,16 @@ class TaskInput(nxd.NxAttribute):
             if task.logger is None:
                 raise
             else:
-                msg = f"Cannot set input {self.name} for {task}."
+                msg = f"Cannot set {self.shortname} {self.name} for {task}."
                 self.logger.exception(msg, exc_info=True)
 
-    def fetch(self, input_store, entity, dt_range):
-        if input_store is None:
-            msg = "An input store must be specified to retrieve task inputs"
+    def fetch(self, store, entity, dt_range):
+        if store is None:
+            msg = "A store must be specified to retrieve task data"
             raise TypeError(msg)
-        elif isinstance(input_store, str):
-            input_store = Store[input_store]
-        tract = input_store[self.title]
+        elif isinstance(store, str):
+            store = Store[store]
+        tract = store[self.title]
         try:
             if self.relation is None:
                 id_range = entity.id
@@ -79,41 +79,103 @@ class TaskInput(nxd.NxAttribute):
                     id_range = target.it
         except AttributeError:
             msg = "Improper entity type or query specification."
-            raise InputError(msg)
+            raise IOError(msg)
         query = tract.query(id=id_range, datetime=dt_range)
         return query.data()
 
     def __eq__(self, other):
-        if not isinstance(other, TaskInput):
+        if not isinstance(other, type(self)):
             return False
-        return self.title == self.title and self.relation == self.relation
+        return self.title == other.title and self.relation == other.relation
 
     def __hash__(self):
         return hash((self.title, self.relation))
+
+
+class TaskInput(TaskDescriptor):
+    shortname = 'input'
+    __registry__ = '__inputs__'
+
+
+class TaskOutput(TaskDescriptor):
+    shortname = 'output'
+    __registry__ = '__outputs__'
+
+    def __init__(self, title):
+        super().__init__(title)
+
+    def store(self, sequence, output_store, entity, old_certificate=None):
+        if output_store is None:
+            msg = "An output store must be specified to write task outputs"
+            raise TypeError(msg)
+        elif isinstance(output_store, str):
+            output_store = Store[output_store]
+        try:
+            assert sequence.id_range == entity.id
+        except AssertionError:
+            msg = f"{sequence}'s id does not match {entity}."
+            raise ValueError(msg)
+        tract = output_store[self.title]
+        return tract.write(sequence, old_certificate=old_certificate)
 
 
 class TaskType(abc.ABCMeta):
 
     def __init__(cls, name, bases, namespace):
         TaskInput.collect(cls, namespace)
+        TaskOutput.collect(cls, namespace)
 
 
 class Task(metaclass=TaskType):
     __etype__ = None
 
     def __init__(self, entity, dt_range=None, input_store=None,
-                 output_store=None, logger=LOGGER, **inputs):
+                 output_store=None, logger=LOGGER, stream_mode=False,
+                 **inputs):
         self.entity = entity
-        self.dt_range = rge.time_range(dt_range)
+        self.stream_mode = stream_mode
+        if stream_mode:
+            self.dt_range = rge.time_range((None, None))
+        else:
+            self.dt_range = rge.time_range(dt_range)
         self.input_store = input_store
         self.output_store = output_store
         self.logger = logger
         for k, v in inputs.items():
             setattr(self, k, v)
 
-    @xprops.cachedproperty
-    def output(self):
+    @classmethod
+    def setup_streaming(cls, entity, input_store, output_store, logger=LOGGER):
+        if isinstance(input_store, str):
+            input_store = Store[input_store]
+        if isinstance(output_store, str):
+            output_store = Store[output_store]
+        for name, desc in cls.__outputs__.items():
+            tract = output_store[desc.title]
+            tract.setup(entity.id)
+            for iname, idesc in cls.__inputs__.items():
+                itract = input_store[idesc.title]
+                itract.setup_subscriber(tract, entity.id)
+
+    @xprops.settablecachedproperty
+    def input_store(self):
         return None
+
+    @input_store.setter
+    def input_store(self, value):
+        if isinstance(value, str):
+            value = Store[value]
+        setattr(self, '_input_store', value)
+
+    @xprops.settablecachedproperty
+    def output_store(self):
+        return None
+
+    @output_store.setter
+    def output_store(self, value):
+        if isinstance(value, str):
+            value = Store[value]
+        setattr(self, '_output_store', value)
 
     def retrieve_inputs(self):
         for name, desc in self.__inputs__.items():
@@ -121,6 +183,11 @@ class Task(metaclass=TaskType):
                 setattr(self, name, desc.fetch(self.input_store,
                                                self.entity,
                                                self.dt_range))
+        if self.stream_mode:
+            for name, desc in self.__outputs__.items():
+                if getattr(self, name) is None:
+                    setattr(self, name, desc.fetch(self.input_store,
+                                                   self.entity))
 
     @abc.abstractmethod
     def __function__(self):
@@ -130,26 +197,38 @@ class Task(metaclass=TaskType):
     def __call__(self, plot=False):
         """Run interface."""
         self.retrieve_inputs()
+        if self.stream_mode:
+            self.retrieve_outputs()
+            certificates = {name: getattr(self, name).certification
+                            for name in self.__outputs__}
         try:
-            output = self.__function__()
-            assert isinstance(output, dtl.DataSequence)
-            assert isinstance(output.schema, type(self.__output__.schema))
+            outputs = self.__function__()
+            if not isinstance(outputs, tuple):
+                outputs = (outputs,)
+            for name, output in zip(self.__outputs__, outputs):
+                setattr(self, name, output)
         except:
             if self.logger is None:
                 raise
             msg = f"{type(self).__name__} task error on {self.inputs}."
             self.logger.exception(msg, exc_info=True)
             return None
-        self._output = output
         if plot:
             self.plot()
-        return output
+        if self.stream_mode:
+            for name, desc in self.__outputs__.items():
+                out_tract = self.output_store[desc.title]
+                sequence = getattr(self, name)
+                certificate = sequence.certification
+                for iname, idesc in self.__inputs__.items():
+                    in_tract = self.input_store[idesc.title]
+                    in_tract.update_subscriber(out_tract, self.entity.id,
+                                               certificate)
+                old_certificate = certificates[name]
+                desc.store(sequence, self.output_store, self.entity,
+                           old_certificate)
+        return outputs
 
     def plot(self, **kwargs):
-        if self.output is None:
-            self()
-        self.__plot__(**kwargs)
-
-    def __plot__(self, **kwargs):
         """Optional operator plot."""
         pass

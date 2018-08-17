@@ -236,7 +236,7 @@ pytestmark = [pytest.mark.online, pytest.mark.gcloud]
 class IdentityTask(tsk.Task):
     __etype__ = Device
     features = tsk.TaskInput(FEATURE)
-    __output__ = FEATURE
+    output = tsk.TaskOutput(FEATURE)
 
     def __function__(self):
         return self.features
@@ -245,7 +245,7 @@ class IdentityTask(tsk.Task):
 class FeatureAlertsAssessment(tsk.Task):
     __etype__ = Device
     features = tsk.TaskInput(FEATURE)
-    __output__ = CSTATE
+    alerts = tsk.TaskOutput(CSTATE)
 
     def __function__(self):
         thresholds = {'accel_x': 1000,
@@ -255,8 +255,8 @@ class FeatureAlertsAssessment(tsk.Task):
         sessions = ops.MultiSessionizer(events, max_gap='75s', logger=None)()
         return sessions.to_compound_state_sequence()
 
-    def __plot__(self):
-        sessions = self.output.to_multisession_sequence()
+    def plot(self):
+        sessions = self.alerts.to_multisession_sequence()
         score = self.features.plot(certificate=False)
         thresholds = {'accel_x': 1000,
                       'accel_y': 8100}
@@ -269,7 +269,7 @@ class FeatureAlertsAssessment(tsk.Task):
 class MachineEventAssessment(tsk.Task):
     __etype__ = Machine
     features = tsk.TaskInput(FEATURE, 'devices')
-    __output__ = EVENT
+    events = tsk.TaskOutput(EVENT)
 
     def __function__(self):
         params = {'column': 'accel_y', 'threshold': 8100}
@@ -296,23 +296,23 @@ def test_task_input():
 
 def test_nothing_task(archive, featurelog):
     task = IdentityTask(D0, None, archive, logger=None)
-    output = task()
+    output, *_ = task()
     assert isinstance(output, dtl.DataSequence)
     assert output.empty
     task = IdentityTask(D0, FEATURE_TME, archive, logger=None)
-    output = task()
+    output, *_ = task()
     assert output == featurelog[D0.id]
 
 
 def test_feature_alerts(archive):
     task = FeatureAlertsAssessment(D1, FEATURE_TME, 'archive', logger=None)
-    output = task()
+    output, *_ = task()
     assert len(output) == 5
 
 
 def test_machine_events(archive):
     task = MachineEventAssessment(M0, FEATURE_TME, 'archive', logger=None)
-    output = task()
+    output, *_ = task()
     assert len(output) == 7
 
 

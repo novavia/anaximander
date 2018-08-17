@@ -9,8 +9,3 @@ Copyright (C) Novavia Solutions, LLC.
 class TransformError(Exception):
     """A customized exception for transfomation errors."""
     pass
-
-
-class InputError(TransformError):
-    """Input-related exception."""
-    pass
