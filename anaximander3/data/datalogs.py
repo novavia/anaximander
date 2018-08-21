@@ -169,8 +169,11 @@ class DataLogsBase(DataObject, Sequence):
         The force flag will silently handle incorrect inputs, such as
         unreadable datetime, and treat them as missing values.
         """
-        if data is None:
-            data = self.empty_frame(self.schema).reset_index()
+        try:
+            if data in (None, (), [], {}):
+                data = self.empty_frame(self.schema).reset_index()
+        except (ValueError, TypeError):
+            pass
         df = self._conform(data, flex=flex, force=force)
         if 'id' in df:
             df['id'] = pd.Categorical(df['id'], self.id_range.levels)
@@ -187,7 +190,9 @@ class DataLogsBase(DataObject, Sequence):
                 msg = f"Missing label index values in {self}."
                 raise ConformityError(msg)
         if not pd.isna(self.certification):
-            if not self.dt_range.upper >= self.certification:
+            if isinstance(self.dt_range, rge.EmptyTimeInterval):
+                self.certify(pd.NaT)
+            elif not self.dt_range.upper >= self.certification:
                 msg = "A certification line cannot be posterior to the " + \
                       "upper range of a data log."
                 raise ConformityError(msg)
@@ -371,12 +376,19 @@ class DataLogsBase(DataObject, Sequence):
                    dt_range=dt_range, validate=validate, **metadata)
 
     @classmethod
-    def from_records(cls, records, id_range=None, dt_range=None,
+    def from_records(cls, records, schema=None, id_range=None, dt_range=None,
                      cast=True, validate=False, **metadata):
+        if not records:
+            return cls(schema=schema, id_range=id_range, dt_range=dt_range,
+                       cast=cast, validate=validate, **metadata)
         try:
             schema_set = set(r.schema for r in records)
             assert len(schema_set) == 1
-            schema = schema_set.pop()
+            pop_schema = schema_set.pop()
+            if schema is not None:
+                assert pop_schema == schema
+            else:
+                schema = pop_schema
         except AssertionError:
             msg = "All records must share the same schema."
             raise ConformityError(msg)

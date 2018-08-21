@@ -160,11 +160,12 @@ class MultiThresholder(Operation):
             events.plot(staff=staff, make_main=True)
 
 
-def sessionize(event_times, max_gap='0s', min_span='0s', label='label',
-               onset_span=None):
+def sessionize(event_times, max_gap='0s', min_span='0s', expand='0s',
+               label='label', onset_span=None):
     """Primitive for Sessionizer and MultiSessionizer."""
     max_gap = pd.Timedelta(max_gap)
     min_span = pd.Timedelta(min_span)
+    expand = pd.Timedelta(expand)
     # Extract the timestamp series of the events
     timestamps = pd.Series(event_times, index=event_times)
     # Compute consecutive differences and mark gaps
@@ -173,7 +174,13 @@ def sessionize(event_times, max_gap='0s', min_span='0s', label='label',
     clusters = gaps.cumsum()
     groups = clusters.groupby(clusters).groups
     # Session spans provided by first and last index of each group
-    spans = [rge.TimeInterval(g[0], g[-1]) for g in groups.values()]
+    spans = []
+    for g in groups.values():
+        lower = g[0]
+        upper = g[-1]
+        if lower == upper and expand:
+            upper = lower + expand
+        spans.append(rge.TimeInterval(lower, upper))
     # Check for onset session, and merge it if necessary
     onset_span = rge.time_range(onset_span)
     spans.append(onset_span)
@@ -192,7 +199,7 @@ class Sessionizer(Operation):
     __output__ = dtl.SessionSequence
     # Params takes an optional onset session time interval
     __params__ = {'label': 'session', 'max_gap': '0s', 'min_span': '0s',
-                  'onset_span': None}
+                  'expand': '0s', 'onset_span': None}
 
     def __function__(self):
         sessions_data = sessionize(self.input.datetime, **self.params)
@@ -215,19 +222,21 @@ class MultiSessionizer(Operation):
     __inputs__ = (dtl.MultiEventSequence,)
     __output__ = dtl.MultiSessionSequence
     # Params takes an optional onset session
-    __params__ = {'max_gap': '0s', 'min_span': '0s', 'labels': {},
-                  'onset_spans': {}}
+    __params__ = {'max_gap': '0s', 'min_span': '0s', 'expand': '0s',
+                  'labels': {}, 'onset_spans': {}}
 
     def __function__(self):
         sessions_ = []
         max_gap = pd.Timedelta(self.params['max_gap'])
         min_span = pd.Timedelta(self.params['min_span'])
+        expand = pd.Timedelta(self.params['expand'])
         for label, group in self.input.data.groupby('label'):
             label = self.params['labels'].get(label, label)
             onset_span = self.params['onset_spans'].get(label)
             sessions_.append(sessionize(group.index.get_level_values(0),
                                         max_gap=max_gap, min_span=min_span,
-                                        label=label, onset_span=onset_span))
+                                        expand=expand, label=label,
+                                        onset_span=onset_span))
         if sessions_:
             sessions_ = pd.concat(sessions_)
         else:

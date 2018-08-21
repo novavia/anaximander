@@ -19,7 +19,7 @@ import pandas as pd
 import pytest
 
 import anaximander3 as nx
-from anaximander3.utilities import nxrange as rge
+from anaximander3.utilities import nxrange as rge, nxtime
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
 from anaximander3.io.store import Store, Title, EmptyQueryException
@@ -543,7 +543,7 @@ def test_write_buffer(buffer_tract, featurelog):
     assert sequence.data.equals(input_sequence.data)
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
-    assert sequence.consumption is pd.NaT
+    assert sequence.consumption is nxtime.MAX
 
 
 def test_metadata(buffer_tract, featurelog):
@@ -587,7 +587,7 @@ def test_sequence(buffer_tract, featurelog):
     sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
-    assert sequence.consumption is pd.NaT
+    assert sequence.consumption is nxtime.MAX
     buffer_tract.update_subscriber(subscriber,
                                    '68:9E:19:07:DE:C3',
                                    '2016-9-14 10:01')
@@ -623,7 +623,7 @@ def test_write_xbuffer(statebuf_tract, statelog):
     assert sequence.data.equals(input_sequence.data)
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
-    assert sequence.consumption is pd.NaT
+    assert sequence.consumption is nxtime.MAX
 
 
 def test_xmetadata(statebuf_tract, statelog):
@@ -666,7 +666,7 @@ def test_xsequence(statebuf_tract, archive, statelog):
     sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
-    assert sequence.consumption is pd.NaT
+    assert sequence.consumption is nxtime.MAX
     statebuf_tract.update_subscriber(subscriber,
                                      '88:4A:EA:69:35:BD',
                                      '2018-4-15 00:16:30')

@@ -155,7 +155,7 @@ def test_identity(samples):
     op = ops.LoggerIdentity(samples, logger=LOGGER)
     assert op() == samples
     assert 'Processing' in LOG_FILE.getvalue()
-    with pytest.raises(ops.InputError):
+    with pytest.raises(IOError):
         ops.Identity(None, logger=LOGGER)
 
 
@@ -200,10 +200,11 @@ def test_sessionizer(samples):
 def test_multi_sessionizer(multi_events):
     multi_events = multi_events.copy()
     multi_events.certify('2018-4-15 00:16:30')
-    op = ops.MultiSessionizer(multi_events, max_gap='75s', logger=None)
+    op = ops.MultiSessionizer(multi_events, max_gap='75s',
+                              min_span='10s', logger=None)
     sessions = op()
     assert isinstance(sessions, dtl.MultiSessionSequence)
-    assert len(sessions) == 4
+    assert len(sessions) == 2
     assert sessions.certification == pd.to_datetime('2018-04-15 00:15:27.1',
                                                     utc=True)
 

@@ -211,8 +211,11 @@ def archive(featurelog, statelog, sessionlog, eventseq, cstateseq):
 @pytest.fixture(scope="module")
 def procstore(archive):
     """Creates a redis process store for testing purposes."""
-    store = nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
+    store = nxr.RedisProcessStore(role='procstore',
+                                  host=HOST, port=PORT, password=PWD,
                                   archive=archive)
+    for title in [FEATURE, STATE, SESSION, EVENT, CSTATE]:
+        store.tract(title).create(warn=False, overwrite=True, force=True)
     yield store
     cleanup(store)
 
@@ -250,9 +253,22 @@ class FeatureAlertsAssessment(tsk.Task):
     def __function__(self):
         thresholds = {'accel_x': 1000,
                       'accel_y': 8100}
+        onset_spans = {}
+        if self.alerts is not None:
+            alert_spans = self.alerts.to_multisession_sequence()
+            certified_spans = alert_spans[None:self.alerts.certification]
+            for l in certified_spans.label.categories:
+                try:
+                    span = certified_spans.session_sequence(l)[-1].span
+                except IndexError:
+                    continue
+                else:
+                    onset_spans[l] = span
         events = ops.MultiThresholder(self.features, logger=None,
                                       thresholds=thresholds)()
-        sessions = ops.MultiSessionizer(events, max_gap='75s', logger=None)()
+        sessions = ops.MultiSessionizer(events, max_gap='75s',
+                                        expand='1s', logger=None,
+                                        onset_spans=onset_spans)()
         return sessions.to_compound_state_sequence()
 
     def plot(self):
@@ -285,17 +301,53 @@ class MachineEventAssessment(tsk.Task):
                                 dt_range=self.dt_range)
 
 
-class DeviceUpdate(jobs.Job):
+class DeviceJob(jobs.Job):
     identity = jobs.JobTask(IdentityTask)
     alerts = jobs.JobTask(FeatureAlertsAssessment)
     __etype__ = Device
     __input_store__ = 'archive'
 
 
-def test_device_update(archive):
-    job = DeviceUpdate(D1, FEATURE_TME, logger=None)
+class DeviceUpdate(jobs.Job):
+    alerts = jobs.JobTask(FeatureAlertsAssessment)
+    __etype__ = Device
+    __input_store__ = 'procstore'
+    __output_store__ = 'procstore'
+
+
+def test_device_job(archive):
+    job = DeviceJob(D1, FEATURE_TME, logger=None)
     job()
-    assert len(job.alerts.alerts) == 5
+    assert len(job.alerts.alerts) == 6
+
+
+def test_device_update(featurelog, archive, procstore):
+    archive[CSTATE].create(warn=False, overwrite=True, force=True)
+    minute = pd.Timedelta('1min')
+    updates = pd.date_range('2016-9-14 10:01', '2016-9-14 10:05',
+                            freq='1T', tz='UTC')
+    DeviceUpdate.setup_streaming(D1, 'procstore', 'procstore')
+    for t in updates:
+        records = featurelog[D1.id][t - minute:t]
+        sequence = procstore[FEATURE].sequence(D1.id)
+        old_certificate = sequence.certification
+        recs = list(sequence) + list(records)
+        lower = min(records.dt_range.lower, sequence.dt_range.lower)
+        upper = max(records.dt_range.upper, sequence.dt_range.upper)
+        new_certificate = t - minute
+        new_seq = dtl.DataSequence.from_records(recs, id_range=D1.id,
+                                                dt_range=(lower, upper),
+                                                certification=new_certificate,
+                                                schema=FEATURE.schema)
+        procstore[FEATURE].write(new_seq, old_certificate)
+        update = DeviceUpdate(D1, stream_mode=True, logger=None)
+        update()
+    alerts = procstore[CSTATE].query(id=D1.id).data().\
+        to_multisession_sequence()
+#    alerts = archive[CSTATE].query(id=D1.id).data().\
+#        to_multisession_sequence()
+    alerts.plot()
+    assert len(alerts) == 4
 
 
 if __name__ == '__main__':

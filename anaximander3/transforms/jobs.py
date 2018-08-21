@@ -79,7 +79,8 @@ class Job(metaclass=JobType):
         self.logger = logger
         self.inputs = defaultdict(dict)
         for name, desc in self.__tasks__.items():
-            task = desc.task_type(entity, dt_range, logger=logger)
+            task = desc.task_type(entity, dt_range, stream_mode=stream_mode,
+                                  logger=logger)
             setattr(self, name, task)
             for ti in task.__inputs__.values():
                 self.inputs[task.input_store][ti] = None
@@ -107,7 +108,10 @@ class Job(metaclass=JobType):
         self.retrieve_inputs()
         for name in self.__tasks__:
             task = getattr(self, name)
-            store = task.input_store
+            in_store = task.input_store
+            out_store = task.output_store
             for k, v in task.__inputs__.items():
-                setattr(task, k, self.inputs[store][v])
+                setattr(task, k, self.inputs[in_store][v])
+            for k, v in task.__outputs__.items():
+                setattr(task, k, self.inputs[out_store][v])
             self.outputs[name] = task()

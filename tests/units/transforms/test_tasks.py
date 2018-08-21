@@ -250,9 +250,22 @@ class FeatureAlertsAssessment(tsk.Task):
     def __function__(self):
         thresholds = {'accel_x': 1000,
                       'accel_y': 8100}
+        onset_spans = {}
+        if self.alerts is not None:
+            alert_spans = self.alerts.to_multisession_sequence()
+            certified_spans = alert_spans[None:self.alerts.certification]
+            for l in certified_spans.label.categories:
+                try:
+                    span = certified_spans.session_sequence(l)[-1].span
+                except IndexError:
+                    continue
+                else:
+                    onset_spans[l] = span
         events = ops.MultiThresholder(self.features, logger=None,
                                       thresholds=thresholds)()
-        sessions = ops.MultiSessionizer(events, max_gap='75s', logger=None)()
+        sessions = ops.MultiSessionizer(events, max_gap='75s',
+                                        expand='1s', logger=None,
+                                        onset_spans=onset_spans)()
         return sessions.to_compound_state_sequence()
 
     def plot(self):
@@ -307,7 +320,7 @@ def test_nothing_task(archive, featurelog):
 def test_feature_alerts(archive):
     task = FeatureAlertsAssessment(D1, FEATURE_TME, 'archive', logger=None)
     output, *_ = task()
-    assert len(output) == 5
+    assert len(output.to_multisession_sequence()) == 4
 
 
 def test_machine_events(archive):

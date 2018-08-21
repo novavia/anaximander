@@ -358,11 +358,11 @@ class BufferQuery(RedisDataQuery):
 
     @xprops.cachedproperty
     def dt_ranges(self):
-        return {id: rge.EmptyTimeInterval() for id in self.id_range}
+        return {id: rge.EmptyTimeInterval() for id in self.id_range.levels}
 
     @xprops.cachedproperty
     def certificates(self):
-        return {id: pd.NaT for id in self.id_range}
+        return {id: pd.NaT for id in self.id_range.levels}
 
     def _metadata(self):
         """Fetches metadata for self."""
@@ -402,7 +402,7 @@ class BufferQuery(RedisDataQuery):
             return data
         else:
             id = self.id_range.level
-            super_sequence = super_data[id]
+            super_sequence = super_data
             metadata = super_sequence.metadata
             metadata['dt_range'] = self.dt_ranges[id]
             metadata['certification'] = self.certificates[id]
@@ -481,8 +481,6 @@ class RedisBuffer(RedisTract):
                 v = metadata.pop(k)
                 consumption = min((consumption, v))
         metadata['dt_range'] = dt_range
-        if consumption == nxtime.MAX:
-            consumption = pd.NaT
         metadata['consumption'] = consumption
         data = []
         for res in data_:
@@ -491,6 +489,8 @@ class RedisBuffer(RedisTract):
             dt['id'], dt['datetime'] = dict_['index']
             data.append(dt)
         df = pd.DataFrame(data)
+        if df.empty:
+            df = None
         return dtl.DataSequence(df, schema=self.schema,
                                 id_range=id, **metadata)
 
@@ -659,7 +659,7 @@ class RedisProcessBuffer(RedisBuffer):
         except NoArchive:
             pass
         certification = dtget(sequence.certification, nxtime.MIN)
-        consumption = dtget(sequence.consumption, nxtime.MAX)
+        consumption = dtget(sequence.consumption, nxtime.MIN)
         flushline = min((certification, consumption))
         sequence = sequence[flushline:]
         self.data_tract.__append__(pipe, sequence)

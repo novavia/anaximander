@@ -13,7 +13,8 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import Sequence
-from itertools import chain
+
+import pandas as pd
 
 from ..utilities import nxrange as rge, xprops
 from ..meta import nxdescriptors as nxd
@@ -37,6 +38,8 @@ class TaskDescriptor(nxd.NxAttribute):
         super().__init__()
 
     def __validate__(self, task, value):
+        if value is None:
+            return True
         if self.relation is None:
             type_ = dtl.DataSequence
         else:
@@ -61,7 +64,7 @@ class TaskDescriptor(nxd.NxAttribute):
                 msg = f"Cannot set {self.shortname} {self.name} for {task}."
                 self.logger.exception(msg, exc_info=True)
 
-    def fetch(self, store, entity, dt_range):
+    def fetch(self, store, entity, dt_range=None):
         if store is None:
             msg = "A store must be specified to retrieve task data"
             raise TypeError(msg)
@@ -117,6 +120,26 @@ class TaskOutput(TaskDescriptor):
             raise ValueError(msg)
         tract = output_store[self.title]
         return tract.write(sequence, old_certificate=old_certificate)
+
+    def merge(self, original, new):
+        """Merges new sequence with original sequence."""
+        if pd.isna(original.certification):
+            return new
+        left = original[None:original.certification]
+        right = new[original.certification:None]
+        data = pd.concat((left.data, right.data))
+        id_range = original.id_range
+        dt_range = rge.MultiTimeInterval([left.dt_range,
+                                          right.dt_range]).compact
+        if right.certification >= original.certification:
+            certification = right.certification
+        else:
+            certification = original.certification
+        consumption = original.consumption
+        return dtl.DataSequence(data, schema=self.title.schema,
+                                id_range=id_range, dt_range=dt_range,
+                                certification=certification,
+                                consumption=consumption)
 
 
 class TaskType(abc.ABCMeta):
@@ -198,15 +221,19 @@ class Task(metaclass=TaskType):
         """Run interface."""
         self.retrieve_inputs()
         if self.stream_mode:
-            self.retrieve_outputs()
             certificates = {name: getattr(self, name).certification
                             for name in self.__outputs__}
         try:
             outputs = self.__function__()
             if not isinstance(outputs, tuple):
                 outputs = (outputs,)
-            for name, output in zip(self.__outputs__, outputs):
-                setattr(self, name, output)
+            for (name, desc), output in zip(self.__outputs__.items(), outputs):
+                extant = getattr(self, name, None)
+                if extant is None:
+                    setattr(self, name, output)
+                else:
+                    merged = desc.merge(extant, output)
+                    setattr(self, name, merged)
         except:
             if self.logger is None:
                 raise
