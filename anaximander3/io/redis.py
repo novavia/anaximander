@@ -364,6 +364,10 @@ class BufferQuery(RedisDataQuery):
     def certificates(self):
         return {id: pd.NaT for id in self.id_range.levels}
 
+    @xprops.cachedproperty
+    def consumptions(self):
+        return {id: nxtime.MAX for id in self.id_range.levels}
+
     def _metadata(self):
         """Fetches metadata for self."""
         meta_pipe = self.tract.client.pipeline()
@@ -376,9 +380,14 @@ class BufferQuery(RedisDataQuery):
                      for k, v in zip(meta_keys, m) if v is not None}
                     for m in meta]
         for id, m in zip(id_range, metadata):
-            self.dt_ranges[id] = rge.time_range(m.get('lower', pd.NaT),
-                                                m.get('upper', pd.NaT))
-            self.certificates[id] = dtget(m.get('certification'))
+            self.dt_ranges[id] = rge.time_range(m.pop('lower', pd.NaT),
+                                                m.pop('upper', pd.NaT))
+            self.certificates[id] = dtget(m.pop('certification', pd.NaT))
+            consumption = nxtime.MAX
+            for k in list(m.keys()):
+                v = metadata.pop(k)
+                consumption = min(v, consumption, v)
+            self.consumptions[id] = consumption
 
     def __fetch__(self, **kwargs):
         """Returns an iterator of row indexes and data."""
@@ -395,6 +404,7 @@ class BufferQuery(RedisDataQuery):
                 metadata = super_sequence.metadata
                 metadata['dt_range'] = self.dt_ranges[id]
                 metadata['certification'] = self.certificates[id]
+                metadata['consumption'] = self.consumptions[id]
                 sequence = dtl.DataSequence(super_sequence.data,
                                             schema=self.schema,
                                             **metadata)
@@ -406,6 +416,7 @@ class BufferQuery(RedisDataQuery):
             metadata = super_sequence.metadata
             metadata['dt_range'] = self.dt_ranges[id]
             metadata['certification'] = self.certificates[id]
+            metadata['consumption'] = self.consumptions[id]
             sequence = dtl.DataSequence(super_sequence.data,
                                         schema=self.schema,
                                         **metadata)
@@ -479,7 +490,7 @@ class RedisBuffer(RedisTract):
         for k in list(metadata.keys()):
             if k != 'certification':
                 v = metadata.pop(k)
-                consumption = min((consumption, v))
+                consumption = min(v, consumption)
         metadata['dt_range'] = dt_range
         metadata['consumption'] = consumption
         data = []

@@ -161,6 +161,11 @@ class Tract(StorageResource):
         """Returns a Query object."""
         return self.__query__(*columns, **kwargs)
 
+    def sequence(self, id, lower, upper=None):
+        """Fetches data for id."""
+        query = self.__query__(id=id, datetime=(lower, upper))
+        return query.data()
+
     @abc.abstractmethod
     def write(self, sequence, **kwargs):
         """Universal method for storing sequences."""

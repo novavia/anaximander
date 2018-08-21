@@ -266,7 +266,7 @@ class FeatureAlertsAssessment(tsk.Task):
                     onset_spans[l] = span
         events = ops.MultiThresholder(self.features, logger=None,
                                       thresholds=thresholds)()
-        sessions = ops.MultiSessionizer(events, max_gap='75s',
+        sessions = ops.MultiSessionizer(events, max_gap='60s',
                                         expand='1s', logger=None,
                                         onset_spans=onset_spans)()
         return sessions.to_compound_state_sequence()
@@ -322,32 +322,43 @@ def test_device_job(archive):
 
 
 def test_device_update(featurelog, archive, procstore):
+    archive[FEATURE].create(warn=False, overwrite=True, force=True)
     archive[CSTATE].create(warn=False, overwrite=True, force=True)
     minute = pd.Timedelta('1min')
-    updates = pd.date_range('2016-9-14 10:01', '2016-9-14 10:05',
+    updates = pd.date_range('2016-9-14 10:01', '2016-9-14 10:07',
                             freq='1T', tz='UTC')
     DeviceUpdate.setup_streaming(D1, 'procstore', 'procstore')
-    for t in updates:
+    for i, t in enumerate(updates):
+        dt_range = rge.time_range(t - minute, t)
         records = featurelog[D1.id][t - minute:t]
         sequence = procstore[FEATURE].sequence(D1.id)
         old_certificate = sequence.certification
         recs = list(sequence) + list(records)
-        lower = min(records.dt_range.lower, sequence.dt_range.lower)
-        upper = max(records.dt_range.upper, sequence.dt_range.upper)
+        dt_range = rge.MultiTimeInterval([sequence.dt_range,
+                                          dt_range]).compact
         new_certificate = t - minute
+        consumption = sequence.consumption
         new_seq = dtl.DataSequence.from_records(recs, id_range=D1.id,
-                                                dt_range=(lower, upper),
+                                                dt_range=dt_range,
                                                 certification=new_certificate,
+                                                consumption=consumption,
                                                 schema=FEATURE.schema)
         procstore[FEATURE].write(new_seq, old_certificate)
         update = DeviceUpdate(D1, stream_mode=True, logger=None)
         update()
     alerts = procstore[CSTATE].query(id=D1.id).data().\
         to_multisession_sequence()
-#    alerts = archive[CSTATE].query(id=D1.id).data().\
-#        to_multisession_sequence()
-    alerts.plot()
-    assert len(alerts) == 4
+    features = procstore[FEATURE].sequence(D1.id)
+    archived_alerts_query = archive[CSTATE].query(id=D1.id,
+                                                  datetime=FEATURE_TME)
+    archived_alerts = archived_alerts_query.data().to_multisession_sequence()
+    archived_features_query = archive[FEATURE].query(id=D1.id,
+                                                     datetime=FEATURE_TME)
+    archived_features = archived_features_query.data()
+    assert alerts.empty
+    assert features.empty
+    assert len(archived_alerts) == 4
+    assert len(archived_features) == 17
 
 
 if __name__ == '__main__':

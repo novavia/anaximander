@@ -208,7 +208,9 @@ class Sessionizer(Operation):
         input_certif = self.input.certification
         if not pd.isna(input_certif):
             band = sessions[input_certif - max_gap, input_certif]
-            if not band.empty:
+            if band.empty:
+                sessions.certify(input_certif)
+            else:
                 sessions.certify(band.datetime[0])
         return sessions
 
@@ -246,7 +248,9 @@ class MultiSessionizer(Operation):
         input_certif = self.input.certification
         if not pd.isna(input_certif):
             band = sessions[input_certif - max_gap, input_certif]
-            if not band.empty:
+            if band.empty:
+                sessions.certify(input_certif)
+            else:
                 sessions.certify(min(band.datetime))
         return sessions
 

@@ -587,7 +587,7 @@ def test_sequence(buffer_tract, featurelog):
     sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
-    assert sequence.consumption is nxtime.MAX
+    assert sequence.consumption is pd.NaT
     buffer_tract.update_subscriber(subscriber,
                                    '68:9E:19:07:DE:C3',
                                    '2016-9-14 10:01')
@@ -666,7 +666,7 @@ def test_xsequence(statebuf_tract, archive, statelog):
     sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
-    assert sequence.consumption is nxtime.MAX
+    assert sequence.consumption is pd.NaT
     statebuf_tract.update_subscriber(subscriber,
                                      '88:4A:EA:69:35:BD',
                                      '2018-4-15 00:16:30')
