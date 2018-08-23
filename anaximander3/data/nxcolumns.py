@@ -22,7 +22,7 @@ import pandas as pd
 from pandas.api.types import CategoricalDtype
 from pandas.core.dtypes.dtypes import DatetimeTZDtype
 
-from ..utilities import nxrange
+from ..utilities import nxrange, nxtime
 from ..utilities.jsonmixin import jsonio, serialize
 from ..meta.nxdescriptors import Registrable
 
@@ -142,6 +142,60 @@ class RegExValidator(Validator):
             return True
         else:
             f"{value} does not match pattern {self.regex.pattern}."
+
+
+class TimelinessValidator(Validator):
+    """
+
+    @param max_backward_gap: Maximum time allowable difference between the
+        record value and now (when value < now).
+    @param max_forward_gap: Maximum time allowable difference between the
+        record value and now (when value > now).
+    max_backward_gap and max_forward_gap can be None, integers or floats
+        (number of seconds) or an instance of pd.Timedelta.
+    """
+
+    def __init__(self, max_backward_gap=None, max_forward_gap=None,
+                 nullable=True, wildcards=None):
+        if type(max_backward_gap) in (int, float):
+            self.max_backward_gap = pd.Timedelta(seconds=max_backward_gap)
+        else:
+            self.max_backward_gap = max_backward_gap
+        if type(max_forward_gap) in (int, float):
+            self.max_forward_gap = pd.Timedelta(seconds=max_forward_gap)
+        else:
+            self.max_forward_gap = max_forward_gap
+        super().__init__(nullable=nullable, wildcards=wildcards)
+
+    def __call__(self, record, column, value):
+        if super().__call__(record, column, value) is True:
+            return True
+        now = nxtime.now()
+        if self.max_backward_gap is not None:
+            if now - value > self.max_backward_gap:
+                return f"Record time {value} received at {now} is sooner " + \
+                       f"than max backward gap {self.max_backward_gap}"
+        elif self.max_forward_gap is not None:
+            if value - now > self.max_forward_gap:
+                return f"Record time {value} received at {now} is later " + \
+                       f"than max forward gap {self.max_forward_gap}"
+        else:
+            return True
+
+
+class LengthValidator(Validator):
+
+    def __init__(self, length, nullable=True, wildcards=None):
+        self.length = length
+        super().__init__(nullable=nullable, wildcards=wildcards)
+
+    def __call__(self, record, column, value):
+        if super().__call__(record, column, value) is True:
+            return True
+        if len(value) == self.length:
+            return True
+        else:
+            return f"{value} must be of length of {self.length}."
 
 # =============================================================================
 # Column base types
@@ -616,6 +670,30 @@ class Dictionary(NxColumn):
         super().__init__(index=index, required=required,
                          default=default, missing=missing, validate=validate,
                          generic=generic, **metadata)
+
+    def stringify(self, value):
+        """Converts value to string for storage."""
+        return json.dumps(value, default=serialize)
+
+    def unstringify(self, string):
+        """Converts storage string to castable value."""
+        return json.loads(string)
+
+
+class Array(NxColumn):
+    """Column containing mapping fields."""
+    dtype = list
+    rtype = list
+    ctype = 'list'
+
+    def __init__(self, *, length=None, index=None, required=False,
+                 default=None, missing=None, validate=None, generic=False,
+                 **metadata):
+        super().__init__(index=index, required=required,
+                         default=default, missing=missing, validate=validate,
+                         generic=generic, **metadata)
+        if length:
+            self.validator(LengthValidator(length))
 
     def stringify(self, value):
         """Converts value to string for storage."""
