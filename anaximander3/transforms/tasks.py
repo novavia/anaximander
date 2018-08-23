@@ -16,7 +16,7 @@ from collections import Sequence
 
 import pandas as pd
 
-from ..utilities import nxrange as rge, xprops
+from ..utilities import nxrange as rge, xprops, functions as fun
 from ..meta import nxdescriptors as nxd
 from ..data import datalogs as dtl
 from ..io.store import Store
@@ -79,11 +79,14 @@ class TaskDescriptor(nxd.NxAttribute):
                 if isinstance(target, Sequence):
                     id_range = [e.id for e in target]
                 else:
-                    id_range = target.it
+                    id_range = target.id
         except AttributeError:
             msg = "Improper entity type or query specification."
             raise IOError(msg)
-        query = tract.query(id=id_range, datetime=dt_range)
+        if dt_range is None:
+            query = tract.query(id=id_range)
+        else:
+            query = tract.query(id=id_range, datetime=dt_range)
         return query.data()
 
     def __eq__(self, other):
@@ -125,14 +128,15 @@ class TaskOutput(TaskDescriptor):
         """Merges new sequence with original sequence."""
         if pd.isna(original.certification):
             return new
-        left = original[None:original.certification]
-        right = new[original.certification:None]
+        divider = max(original.certification, new.dt_range.lower)
+        left = original[None:divider]
+        right = new[divider:None]
         data = pd.concat((left.data, right.data))
         id_range = original.id_range
-        dt_range = rge.MultiTimeInterval([left.dt_range,
-                                          right.dt_range]).compact
-        if right.certification >= original.certification:
-            certification = right.certification
+        dt_range = rge.MultiTimeInterval([original.dt_range,
+                                          new.dt_range]).compact
+        if new.certification >= original.certification:
+            certification = new.certification
         else:
             certification = original.certification
         consumption = original.consumption
@@ -209,7 +213,7 @@ class Task(metaclass=TaskType):
         if self.stream_mode:
             for name, desc in self.__outputs__.items():
                 if getattr(self, name) is None:
-                    setattr(self, name, desc.fetch(self.input_store,
+                    setattr(self, name, desc.fetch(self.output_store,
                                                    self.entity))
 
     @abc.abstractmethod
@@ -259,3 +263,34 @@ class Task(metaclass=TaskType):
     def plot(self, **kwargs):
         """Optional operator plot."""
         pass
+
+
+class InsertTask(Task):
+    """A task dedicated to appending records."""
+    target = TaskOutput(None)  # Replace None with meaningful Title
+    max_latency = '5m'  # Heuristic watermark
+
+    def __init__(self, entity, *records, output_store=None, logger=LOGGER,
+                 stream_mode=False, when=None, max_latency=None):
+        super().__init__(entity, output_store=output_store, logger=logger,
+                         stream_mode=stream_mode)
+        self.records = records
+        if when is None:
+            self.when = pd.Timestamp.utcnow()
+        else:
+            self.when = pd.to_datetime(when, utc=True)
+        max_latency = fun.get(max_latency, self.max_latency)
+        self.max_latency = pd.Timedelta(max_latency)
+
+    def __function__(self):
+        schema = type(self).target.title.schema
+        lower = min([r.datetime for r in self.records] + [pd.NaT])
+        upper = max([r.datetime for r in self.records] + [pd.NaT])
+        if self.stream_mode:
+            upper = max(self.when, upper)
+            lower = min(upper, lower)
+        certificate = upper - self.max_latency
+        return dtl.DataSequence.from_records(self.records, schema=schema,
+                                             id_range=self.entity.id,
+                                             dt_range=(lower, upper),
+                                             certification=certificate)

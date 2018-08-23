@@ -12,17 +12,14 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import os.path
-from unittest.mock import MagicMock, PropertyMock
 
-import numpy as np
 import pandas as pd
 import pytest
 
 import anaximander3 as nx
-from anaximander3.utilities import nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
-    datalogs as dtl, records as rec
-from anaximander3.io.store import Title, EmptyQueryException
+    datalogs as dtl
+from anaximander3.io.store import Title
 from anaximander3.io import redis as nxr
 from anaximander3.transforms import operations as ops
 from anaximander3.transforms import tasks as tsk

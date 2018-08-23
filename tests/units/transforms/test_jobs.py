@@ -12,17 +12,15 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import os.path
-from unittest.mock import MagicMock, PropertyMock
 
-import numpy as np
 import pandas as pd
 import pytest
 
 import anaximander3 as nx
 from anaximander3.utilities import nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
-    datalogs as dtl, records as rec
-from anaximander3.io.store import Title, EmptyQueryException
+    datalogs as dtl
+from anaximander3.io.store import Title
 from anaximander3.io import redis as nxr
 from anaximander3.transforms import operations as ops
 from anaximander3.transforms import tasks as tsk, jobs
@@ -315,6 +313,11 @@ class DeviceUpdate(jobs.Job):
     __output_store__ = 'procstore'
 
 
+class InsertFeatures(tsk.InsertTask):
+    target = tsk.TaskOutput(FEATURE)
+    latency = '3m'
+
+
 def test_device_job(archive):
     job = DeviceJob(D1, FEATURE_TME, logger=None)
     job()
@@ -325,25 +328,29 @@ def test_device_update(featurelog, archive, procstore):
     archive[FEATURE].create(warn=False, overwrite=True, force=True)
     archive[CSTATE].create(warn=False, overwrite=True, force=True)
     minute = pd.Timedelta('1min')
-    updates = pd.date_range('2016-9-14 10:01', '2016-9-14 10:07',
+    updates = pd.date_range('2016-9-14 10:01', '2016-9-14 10:10',
                             freq='1T', tz='UTC')
     DeviceUpdate.setup_streaming(D1, 'procstore', 'procstore')
     for i, t in enumerate(updates):
-        dt_range = rge.time_range(t - minute, t)
-        records = featurelog[D1.id][t - minute:t]
-        sequence = procstore[FEATURE].sequence(D1.id)
-        old_certificate = sequence.certification
-        recs = list(sequence) + list(records)
-        dt_range = rge.MultiTimeInterval([sequence.dt_range,
-                                          dt_range]).compact
-        new_certificate = t - minute
-        consumption = sequence.consumption
-        new_seq = dtl.DataSequence.from_records(recs, id_range=D1.id,
-                                                dt_range=dt_range,
-                                                certification=new_certificate,
-                                                consumption=consumption,
-                                                schema=FEATURE.schema)
-        procstore[FEATURE].write(new_seq, old_certificate)
+        insert = InsertFeatures(D1, *featurelog[D1.id][t - minute:t],
+                                output_store='procstore', logger=None,
+                                stream_mode=True, when=t)
+        insert()
+#        dt_range = rge.time_range(t - minute, t)
+#        records = featurelog[D1.id][t - minute:t]
+#        sequence = procstore[FEATURE].sequence(D1.id)
+#        old_certificate = sequence.certification
+#        recs = list(sequence) + list(records)
+#        dt_range = rge.MultiTimeInterval([sequence.dt_range,
+#                                          dt_range]).compact
+#        new_certificate = t - minute
+#        consumption = sequence.consumption
+#        new_seq = dtl.DataSequence.from_records(recs, id_range=D1.id,
+#                                                dt_range=dt_range,
+#                                                certification=new_certificate,
+#                                                consumption=consumption,
+#                                                schema=FEATURE.schema)
+#        procstore[FEATURE].write(new_seq, old_certificate)
         update = DeviceUpdate(D1, stream_mode=True, logger=None)
         update()
     alerts = procstore[CSTATE].query(id=D1.id).data().\

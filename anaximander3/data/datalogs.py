@@ -287,7 +287,8 @@ class DataLogsBase(DataObject, Sequence):
             if certification:
                 metadata['certification'] = min(certification, upper)
             if consumption:
-                metadata['consumption'] = min(consumption, upper)
+#                metadata['consumption'] = min(consumption, upper)
+                metadata['consumption'] = consumption
         return archetype_(data, schema=self.schema, **metadata)
 
     def __len__(self):
