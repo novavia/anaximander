@@ -378,9 +378,10 @@ class Query:
         for index, data in self.__fetch__(**kwargs):
             yield index, data
 
-    def first(self, **kwargs):
+    def first(self, _raw=None, **kwargs):
+        rawdata = iter(_raw) if _raw is not None else self.fetch(**kwargs)
         try:
-            index, data = next(self.fetch(**kwargs))
+            index, data = next(rawdata)
         except StopIteration:
             msg = "Query returns no results."
             raise EmptyQueryException(msg)
@@ -388,10 +389,11 @@ class Query:
         data['schema'] = self.schema
         return rcd.Record.from_dict(data)
 
-    def data(self, **kwargs):
+    def data(self, _raw=None, **kwargs):
         """Returns the data."""
+        rawdata = _raw if _raw is not None else self.fetch(**kwargs)
         try:
-            index, data = zip(*self.fetch(**kwargs))
+            index, data = zip(*rawdata)
         except ValueError:
             data = pd.DataFrame(columns=self.schema)
         else:

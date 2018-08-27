@@ -17,7 +17,8 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import defaultdict
-from itertools import chain
+from functools import partial
+from itertools import chain, islice
 import json
 
 import pandas as pd
@@ -41,6 +42,11 @@ def dtget(datetime, default=pd.NaT):
         return default
     return datetime
 
+
+def take(n, iterable):
+    """Return first n items of the iterable as a list"""
+    return list(islice(iterable, n))
+
 # =============================================================================
 # Tract implementation
 # =============================================================================
@@ -59,6 +65,9 @@ class RedisTract(Tract):
     @property
     def client(self):
         return self.store.io
+
+    def nxpipe(self, *args, **kwargs):
+        return NxPipe(self.client, *args, **kwargs)
 
     def __exists__(self):
         """Tests existence of the resource. Must return True or False."""
@@ -98,6 +107,45 @@ class RedisTract(Tract):
             dst_pipe.execute()
 
 
+class NxPipe:
+    """Wrapper for Redis Pipe that applies transformations to data."""
+
+    def __init__(self, store, *args, **kwargs):
+        self._store = store
+        self._pipe = store.io.pipeline(*args, **kwargs)
+        self._callbacks = []
+
+    def execute(self):
+        rval = []
+        results = iter(self._pipe.execute())
+        for callback, cardinal in self._callbacks:
+            if cardinal is None:
+                rval.append(callback(next(results)))
+            else:
+                rval.append(callback(take(cardinal, results)))
+        return [r for r in rval if r is not None]
+
+    def pipe(self, callback=None, cardinal=None):
+        callback = fun.get(callback, lambda *a: a)
+        self._callbacks.append((callback, cardinal))
+        return self._pipe
+
+    def record(self, tract, *idx, **kwargs):
+        tract.record(*idx, _nxpipe=self, **kwargs)
+
+    def records(self, tract, *idxs, keyerrors=True, **kwargs):
+        for idx in idxs:
+            tract.record(idx, _nxpipe=self, _raise=keyerrors, **kwargs)
+
+    def fetch(self, tract, *columns, limit=None, **quargs):
+        query = tract.query(*columns, **quargs)
+        query.__fetch__(limit=limit, _nxpipe=self)
+
+    def first(self, tract, *columns, **quargs):
+        query = tract.query(*columns, **quargs)
+        query.__fetch__(_nxpipe=self, _first=True)
+
+
 class RedisDataTract(DataTract, RedisTract):
 
     def __init__(self, store, title, register=True):
@@ -119,7 +167,7 @@ class RedisDataTract(DataTract, RedisTract):
                 for r in recs]
         pipe.zadd(storage_key, *chain(*data))
 
-    def insert(self, *records, validate=True, **kwargs):
+    def insert(self, *records, validate=True, _nxpipe=None, **kwargs):
         """Inserts one or more records into tract."""
         rmap = defaultdict(list)
         if validate:
@@ -136,10 +184,11 @@ class RedisDataTract(DataTract, RedisTract):
             for record in records:
                 rmap[record.id].append(record)
 
-        pipe = self.client.pipeline()
+        pipe = _nxpipe.pipe() if _nxpipe else self.client.pipeline()
         for id, recs in rmap.items():
             self.__insert__(pipe, id, recs, **kwargs)
-        return pipe.execute()
+        if _nxpipe is None:
+            return pipe.execute()
 
     def __append__(self, pipe, logs, **kwargs):
         rmap = defaultdict(list)
@@ -148,11 +197,11 @@ class RedisDataTract(DataTract, RedisTract):
         for id, recs in rmap.items():
             self.__insert__(pipe, id, recs, **kwargs)
 
-    def append(self, logs, **kwargs):
-        pipe = self.client.pipeline()
-        kwargs.setdefault('pipe', pipe)
-        super().append(logs, **kwargs)
-        return pipe.execute()
+    def append(self, logs, _nxpipe=None, **kwargs):
+        pipe = _nxpipe.pipe() if _nxpipe else self.client.pipeline()
+        super().append(logs, pipe=pipe, **kwargs)
+        if _nxpipe is None:
+            return pipe.execute()
 
     def __update__(self, pipe, id, recs, **kwargs):
         extant = {r.idx: r for r in self.records(*[r.idx for r in recs],
@@ -182,7 +231,7 @@ class RedisDataTract(DataTract, RedisTract):
             pipe.zadd(storage_key, score,
                       json.dumps(old_data, default=serialize))
 
-    def update(self, *records, **kwargs):
+    def update(self, *records, _nxpipe=None, **kwargs):
         """Updates rows in place from records, or inserts if not found."""
         rmap = defaultdict(list)
         for record in records:
@@ -195,23 +244,25 @@ class RedisDataTract(DataTract, RedisTract):
                 raise ValueError(msg)
             rmap[record.id].append(record)
 
-        pipe = self.client.pipeline()
+        pipe = _nxpipe.pipe() if _nxpipe else self.client.pipeline()
         for id, recs in rmap.items():
             self.__update__(pipe, id, recs, **kwargs)
-        return pipe.execute()
+        if _nxpipe is None:
+            return pipe.execute()
 
     def __delete__(self, pipe, record, **kwargs):
         storage_key = self.name + '#' + str(record.id)
         data = json.dumps(record.to_data_dict(), default=serialize)
         pipe.zrem(storage_key, data)
 
-    def delete(self, *idxs, **kwargs):
+    def delete(self, *idxs, _nxpipe=None, **kwargs):
         """Deletes the specified rows based on their index."""
         records = self.records(*idxs, **kwargs)
-        pipe = self.client.pipeline()
+        pipe = _nxpipe.pipe() if _nxpipe else self.client.pipeline()
         for rec in records:
             self.__delete__(pipe, rec, **kwargs)
-        return pipe.execute()
+        if _nxpipe is None:
+            return pipe.execute()
 
     def __discard__(self, pipe, id, dt_range, **kwargs):
         """Deletes ranges of rows within dt_range for a given id."""
@@ -221,13 +272,14 @@ class RedisDataTract(DataTract, RedisTract):
         upper -= 1e-9
         pipe.zremrangebyscore(storage_key, lower, upper)
 
-    def discard(self, *ids, datetime=(None, None), **kwargs):
+    def discard(self, *ids, datetime=(None, None), _nxpipe=None, **kwargs):
         """Deletes ranges of rows within dt_range for specified ids."""
         dt_range = rge.time_range(datetime)
-        pipe = self.client.pipeline()
+        pipe = _nxpipe.pipe() if _nxpipe else self.client.pipeline()
         for id in ids:
             self.__discard__(pipe, id, dt_range, **kwargs)
-        return pipe.execute()
+        if _nxpipe is None:
+            return pipe.execute()
 
     def __record__(self, pipe, idx, **kwargs):
         id, datetime, *_ = idx
@@ -235,13 +287,16 @@ class RedisDataTract(DataTract, RedisTract):
         score = datetime.timestamp()
         pipe.zrangebyscore(storage_key, score, score)
 
-    def _record(self, idx, result):
+    def _record(self, idx, result, _raise=True):
         """Primitive for record and records."""
         if not result:
-            msg = f"No row found with index {idx}."
-            raise KeyError(msg)
-        for r in result:
-            dict_ = json.loads(r)
+            if _raise:
+                msg = f"No row found with index {idx}."
+                raise KeyError(msg)
+            else:
+                return None
+        for res in result:
+            dict_ = json.loads(res)
             ridx = dict_['index']
             ridx[1] = pd.to_datetime(ridx[1], utc=True)
             if tuple(ridx) == idx:
@@ -249,21 +304,26 @@ class RedisDataTract(DataTract, RedisTract):
             else:
                 continue
         else:
-            msg = f"No row found with index {idx}."
-            raise KeyError(msg)
+            if _raise:
+                msg = f"No row found with index {idx}."
+                raise KeyError(msg)
+            else:
+                return None
         dict_['schema'] = self.schema
         return rcd.Record.from_dict(dict_)
 
-    def record(self, *idx, **kwargs):
+    def record(self, *idx, _nxpipe=None, _raise=True, **kwargs):
         """Returns a record from its index."""
         if len(idx) == 1:
             idx = idx[0]
         id, datetime, *_ = idx
         idx = (id, pd.to_datetime(datetime, utc=True)) + tuple(_)
-        pipe = self.client.pipeline()
+        pipe = _nxpipe.pipe(partial(self._record, idx, _raise=_raise)) \
+            if _nxpipe else self.client.pipeline()
         self.__record__(pipe, idx, **kwargs)
-        result = pipe.execute()[0]
-        return self._record(idx, result)
+        if _nxpipe is None:
+            result = pipe.execute()[0]
+            return self._record(idx, result, _raise=_raise)
 
     def records(self, *idxs, keyerrors=True, **kwargs):
         """Returns a records iterator from their index."""
@@ -272,13 +332,10 @@ class RedisDataTract(DataTract, RedisTract):
             self.__record__(pipe, idx, **kwargs)
         results = pipe.execute()
         for idx, result in zip(idxs, results):
-            try:
-                yield self._record(idx, result)
-            except KeyError:
-                if not keyerrors:
-                    continue
-                else:
-                    raise
+            record = self._record(idx, result, _raise=keyerrors)
+            if record is None:
+                continue
+            yield record
 
 
 class RedisQueryException(QueryException):
@@ -293,11 +350,11 @@ class RedisDataQuery(Query):
             msg = "A Redis Query must specify an id range."
             raise RedisQueryException(msg)
 
-    def first(self, **kwargs):
+    def first(self, _raw=None, **kwargs):
         kwargs['limit'] = 1
-        return super().first(**kwargs)
+        return super().first(_raw=_raw, **kwargs)
 
-    def __fetch__(self, limit=None, **kwargs):
+    def __fetch__(self, limit=None, _nxpipe=None, _first=False, **kwargs):
         """Fetch primitive.
 
         Note that queries on sequential keys are closed on the left side
@@ -307,7 +364,20 @@ class RedisDataQuery(Query):
         lower, upper = (t.timestamp() for t in self.dt_range)
         limit = int(fun.get(limit, 1e5))
         start, num = 0, limit
-        pipe = self.tract.client.pipeline()
+
+        if _nxpipe is None:
+            pipe = self.tract.client.pipeline()
+        else:
+            if self.schema.xindex:
+                cardinal = 2 * len(id_range)
+            else:
+                cardinal = len(id_range)
+            if _first:
+                pipe = _nxpipe.pipe(lambda r: self.first(self._data(r)),
+                                    cardinal)
+            else:
+                pipe = _nxpipe.pipe(lambda r: self.data(self._data(r)),
+                                    cardinal)
 
         for id in id_range:
             storage_key = self.tract.storage_key(id)
@@ -317,13 +387,20 @@ class RedisDataQuery(Query):
                 pipe.zrevrangebyscore(storage_key, lower,
                                       nxtime.MIN.timestamp(), 0, 1,
                                       withscores=True)
-                id_sequence = chain(*zip(id_range, id_range))
-            else:
-                id_sequence = id_range
+        if _nxpipe is None:
+            return iter(self._data(pipe.execute()))
 
-        sequence_results = pipe.execute()
+    def _data(self, results):
+        lower, upper = (t.timestamp() for t in self.dt_range)
+        id_range = self.id_range.levels
+        if self.schema.xindex:
+            id_sequence = chain(*zip(id_range, id_range))
+        else:
+            id_sequence = id_range
+
+        rval = []
         prev_id = None
-        for id, sr in zip(id_sequence, sequence_results):
+        for id, sr in zip(id_sequence, results):
             for res, score in sr:
                 dict_ = json.loads(res)
                 idx = dict_.pop('index')
@@ -340,8 +417,9 @@ class RedisDataQuery(Query):
                                 continue
                         except (KeyError, ValueError, TypeError):
                             continue
-                yield idx, dict_
+                rval.append((idx, dict_))
             prev_id = id
+        return rval
 
 
 class BufferQuery(RedisDataQuery):

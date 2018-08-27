@@ -46,7 +46,7 @@ MULTISESSIONS_PATH = os.path.join(TEST_DATA_DIR, 'multisessions.csv')
 FEATURE_IDS = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
 FEATURE_TME = ['2016-9-14 10:00', '2016-9-14 10:05']
 MAC_PATTERN = '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
-DEVICES = ['88:4A:EA:69:DF:A2', '68:9E:19:07:DE:C3']
+DEVICES = ['68:9E:19:07:DE:C3', '88:4A:EA:69:DF:A2']
 IDS = ['88:4A:EA:69:35:BD', '88:4A:EA:69:38:1A']
 STATES_TME = ['2018-4-15 00:16:00', '2018-4-15 00:17:00']
 EVENTS_TME = ['2018-4-15 00:15:00', '2018-4-15 00:18:00']
@@ -363,6 +363,8 @@ def test_record(full_tract):
     assert next(records).id == '88:4A:EA:69:DF:A2'
     with pytest.raises(KeyError):
         next(records)
+    records = full_tract.records(idx, keys, keyerrors=False)
+    assert list(records) == [record]
 
 
 def test_insert(empty_tract, featurelog):
@@ -416,6 +418,30 @@ def test_first(full_tract):
                              datetime=(None, '2016-09-14 10:03:00'))
     record = query.first()
     assert record.datetime == pd.Timestamp('2016-09-14 10:02:27.800000+00:00')
+
+
+def test_nxpipe(archive, full_tract, featurelog):
+    idx = ('88:4A:EA:69:DF:A2',
+           pd.Timestamp('2016-09-14 10:02:27.800000+00:00'))
+    pipe = nxr.NxPipe(archive)
+    pipe.record(full_tract, idx)
+    record = pipe.execute()[0]
+    assert record.id == '88:4A:EA:69:DF:A2'
+    keys = ('88:4A:EA:69:DF:A2',
+            pd.Timestamp('2016-09-14 10:02:27.900000+00:00'))
+    pipe = nxr.NxPipe(archive)
+    pipe.record(full_tract, *keys)
+    with pytest.raises(KeyError):
+        pipe.execute()
+    pipe = nxr.NxPipe(archive)
+    pipe.records(full_tract, idx, keys, keyerrors=False)
+    assert pipe.execute() == [record]
+    pipe = nxr.NxPipe(archive)
+    pipe.fetch(full_tract, id=DEVICES)
+    pipe.first(full_tract, id='88:4A:EA:69:DF:A2')
+    log, record = pipe.execute()
+    assert log.data.equals(featurelog.data)
+    assert record == log[-1]
 
 
 def test_data(full_tract):
@@ -610,8 +636,8 @@ def test_buffer_query(buffer_tract, featurelog):
     assert len(list(query.fetch(limit=1))) == 1
     query_data = query.data()
     assert len(query_data) == 2
-    assert query_data[0].empty
-    assert query_data[1].data.equals(input_sequence.data)
+    assert query_data[0].data.equals(input_sequence.data)
+    assert query_data[1].empty
 
 
 def test_write_xbuffer(statebuf_tract, statelog):
