@@ -127,7 +127,8 @@ class NxPipe:
 
     def pipe(self, callback=None, cardinal=None):
         callback = fun.get(callback, lambda *a: a)
-        self._callbacks.append((callback, cardinal))
+        if callback is not False:
+            self._callbacks.append((callback, cardinal))
         return self._pipe
 
     def record(self, tract, *idx, **kwargs):
@@ -137,13 +138,14 @@ class NxPipe:
         for idx in idxs:
             tract.record(idx, _nxpipe=self, _raise=keyerrors, **kwargs)
 
-    def fetch(self, tract, *columns, limit=None, **quargs):
-        query = tract.query(*columns, **quargs)
-        query.__fetch__(limit=limit, _nxpipe=self)
-
-    def first(self, tract, *columns, **quargs):
-        query = tract.query(*columns, **quargs)
-        query.__fetch__(_nxpipe=self, _first=True)
+    def query(self, tract, *columns, limit=None, kind='data', **quargs):
+        query_ = tract.query(*columns, **quargs)
+        if kind == 'data':
+            query_.data(limit=limit, _nxpipe=self)
+        elif kind == 'first':
+            query_.first(_nxpipe=self)
+        elif kind == 'fetch':
+            query_.fetch(_nxpipe=self)
 
 
 class RedisDataTract(DataTract, RedisTract):
@@ -350,11 +352,49 @@ class RedisDataQuery(Query):
             msg = "A Redis Query must specify an id range."
             raise RedisQueryException(msg)
 
-    def first(self, _raw=None, **kwargs):
-        kwargs['limit'] = 1
-        return super().first(_raw=_raw, **kwargs)
+    def _callback(self, kind='data'):
+        if kind == 'drop':
+            return (False, None)
+        id_range = self.id_range.levels
+        if self.schema.xindex:
+            cardinal = 2 * len(id_range)
+        else:
+            cardinal = len(id_range)
+        if kind == 'data':
+            return (lambda r: Query.data(self, self._data(r)), cardinal)
+        elif kind == 'first':
+            return (lambda r: Query.first(self, self._data(r)), cardinal)
+        elif kind == 'fetch':
+            return (lambda r: iter(self._data(r)), cardinal)
 
-    def __fetch__(self, limit=None, _nxpipe=None, _first=False, **kwargs):
+    def first(self, _nxpipe=None, **kwargs):
+        kwargs['limit'] = 1
+        pipe = _nxpipe.pipe(*self._callback('first')) if _nxpipe\
+            else self.tract.client.pipeline()
+        self.__fetch__(pipe=pipe, **kwargs)
+        if _nxpipe is None:
+            results = self._data(pipe.execute())
+            return super().first(_raw=results, **kwargs)
+
+    def data(self, _nxpipe=None, **kwargs):
+        pipe = _nxpipe.pipe(*self._callback('data')) if _nxpipe\
+            else self.tract.client.pipeline()
+        self.__fetch__(pipe=pipe, **kwargs)
+        if _nxpipe is None:
+            results = self._data(pipe.execute())
+            return super().data(_raw=results, **kwargs)
+
+    def fetch(self, _nxpipe=None, **kwargs):
+        """Returns an iterator of query results, as raw data."""
+        pipe = _nxpipe.pipe(*self._callback('fetch')) if _nxpipe\
+            else self.tract.client.pipeline()
+        self.__fetch__(pipe=pipe, **kwargs)
+        if _nxpipe is None:
+            results = self._data(pipe.execute())
+            for index, data in results:
+                yield index, data
+
+    def __fetch__(self, pipe, limit=None, **kwargs):
         """Fetch primitive.
 
         Note that queries on sequential keys are closed on the left side
@@ -365,20 +405,6 @@ class RedisDataQuery(Query):
         limit = int(fun.get(limit, 1e5))
         start, num = 0, limit
 
-        if _nxpipe is None:
-            pipe = self.tract.client.pipeline()
-        else:
-            if self.schema.xindex:
-                cardinal = 2 * len(id_range)
-            else:
-                cardinal = len(id_range)
-            if _first:
-                pipe = _nxpipe.pipe(lambda r: self.first(self._data(r)),
-                                    cardinal)
-            else:
-                pipe = _nxpipe.pipe(lambda r: self.data(self._data(r)),
-                                    cardinal)
-
         for id in id_range:
             storage_key = self.tract.storage_key(id)
             pipe.zrevrangebyscore(storage_key, upper, lower,
@@ -387,8 +413,6 @@ class RedisDataQuery(Query):
                 pipe.zrevrangebyscore(storage_key, lower,
                                       nxtime.MIN.timestamp(), 0, 1,
                                       withscores=True)
-        if _nxpipe is None:
-            return iter(self._data(pipe.execute()))
 
     def _data(self, results):
         lower, upper = (t.timestamp() for t in self.dt_range)
@@ -434,70 +458,135 @@ class BufferQuery(RedisDataQuery):
             raise RedisQueryException(msg)
         self.data_query = tract.data_tract.query(**self.quargs)
 
-    @xprops.cachedproperty
-    def dt_ranges(self):
-        return {id: rge.EmptyTimeInterval() for id in self.id_range.levels}
+    def _callback(self, kind='data'):
+        if kind == 'drop':
+            return (False, None)
+        id_range = self.id_range.levels
+        n = len(id_range)
+        if self.schema.xindex:
+            cardinal = 3 * n
+        else:
+            cardinal = 2 * n
+        if kind == 'data':
 
-    @xprops.cachedproperty
-    def certificates(self):
-        return {id: pd.NaT for id in self.id_range.levels}
+            def callback(results):
+                metadata = self._metadata(results[0:n])
+                logs = Query.data(self.data_query,
+                                  self.data_query._data(results[n:]))
+                return self._post_process(logs, metadata)
 
-    @xprops.cachedproperty
-    def consumptions(self):
-        return {id: nxtime.MAX for id in self.id_range.levels}
+        elif kind == 'first':
 
-    def _metadata(self):
+            def callback(results):
+                raw_logs = self.data_query._data(results[n:])
+                return Query.first(self, _raw=raw_logs)
+
+        elif kind == 'fetch':
+
+            def callback(results):
+                data = self.data_query._data(results[n:])
+                return iter(data)
+
+        return (callback, cardinal)
+
+    def _metadata(self, results):
         """Fetches metadata for self."""
-        meta_pipe = self.tract.client.pipeline()
+        id_range = self.id_range.levels
+        meta_keys = ['lower', 'upper', 'certification']
+        protometa = [{k: pd.to_datetime(v.decode(), utc=True)
+                      for k, v in zip(meta_keys, r) if v is not None}
+                     for r in results]
+        metadata = {'dt_ranges': {id: rge.EmptyTimeInterval()
+                                  for id in self.id_range.levels},
+                    'certificates': {id: pd.NaT
+                                     for id in self.id_range.levels},
+                    'consumptions': {id: nxtime.MAX
+                                     for id in self.id_range.levels}}
+        for id, m in zip(id_range, protometa):
+            metadata['dt_ranges'][id] = rge.time_range(m.pop('lower', pd.NaT),
+                                                       m.pop('upper', pd.NaT))
+            metadata['certificates'][id] = dtget(m.pop('certification',
+                                                       pd.NaT))
+            consumption = nxtime.MAX
+            for k in list(m.keys()):
+                v = protometa.pop(k)
+                consumption = min(v, consumption, v)
+            metadata['consumptions'][id] = consumption
+        return metadata
+
+    def __metadata__(self, pipe):
         id_range = self.id_range.levels
         meta_keys = ['lower', 'upper', 'certification']
         for id in id_range:
-            meta_pipe.hmget(self.tract.meta_storage_key(id), meta_keys)
-        meta = meta_pipe.execute()
-        metadata = [{k: pd.to_datetime(v.decode(), utc=True)
-                     for k, v in zip(meta_keys, m) if v is not None}
-                    for m in meta]
-        for id, m in zip(id_range, metadata):
-            self.dt_ranges[id] = rge.time_range(m.pop('lower', pd.NaT),
-                                                m.pop('upper', pd.NaT))
-            self.certificates[id] = dtget(m.pop('certification', pd.NaT))
-            consumption = nxtime.MAX
-            for k in list(m.keys()):
-                v = metadata.pop(k)
-                consumption = min(v, consumption, v)
-            self.consumptions[id] = consumption
+            pipe.hmget(self.tract.meta_storage_key(id), meta_keys)
 
-    def __fetch__(self, **kwargs):
+    def first(self, _nxpipe=None, **kwargs):
+        id_range = self.id_range.levels
+        n = len(id_range)
+        kwargs['limit'] = 1
+        pipe = _nxpipe.pipe(*self._callback('first')) if _nxpipe\
+            else self.tract.client.pipeline()
+        self.__fetch__(pipe=pipe, **kwargs)
+        if _nxpipe is None:
+            raw = pipe.execute()
+            results = self.data_query._data(raw[n:])
+            return Query.first(self, _raw=results, **kwargs)
+
+    def data(self, _nxpipe=None, **kwargs):
+        id_range = self.id_range.levels
+        n = len(id_range)
+        pipe = _nxpipe.pipe(*self._callback('data')) if _nxpipe\
+            else self.tract.client.pipeline()
+        self.__fetch__(pipe=pipe, **kwargs)
+        if _nxpipe is None:
+            raw = pipe.execute()
+            metadata = self._metadata(raw[0:n])
+            logs = Query.data(self.data_query,
+                              self.data_query._data(raw[n:]))
+            return self._post_process(logs, metadata)
+
+    def fetch(self, _nxpipe=None, **kwargs):
+        """Returns an iterator of query results, as raw data."""
+        id_range = self.id_range.levels
+        n = len(id_range)
+        pipe = _nxpipe.pipe(*self._callback('fetch')) if _nxpipe\
+            else self.tract.client.pipeline()
+        self.__fetch__(pipe=pipe, **kwargs)
+        if _nxpipe is None:
+            raw = pipe.execute()
+            results = self.data_query._data(raw[n:])
+            for index, data in results:
+                yield index, data
+
+    def __fetch__(self, pipe, limit=None, **kwargs):
         """Returns an iterator of row indexes and data."""
-        self._metadata()
-        return self.data_query.__fetch__(**kwargs)
+        self.__metadata__(pipe=pipe)
+        self.data_query.__fetch__(pipe, limit=limit, **kwargs)
 
-    def data(self, **kwargs):
-        """Returns the data."""
-        super_data = super().data(**kwargs)
+    def _post_process(self, logs, metadata):
+        """Combines data and metadata."""
         if isinstance(self.id_range, rge.Levels):
-            data = []
+            pp_data = []
             for id in self.id_range:
-                super_sequence = super_data[id]
-                metadata = super_sequence.metadata
-                metadata['dt_range'] = self.dt_ranges[id]
-                metadata['certification'] = self.certificates[id]
-                metadata['consumption'] = self.consumptions[id]
-                sequence = dtl.DataSequence(super_sequence.data,
+                pp_sequence = logs[id]
+                pp_metadata = pp_sequence.metadata
+                pp_metadata['dt_range'] = metadata['dt_ranges'][id]
+                pp_metadata['certification'] = metadata['certificates'][id]
+                pp_metadata['consumption'] = metadata['consumptions'][id]
+                sequence = dtl.DataSequence(pp_sequence.data,
                                             schema=self.schema,
-                                            **metadata)
-                data.append(sequence)
-            return data
+                                            **pp_metadata)
+                pp_data.append(sequence)
+            return pp_data
         else:
             id = self.id_range.level
-            super_sequence = super_data
-            metadata = super_sequence.metadata
-            metadata['dt_range'] = self.dt_ranges[id]
-            metadata['certification'] = self.certificates[id]
-            metadata['consumption'] = self.consumptions[id]
-            sequence = dtl.DataSequence(super_sequence.data,
+            pp_metadata = logs.metadata
+            pp_metadata['dt_range'] = metadata['dt_ranges'][id]
+            pp_metadata['certification'] = metadata['certificates'][id]
+            pp_metadata['consumption'] = metadata['consumptions'][id]
+            sequence = dtl.DataSequence(logs.data,
                                         schema=self.schema,
-                                        **metadata)
+                                        **pp_metadata)
             return sequence
 
 

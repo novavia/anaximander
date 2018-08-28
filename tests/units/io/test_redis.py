@@ -437,8 +437,8 @@ def test_nxpipe(archive, full_tract, featurelog):
     pipe.records(full_tract, idx, keys, keyerrors=False)
     assert pipe.execute() == [record]
     pipe = nxr.NxPipe(archive)
-    pipe.fetch(full_tract, id=DEVICES)
-    pipe.first(full_tract, id='88:4A:EA:69:DF:A2')
+    pipe.query(full_tract, id=DEVICES)
+    pipe.query(full_tract, id='88:4A:EA:69:DF:A2', kind='first')
     log, record = pipe.execute()
     assert log.data.equals(featurelog.data)
     assert record == log[-1]
@@ -638,6 +638,17 @@ def test_buffer_query(buffer_tract, featurelog):
     assert len(query_data) == 2
     assert query_data[0].data.equals(input_sequence.data)
     assert query_data[1].empty
+
+
+def test_buffery_query_pipe(procstore, buffer_tract, featurelog):
+    input_sequence = featurelog['68:9E:19:07:DE:C3']
+    buffer_tract.write(input_sequence)
+    pipe = nxr.NxPipe(procstore)
+    pipe.query(buffer_tract, id=DEVICES)
+    sequences = pipe.execute()[0]
+    assert len(sequences) == 2
+    assert sequences[0].data.equals(input_sequence.data)
+    assert sequences[1].empty
 
 
 def test_write_xbuffer(statebuf_tract, statelog):
