@@ -424,8 +424,10 @@ def test_nxpipe(archive, full_tract, featurelog):
     idx = ('88:4A:EA:69:DF:A2',
            pd.Timestamp('2016-09-14 10:02:27.800000+00:00'))
     pipe = nxr.NxPipe(archive)
+    pipe.discard(full_tract, '88:4A:EA:69:DF:A2')
+    pipe.append(full_tract, featurelog)
     pipe.record(full_tract, idx)
-    record = pipe.execute()[0]
+    record = pipe.execute()[-1]
     assert record.id == '88:4A:EA:69:DF:A2'
     keys = ('88:4A:EA:69:DF:A2',
             pd.Timestamp('2016-09-14 10:02:27.900000+00:00'))
@@ -627,6 +629,26 @@ def test_sequence(buffer_tract, featurelog):
     assert len(archived) == 2
 
 
+def test_buffer_pipe(buffer_tract, featurelog):
+    pipe = nxr.NxPipe(buffer_tract.store)
+    pipe.metadata(buffer_tract, '68:9E:19:07:DE:C3')
+    pipe.teardown(buffer_tract, '68:9E:19:07:DE:C3')
+    pipe.setup(buffer_tract, '68:9E:19:07:DE:C3')
+    input_sequence = featurelog['68:9E:19:07:DE:C3']
+    pipe.write(buffer_tract, input_sequence)
+    subscriber = MagicMock()
+    name_property = PropertyMock(return_value='subscriber')
+    type(subscriber).name = name_property
+    dt = pd.to_datetime('2016-9-14 10:01', utc=True)
+    pipe.update_subscriber(buffer_tract, subscriber, '68:9E:19:07:DE:C3', dt)
+    pipe.sequence(buffer_tract, '68:9E:19:07:DE:C3')
+    metadata, _, _, _, _, sequence = pipe.execute()
+    assert isinstance(metadata['lower'], pd.Timestamp)
+    assert sequence.data.equals(input_sequence.data)
+    assert sequence.metadata['certification'] is pd.NaT
+    assert sequence.metadata['consumption'] == dt
+
+
 def test_buffer_query(buffer_tract, featurelog):
     input_sequence = featurelog['68:9E:19:07:DE:C3']
     buffer_tract.write(input_sequence)
@@ -640,7 +662,7 @@ def test_buffer_query(buffer_tract, featurelog):
     assert query_data[1].empty
 
 
-def test_buffery_query_pipe(procstore, buffer_tract, featurelog):
+def test_buffer_query_pipe(procstore, buffer_tract, featurelog):
     input_sequence = featurelog['68:9E:19:07:DE:C3']
     buffer_tract.write(input_sequence)
     pipe = nxr.NxPipe(procstore)
