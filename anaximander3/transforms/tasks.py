@@ -20,6 +20,7 @@ from ..utilities import nxrange as rge, xprops, functions as fun
 from ..meta import nxdescriptors as nxd
 from ..data import datalogs as dtl
 from ..io.store import Store
+from ..io import redis as nxr
 from . import logger as LOGGER
 
 __all__ = []
@@ -64,12 +65,15 @@ class TaskDescriptor(nxd.NxAttribute):
                 msg = f"Cannot set {self.shortname} {self.name} for {task}."
                 self.logger.exception(msg, exc_info=True)
 
-    def fetch(self, store, entity, dt_range=None):
-        if store is None:
-            msg = "A store must be specified to retrieve task data"
-            raise TypeError(msg)
-        elif isinstance(store, str):
-            store = Store[store]
+    def fetch(self, entity, nxpipe=None, store=None, dt_range=None):
+        if nxpipe is None:
+            if store is None:
+                msg = "A store must be specified to retrieve task data"
+                raise TypeError(msg)
+            elif isinstance(store, str):
+                store = Store[store]
+        else:
+            store = nxpipe.store
         tract = store[self.title]
         try:
             if self.relation is None:
@@ -84,10 +88,19 @@ class TaskDescriptor(nxd.NxAttribute):
             msg = "Improper entity type or query specification."
             raise IOError(msg)
         if dt_range is None:
-            query = tract.query(id=id_range)
+            if nxpipe:
+                nxpipe.query(tract, id=id_range)
+                return
+            else:
+                query = tract.query(id=id_range)
+                return query.data()
         else:
-            query = tract.query(id=id_range, datetime=dt_range)
-        return query.data()
+            if nxpipe:
+                nxpipe.query(tract, id=id_range, datetime=dt_range)
+                return
+            else:
+                query = tract.query(id=id_range, datetime=dt_range)
+                return query.data()
 
     def __eq__(self, other):
         if not isinstance(other, type(self)):
@@ -110,19 +123,24 @@ class TaskOutput(TaskDescriptor):
     def __init__(self, title):
         super().__init__(title)
 
-    def store(self, sequence, output_store, entity, old_certificate=None):
-        if output_store is None:
-            msg = "An output store must be specified to write task outputs"
-            raise TypeError(msg)
-        elif isinstance(output_store, str):
-            output_store = Store[output_store]
+    def store(self, entity, sequence, nxpipe=None, output_store=None,
+              old_certificate=None):
+        if nxpipe is None:
+            if output_store is None:
+                msg = "An output store must be specified to write task outputs"
+                raise TypeError(msg)
+            elif isinstance(output_store, str):
+                output_store = Store[output_store]
+        else:
+            output_store = nxpipe.store
         try:
             assert sequence.id_range == entity.id
         except AssertionError:
             msg = f"{sequence}'s id does not match {entity}."
             raise ValueError(msg)
         tract = output_store[self.title]
-        return tract.write(sequence, old_certificate=old_certificate)
+        return tract.write(sequence, old_certificate=old_certificate,
+                           _nxpipe=nxpipe)
 
     def merge(self, original, new):
         """Merges new sequence with original sequence."""
@@ -205,24 +223,59 @@ class Task(metaclass=TaskType):
         setattr(self, '_output_store', value)
 
     def retrieve_inputs(self):
+        if isinstance(self.input_store, nxr.RedisStore):
+            in_pipe = nxr.NxPipe(self.input_store)
+        else:
+            in_pipe = None
+        inputs = []
+        outputs = []
         for name, desc in self.__inputs__.items():
             if getattr(self, name) is None:
-                setattr(self, name, desc.fetch(self.input_store,
-                                               self.entity,
-                                               self.dt_range))
+                rval = desc.fetch(self.entity, in_pipe, self.input_store,
+                                  self.dt_range)
+                if rval is not None:
+                    setattr(self, name, rval)
+                else:
+                    inputs.append(name)
         if self.stream_mode:
+            if isinstance(self.output_store, nxr.RedisStore):
+                if self.output_store == self.input_store:
+                    out_pipe = in_pipe
+                else:
+                    out_pipe = nxr.NxPipe(self.output_store)
+            else:
+                out_pipe = None
             for name, desc in self.__outputs__.items():
                 if getattr(self, name) is None:
-                    setattr(self, name, desc.fetch(self.output_store,
-                                                   self.entity))
+                    rval = desc.fetch(self.entity, out_pipe, self.output_store,
+                                      self.dt_range)
+                    if rval is not None:
+                        setattr(self, name, rval)
+                    else:
+                        outputs.append(name)
+        else:
+            out_pipe = None
+        if in_pipe is not None:
+            if in_pipe == out_pipe:
+                for name, val in zip(inputs + outputs, in_pipe.execute()):
+                    setattr(self, name, val)
+                return
+            else:
+                for name, val in zip(inputs, in_pipe.execute()):
+                    setattr(self, name, val)
+        if out_pipe is not None:
+            for name, val in zip(outputs, out_pipe.execute()):
+                setattr(self, name, val)
 
     @abc.abstractmethod
     def __function__(self):
         """Type-specific function."""
         return None
 
-    def __call__(self, plot=False):
+    def __call__(self, nxpipes=None, plot=False):
         """Run interface."""
+        if nxpipes is None:
+            nxpipes = {}
         self.retrieve_inputs()
         if self.stream_mode:
             certificates = {name: getattr(self, name).certification
@@ -247,17 +300,42 @@ class Task(metaclass=TaskType):
         if plot:
             self.plot()
         if self.stream_mode:
+            if isinstance(self.input_store, nxr.RedisStore):
+                if self.input_store in nxpipes:
+                    in_pipe = nxpipes[self.input_store]
+                else:
+                    in_pipe = nxr.NxPipe(self.input_store)
+            else:
+                in_pipe = None
+            if isinstance(self.output_store, nxr.RedisStore):
+                if self.output_store in nxpipes:
+                    out_pipe = nxpipes[self.output_store]
+                elif self.output_store == self.input_store:
+                    out_pipe = in_pipe
+                else:
+                    out_pipe = nxr.NxPipe(self.output_store)
+            else:
+                out_pipe = None
             for name, desc in self.__outputs__.items():
                 out_tract = self.output_store[desc.title]
                 sequence = getattr(self, name)
                 certificate = sequence.certification
-                for iname, idesc in self.__inputs__.items():
-                    in_tract = self.input_store[idesc.title]
-                    in_tract.update_subscriber(out_tract, self.entity.id,
-                                               certificate)
+                if in_pipe is not None:
+                    for iname, idesc in self.__inputs__.items():
+                        in_tract = self.input_store[idesc.title]
+                        in_tract.update_subscriber(out_tract,
+                                                   self.entity.id,
+                                                   certificate,
+                                                   _nxpipe=in_pipe)
                 old_certificate = certificates[name]
-                desc.store(sequence, self.output_store, self.entity,
-                           old_certificate)
+                desc.store(self.entity, sequence, nxpipe=out_pipe,
+                           output_store=self.output_store,
+                           old_certificate=old_certificate)
+            if in_pipe is not None and self.input_store not in nxpipes:
+                in_pipe.execute()
+            if out_pipe not in (None, in_pipe):
+                if self.output_store not in nxpipes:
+                    out_pipe.execute()
         return outputs
 
     def plot(self, **kwargs):

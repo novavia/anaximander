@@ -16,6 +16,7 @@ from collections import defaultdict
 
 from ..utilities import nxrange as rge
 from ..meta import nxdescriptors as nxd
+from ..io import redis as nxr
 from . import logger as LOGGER
 
 __all__ = []
@@ -92,8 +93,18 @@ class Job(metaclass=JobType):
         for store, descriptors in self.inputs.items():
             if store is None:
                 continue
+            elif isinstance(store, nxr.RedisStore):
+                pipe = nxr.NxPipe(store)
+            else:
+                pipe = None
             for d in list(descriptors):
-                descriptors[d] = d.fetch(store, self.entity, self.dt_range)
+                rval = d.fetch(self.entity, nxpipe=pipe,
+                               store=store, dt_range=self.dt_range)
+                if rval is not None:
+                    descriptors[d] = rval
+            if pipe is not None:
+                for d, r in zip(list(descriptors), pipe.execute()):
+                    descriptors[d] = r
 
     @classmethod
     def setup_streaming(cls, entity, input_store, output_store, logger=LOGGER):
@@ -106,6 +117,8 @@ class Job(metaclass=JobType):
     def __call__(self):
         """Run interface."""
         self.retrieve_inputs()
+        pipes = {store: nxr.NxPipe(store) for store in self.inputs
+                 if isinstance(store, nxr.RedisStore)}
         for name in self.__tasks__:
             task = getattr(self, name)
             in_store = task.input_store
@@ -114,4 +127,6 @@ class Job(metaclass=JobType):
                 setattr(task, k, self.inputs[in_store][v])
             for k, v in task.__outputs__.items():
                 setattr(task, k, self.inputs[out_store][v])
-            self.outputs[name] = task()
+            self.outputs[name] = task(nxpipes=pipes)
+        for p in pipes.values():
+            p.execute()

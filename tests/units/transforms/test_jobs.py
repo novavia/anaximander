@@ -17,7 +17,6 @@ import pandas as pd
 import pytest
 
 import anaximander3 as nx
-from anaximander3.utilities import nxrange as rge
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl
 from anaximander3.io.store import Title
@@ -336,21 +335,6 @@ def test_device_update(featurelog, archive, procstore):
                                 output_store='procstore', logger=None,
                                 stream_mode=True, when=t)
         insert()
-#        dt_range = rge.time_range(t - minute, t)
-#        records = featurelog[D1.id][t - minute:t]
-#        sequence = procstore[FEATURE].sequence(D1.id)
-#        old_certificate = sequence.certification
-#        recs = list(sequence) + list(records)
-#        dt_range = rge.MultiTimeInterval([sequence.dt_range,
-#                                          dt_range]).compact
-#        new_certificate = t - minute
-#        consumption = sequence.consumption
-#        new_seq = dtl.DataSequence.from_records(recs, id_range=D1.id,
-#                                                dt_range=dt_range,
-#                                                certification=new_certificate,
-#                                                consumption=consumption,
-#                                                schema=FEATURE.schema)
-#        procstore[FEATURE].write(new_seq, old_certificate)
         update = DeviceUpdate(D1, stream_mode=True, logger=None)
         update()
     alerts = procstore[CSTATE].query(id=D1.id).data().\

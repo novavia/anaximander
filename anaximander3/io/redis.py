@@ -115,6 +115,10 @@ class NxPipe:
         self._pipe = store.io.pipeline(*args, **kwargs)
         self._callbacks = []
 
+    @property
+    def store(self):
+        return self._store
+
     def execute(self):
         rval = []
         results = iter(self._pipe.execute())
