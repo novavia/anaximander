@@ -182,6 +182,9 @@ class NxPipe:
     def metadata(self, buffer, id):
         buffer.metadata(id, _nxpipe=self)
 
+    def data(self, buffer, id, lower=None, upper=None):
+        buffer.metadata(id, _nxpipe=self, lower=lower, upper=upper)
+
 
 class RedisDataTract(DataTract, RedisTract):
 
@@ -680,13 +683,41 @@ class RedisBuffer(RedisTract):
         if _nxpipe is None:
             return pipe.execute()
 
-    def __get_data__(self, pipe, id, lower=None):
-        dt_range = rge.time_range((lower, None))
+    def __get_data__(self, pipe, id, lower=None, upper=None):
+        dt_range = rge.time_range((lower, upper))
         lower, upper = (t.timestamp() for t in dt_range)
         storage_key = self.data_tract.storage_key(id)
         pipe.zrevrangebyscore(storage_key, upper, lower)
+        if self.schema.xindex:
+            pipe.zrevrangebyscore(storage_key, lower,
+                                  nxtime.MIN.timestamp(), 0, 1)
 
-    def _sequence(self, metadata, data, id=id, lower=None):
+    def _data(self, *results):
+        """Primitive for data."""
+        records = []
+        for res in chain(*results):
+            dict_ = json.loads(res)
+            dict_['schema'] = self.schema
+            records.append(rcd.Record.from_dict(dict_))
+        return records
+
+    def data(self, id, lower=None, upper=None, _nxpipe=None):
+        """Queries and returns records for supplied id.
+
+        Note that this doesn't involve metadata. Use sequence to download
+        a full DataSequence with metadata.
+        """
+        if self.schema.xindex:
+            card = 2
+        else:
+            card = 1
+        pipe = _nxpipe.pipe(self._data, card) if _nxpipe\
+            else self.client.pipeline()
+        self.__get_data__(pipe, id, lower=lower, upper=upper)
+        if _nxpipe is None:
+            return self._data(*pipe.execute())
+
+    def _sequence(self, metadata, *data, id=id, lower=None, upper=None):
         if not metadata:
             raise NotInStoreException()
         meta_ = {k.decode(): pd.to_datetime(v.decode(), utc=True)
@@ -695,6 +726,8 @@ class RedisBuffer(RedisTract):
         upper_ = meta_.pop('upper', pd.NaT)
         if lower is not None:
             lower_ = max(lower, lower_)
+        if upper is not None:
+            upper_ = min(upper, upper_)
         dt_range = rge.time_range(lower_, upper_)
         consumption = nxtime.MAX
         for k in list(meta_.keys()):
@@ -704,7 +737,7 @@ class RedisBuffer(RedisTract):
         meta_['dt_range'] = dt_range
         meta_['consumption'] = consumption
         data_ = []
-        for res in data:
+        for res in chain(*data):
             dict_ = json.loads(res)
             dt = dict_['data']
             dt['id'], dt['datetime'] = dict_['index']
@@ -715,18 +748,23 @@ class RedisBuffer(RedisTract):
         return dtl.DataSequence(df, schema=self.schema,
                                 id_range=id, **meta_)
 
-    def sequence(self, id, lower=None, _nxpipe=None):
+    def sequence(self, id, lower=None, upper=None, _nxpipe=None):
         """Fetches data for id, optionally above lower datetime."""
-        if self.schema.xindex and lower is not None:
-            msg = "Cannot fetch partial sequence on an xindex schema."
-            raise ValueError(msg)
-        callback = partial(self._sequence, id=id, lower=lower)
-        pipe = _nxpipe.pipe(callback, 2) if _nxpipe else self.client.pipeline()
+        callback = partial(self._sequence, id=id, lower=lower, upper=upper)
+        if self.schema.xindex:
+            card = 3
+        else:
+            card = 2
+        if _nxpipe:
+            pipe = _nxpipe.pipe(callback, card)
+        else:
+            pipe = self.client.pipeline()
         self.__get_metadata__(pipe, id)
-        self.__get_data__(pipe, id, lower=lower)
+        self.__get_data__(pipe, id, lower=lower, upper=upper)
         if _nxpipe is None:
-            metadata, data = pipe.execute()
-            return self._sequence(metadata, data, id=id, lower=lower)
+            metadata, *data = pipe.execute()
+            return self._sequence(metadata, *data, id=id,
+                                  lower=lower, upper=upper)
 
     def meta_storage_key(self, id):
         """Returns the storage key for metadata."""
@@ -753,6 +791,10 @@ class RedisBuffer(RedisTract):
         return BufferQuery(self, *columns, **kwargs)
 
     @abc.abstractmethod
+    def flushline(self, id, sequence):
+        return nxtime.MIN
+
+    @abc.abstractmethod
     def write(self, sequence, old_certificate=None, _nxpipe=None):
         super().write(sequence, old_certificate=old_certificate,
                       _nxpipe=_nxpipe)
@@ -772,6 +814,7 @@ class RedisApplicationBuffer(RedisBuffer):
             when = pd.to_datetime(when, utc=True)
         try:
             sequence = self._load_from_archive(id, when=when)
+            sequence.certify(sequence.dt_range.upper)
         except NoArchive:
             sequence = dtl.DataSequence(schema=self.schema,
                                         id_range=id,
@@ -793,10 +836,20 @@ class RedisApplicationBuffer(RedisBuffer):
         start = when - self.depth
         return archive_tract.query(id=id, datetime=(start, when)).data()
 
+    def flushline(self, id, sequence, old_upper=None):
+        if old_upper is None:
+            old_metadata = self.metadata(id)
+            old_upper = old_metadata['upper']
+        upper = max(old_upper, sequence.dt_range.upper)
+        if pd.isna(upper):
+            return nxtime.MIN
+        else:
+            return upper - self.depth
+
     def write(self, sequence, old_certificate=None, _nxpipe=None):
         """Writes the buffer by supplying a sequence.
 
-        Overwrites data with sequence.
+        Overwrites data with sequence from old certificate on.
         Finally the metadata gets updated.
         """
         if not isinstance(sequence, dtl.DataSequence):
@@ -806,6 +859,9 @@ class RedisApplicationBuffer(RedisBuffer):
         if not isinstance(sequence.schema, type(self.schema)):
             msg = f"Incorrect data schema supplied to {self}."
             raise ValueError(msg)
+        write_range = rge.time_range((sequence.dt_range.upper - self.depth,
+                                      sequence.dt_range.upper))
+        sequence = sequence[slice(*write_range)]
         id = sequence.id
         cardinal = 2 if sequence.empty else 3
         pipe = _nxpipe.pipe(cardinal=cardinal) if _nxpipe\
@@ -816,6 +872,40 @@ class RedisApplicationBuffer(RedisBuffer):
         metadata = {'lower': str(lower),
                     'upper': str(upper),
                     'certification': str(sequence.certification)}
+        pipe.hmset(self.meta_storage_key(id), metadata)
+        if _nxpipe is None:
+            return pipe.execute()
+
+    def update(self, id, sequence, old_metadata=None, _nxpipe=None):
+        """Updates the buffer from old certificate on."""
+        if old_metadata is None:
+            if _nxpipe is not None:
+                msg = "Cannot pipe an update without extant metadata."
+                raise ValueError(msg)
+            else:
+                old_metadata = self.metadata(id)
+                lower, upper = old_metadata['lower'], old_metadata['upper']
+                old_metadata['dt_range'] = rge.time_range((lower, upper))
+        update_line = old_metadata['certification']
+        if pd.isna(update_line):
+            return self.write(sequence, _nxpipe=_nxpipe)
+        update_range = rge.time_range((update_line, None))
+        flushline = self.flushline(id, sequence,
+                                   old_metadata['dt_range'].upper)
+        flushrange = rge.time_range((None, flushline))
+        data = sequence[update_line:]
+        cardinal = 3 if data.empty else 4
+        pipe = _nxpipe.pipe(cardinal=cardinal) if _nxpipe\
+            else self.client.pipeline()
+        self.data_tract.__discard__(pipe, id, update_range)
+        self.data_tract.__discard__(pipe, id, flushrange)
+        self.data_tract.__append__(pipe, data)
+        lower = max(old_metadata['dt_range'].lower, flushline)
+        upper = max(old_metadata['dt_range'].upper, sequence.dt_range.upper)
+        certificate = max(update_line, sequence.certification)
+        metadata = {'lower': str(lower),
+                    'upper': str(upper),
+                    'certification': str(certificate)}
         pipe.hmset(self.meta_storage_key(id), metadata)
         if _nxpipe is None:
             return pipe.execute()
@@ -868,7 +958,7 @@ class RedisProcessBuffer(RedisBuffer):
         archive_store = self.store.archive
         if archive_store is None:
             msg = f"Cannot archive {sequence}  " + \
-                  f"because not archive store is setup."
+                  f"because no archive store is setup."
             raise NoArchive(msg)
         else:
             try:
@@ -879,6 +969,11 @@ class RedisProcessBuffer(RedisBuffer):
                 raise NoArchive(msg)
         archive_bound = sequence[old_certificate:sequence.certification]
         archive_tract.append(archive_bound)
+
+    def flushline(self, id, sequence):
+        certification = dtget(sequence.certification, nxtime.MIN)
+        consumption = dtget(sequence.consumption, nxtime.MIN)
+        return min((certification, consumption))
 
     def write(self, sequence, old_certificate=None, _nxpipe=None):
         """Writes the buffer by supplying a sequence.
@@ -903,9 +998,7 @@ class RedisProcessBuffer(RedisBuffer):
             self.archive(sequence, old_certificate)
         except NoArchive:
             pass
-        certification = dtget(sequence.certification, nxtime.MIN)
-        consumption = dtget(sequence.consumption, nxtime.MIN)
-        flushline = min((certification, consumption))
+        flushline = self.flushline(sequence.id, sequence)
         sequence = sequence[flushline:]
         self.data_tract.__append__(pipe, sequence)
         lower, upper = sequence.dt_range

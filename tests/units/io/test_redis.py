@@ -446,7 +446,7 @@ def test_nxpipe(archive, full_tract, featurelog):
     assert record == log[-1]
 
 
-def test_data(full_tract):
+def test_query_data(full_tract):
     query = full_tract.query(id='68:9E:19:07:DE:C3')
     log = query.data()
     assert isinstance(log, dtl.DataSequence)
@@ -600,6 +600,22 @@ def test_metadata(buffer_tract, featurelog):
     metadata = buffer_tract.metadata('68:9E:19:07:DE:C3')
     assert metadata['certification'] == pd.to_datetime('2016-9-14 10:02',
                                                        utc=True)
+
+
+def test_data(buffer_tract, featurelog):
+    input_sequence = featurelog['68:9E:19:07:DE:C3']
+    buffer_tract.write(input_sequence)
+    data = buffer_tract.data('68:9E:19:07:DE:C3')
+    assert data == list(input_sequence)[::-1]
+
+
+def test_xdata(statebuf_tract, statelog):
+    input_sequence = statelog['88:4A:EA:69:35:BD']
+    statebuf_tract.write(input_sequence)
+    data = statebuf_tract.data('88:4A:EA:69:35:BD',
+                               lower='2018-4-15 00:16:30',
+                               upper='2018-4-15 00:16:45')
+    assert len(data) == 3
 
 
 def test_sequence(buffer_tract, featurelog):
@@ -769,6 +785,20 @@ def test_load_from_archive(featurelog, statelog,
         app_full_tract.setup(id, '2016-09-14 10:05:30')
     sequence = app_full_tract.sequence('88:4A:EA:69:DF:A2')
     assert len(sequence) == 5
+
+
+def test_update_app(featurelog, statelog,
+                    app_full_tract, app_state_tract, appstore,
+                    full_tract, state_tract, archive):
+    for id in FEATURE_IDS:
+        app_full_tract.setup(id, '2016-09-14 10:02:00')
+    sequence = app_full_tract.sequence('88:4A:EA:69:DF:A2')
+    assert len(sequence) == 11
+    update_range = slice('2016-9-14 10:02:00', '2016-9-14 10:03:00')
+    update = featurelog['88:4A:EA:69:DF:A2'][update_range]
+    app_full_tract.update('88:4A:EA:69:DF:A2', update)
+    sequence = app_full_tract.sequence('88:4A:EA:69:DF:A2')
+    assert len(sequence) == 7
 
 
 if __name__ == '__main__':
