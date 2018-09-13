@@ -116,7 +116,7 @@ class Store(Mapping, metaclass=StoreType):
             return
         self.role = role or self.__role__
         if self.role is not None:
-            type(self).__registry__[role] = self
+            type(self).__registry__[self.role] = self
         self._io = self.__interface__(**kwargs)
         self._tracts = dict()
 

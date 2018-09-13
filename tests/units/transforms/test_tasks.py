@@ -219,6 +219,8 @@ def appstore(archive):
     """Creates a redis application store for testing purposes."""
     store = nxr.RedisApplicationStore(host=ALT_HOST, port=ALT_PORT,
                                       password=PWD, archive=archive)
+    feature_tract = store.tract(FEATURE, depth='1h')
+    feature_tract.create(warn=False, overwrite=True, force=True)
     yield store
     cleanup(store)
 
@@ -230,7 +232,7 @@ def appstore(archive):
 pytestmark = [pytest.mark.online, pytest.mark.gcloud]
 
 
-class IdentityTask(tsk.TransformTask):
+class IdentityTask(tsk.Task):
     __etype__ = Device
     features = tsk.TaskInput(FEATURE)
     output = tsk.TaskOutput(FEATURE)
@@ -239,7 +241,7 @@ class IdentityTask(tsk.TransformTask):
         return self.features
 
 
-class FeatureAlertsAssessment(tsk.TransformTask):
+class FeatureAlertsAssessment(tsk.Task):
     __etype__ = Device
     features = tsk.TaskInput(FEATURE)
     alerts = tsk.TaskOutput(CSTATE)
@@ -276,7 +278,7 @@ class FeatureAlertsAssessment(tsk.TransformTask):
             sessions.session_sequence(label).plot(staff=staff, make_main=True)
 
 
-class MachineEventAssessment(tsk.TransformTask):
+class MachineEventAssessment(tsk.Task):
     __etype__ = Machine
     features = tsk.TaskInput(FEATURE, 'devices')
     events = tsk.TaskOutput(EVENT)
@@ -293,6 +295,12 @@ class MachineEventAssessment(tsk.TransformTask):
         return dtl.DataSequence(events, schema=MultiEventSchema,
                                 id_range=self.entity.id,
                                 dt_range=self.dt_range)
+
+
+class UpdateTask(tsk.UpdateTask):
+    __etype__ = Device
+    features = tsk.TaskInput(FEATURE)
+    output = tsk.TaskOutput(FEATURE)
 
 
 def test_task_input():
@@ -324,6 +332,19 @@ def test_machine_events(archive):
     task = MachineEventAssessment(M0, FEATURE_TME, 'archive', logger=None)
     output, *_ = task()
     assert len(output) == 7
+
+
+def test_update_task(archive, featurelog, procstore, appstore):
+    tract = procstore.tract(FEATURE)
+    tract.create(warn=False, overwrite=True, force=True)
+    featurelog.certify('2018-9-14 10:05')
+    tract.write(featurelog[D0.id])
+    UpdateTask.setup_streaming(D0, when='2016-9-14 10:00')
+    task = UpdateTask(D0, logger=None, stream_mode=True)
+    output, *_ = task()
+    assert output.data.equals(featurelog[D0.id].data)
+    query = appstore[FEATURE].query(id=D0.id, datetime=FEATURE_TME)
+    assert query.data() == output
 
 
 if __name__ == '__main__':

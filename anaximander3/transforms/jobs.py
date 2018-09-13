@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import defaultdict
 
-from ..utilities import nxrange as rge, xprops
+from ..utilities import nxrange as rge
 from ..meta import nxdescriptors as nxd
 from ..io import redis as nxr
 from . import logger as LOGGER
@@ -129,6 +129,9 @@ class Job(metaclass=JobType):
                 setattr(task, k, self.inputs[in_store][v])
             for k, v in task.__outputs__.items():
                 setattr(task, k, self.inputs[out_store][v])
-            self.outputs[name] = task(nxpipes=pipes)
+            outputs = task(nxpipes=pipes)
+            self.outputs[name] = outputs
+            for desc, out in zip(task.__outputs__.values(), outputs):
+                self.inputs[out_store][desc] = out
         for p in pipes.values():
             p.execute()

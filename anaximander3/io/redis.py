@@ -624,7 +624,8 @@ class BufferQuery(RedisDataQuery):
             for id in self.id_range:
                 pp_sequence = logs[id]
                 pp_metadata = pp_sequence.metadata
-                pp_metadata['dt_range'] = metadata['dt_ranges'][id]
+                pp_metadata['dt_range'] = metadata['dt_ranges'][id] &\
+                    self.dt_range
                 pp_metadata['certification'] = metadata['certificates'][id]
                 pp_metadata['consumption'] = metadata['consumptions'][id]
                 sequence = dtl.DataSequence(pp_sequence.data,
@@ -635,7 +636,8 @@ class BufferQuery(RedisDataQuery):
         else:
             id = self.id_range.level
             pp_metadata = logs.metadata
-            pp_metadata['dt_range'] = metadata['dt_ranges'][id]
+            pp_metadata['dt_range'] = metadata['dt_ranges'][id] &\
+                self.dt_range
             pp_metadata['certification'] = metadata['certificates'][id]
             pp_metadata['consumption'] = metadata['consumptions'][id]
             sequence = dtl.DataSequence(logs.data,
@@ -670,7 +672,7 @@ class RedisBuffer(RedisTract):
         data_title = Title(title.name + '_data', title.schema)
         self.data_tract = RedisDataTract(store, data_title, register=False)
 
-    def setup(self, id, _nxpipe=None):
+    def setup(self, id, _nxpipe=None, **kwargs):
         """Setup storage for supplied id."""
         now = nxtime.now()
         sequence = dtl.DataSequence(schema=self.schema,
@@ -848,6 +850,21 @@ class RedisApplicationBuffer(RedisBuffer):
             return nxtime.MIN
         else:
             return upper - self.depth
+
+    def mock(self, id, _nxpipe=None):
+        """Returns an empty sequence with self.metadata attached."""
+        def callback(results):
+            metadata = self._metadata(results)
+            return dtl.DataSequence(schema=self.schema, id_range=id,
+                                    **metadata)
+        if _nxpipe:
+            pipe = _nxpipe.pipe(callback)
+        else:
+            pipe = self.client.pipeline()
+        self.__get_metadata__(pipe, id)
+        if _nxpipe is None:
+            results = pipe.execute()
+            return callback(results)
 
     def write(self, sequence, old_certificate=None, _nxpipe=None):
         """Writes the buffer by supplying a sequence.

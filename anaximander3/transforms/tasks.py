@@ -75,46 +75,7 @@ class TaskDescriptor(nxd.NxAttribute):
                 msg = f"Cannot set {self.shortname} {self.name} for {task}."
                 self.logger.exception(msg, exc_info=True)
 
-#    def fetch(self, entity, nxpipe=None, store=None, dt_range=None):
-#        if nxpipe is None:
-#            if store is None:
-#                msg = "A store must be specified to retrieve task data"
-#                raise TypeError(msg)
-#            elif isinstance(store, str):
-#                store = Store[store]
-#        else:
-#            store = nxpipe.store
-#        tract = store[self.title]
-#        try:
-#            if self.relation is None:
-#                id_range = entity.id
-#            else:
-#                target = getattr(entity, self.relation)
-#                if isinstance(target, Sequence):
-#                    id_range = [e.id for e in target]
-#                else:
-#                    id_range = target.id
-#        except AttributeError:
-#            msg = "Improper entity type or query specification."
-#            raise IOError(msg)
-#        if dt_range is None:
-#            if nxpipe:
-#                nxpipe.query(tract, id=id_range)
-#                return
-#            else:
-#                query = tract.query(id=id_range)
-#                return query.data()
-#        else:
-#            if nxpipe:
-#                nxpipe.query(tract, id=id_range, datetime=dt_range)
-#                return
-#            else:
-#                query = tract.query(id=id_range, datetime=dt_range)
-#                return query.data()
-
     def __eq__(self, other):
-        if not isinstance(other, type(self)):
-            return False
         return self.title == other.title and self.relation == other.relation
 
     def __hash__(self):
@@ -140,8 +101,8 @@ class TaskOutput(TaskDescriptor):
 
     def fetch(self, entity, dt_range, store=None, nxpipe=None):
         cls = self.archetype
-        return cls.fetch_output(self.title, self.relation,
-                                entity, dt_range, store=store, nxpipe=nxpipe)
+        return cls.fetch_output(self.title, entity, dt_range,
+                                store=store, nxpipe=nxpipe)
 
     def merge(self, extant, output):
         cls = self.archetype
@@ -151,46 +112,6 @@ class TaskOutput(TaskDescriptor):
         cls = self.archetype
         return cls.store_output(self.title, entity, sequence,
                                 store=store, nxpipe=nxpipe, **metadata)
-
-#    def store(self, entity, sequence, nxpipe=None, output_store=None,
-#              old_certificate=None):
-#        if nxpipe is None:
-#            if output_store is None:
-#                msg = "An output store must be specified to write task outputs"
-#                raise TypeError(msg)
-#            elif isinstance(output_store, str):
-#                output_store = Store[output_store]
-#        else:
-#            output_store = nxpipe.store
-#        try:
-#            assert sequence.id_range == entity.id
-#        except AssertionError:
-#            msg = f"{sequence}'s id does not match {entity}."
-#            raise ValueError(msg)
-#        tract = output_store[self.title]
-#        return tract.write(sequence, old_certificate=old_certificate,
-#                           _nxpipe=nxpipe)
-
-#    def merge(self, original, new):
-#        """Merges new sequence with original sequence."""
-#        if pd.isna(original.certification):
-#            return new
-#        divider = max(original.certification, new.dt_range.lower)
-#        left = original[None:divider]
-#        right = new[divider:None]
-#        data = pd.concat((left.data, right.data))
-#        id_range = original.id_range
-#        dt_range = rge.MultiTimeInterval([original.dt_range,
-#                                          new.dt_range]).compact
-#        if new.certification >= original.certification:
-#            certification = new.certification
-#        else:
-#            certification = original.certification
-#        consumption = original.consumption
-#        return dtl.DataSequence(data, schema=self.title.schema,
-#                                id_range=id_range, dt_range=dt_range,
-#                                certification=certification,
-#                                consumption=consumption)
 
 
 class TaskType(abc.ABCMeta):
@@ -221,17 +142,38 @@ class Task(metaclass=TaskType):
             setattr(self, k, v)
 
     @classmethod
-    def setup_streaming(cls, entity, input_store, output_store, logger=LOGGER):
+    def setup_streaming(cls, entity, input_store=None, output_store=None,
+                        when=None, logger=LOGGER):
+        input_store = input_store or cls.__input_store__
+        output_store = output_store or cls.__output_store__
         if isinstance(input_store, str):
             input_store = Store[input_store]
         if isinstance(output_store, str):
             output_store = Store[output_store]
+        if isinstance(input_store, nxr.RedisStore):
+            in_pipe = nxr.NxPipe(input_store)
+        else:
+            in_pipe = None
+        if isinstance(output_store, nxr.RedisStore):
+            if output_store == input_store:
+                out_pipe = in_pipe
+            else:
+                out_pipe = nxr.NxPipe(output_store)
+        else:
+            out_pipe = None
         for name, desc in cls.__outputs__.items():
             tract = output_store[desc.title]
-            tract.setup(entity.id)
-            for iname, idesc in cls.__inputs__.items():
-                itract = input_store[idesc.title]
-                itract.setup_subscriber(tract, entity.id)
+            if isinstance(tract, nxr.RedisBuffer):
+                tract.setup(entity.id, _nxpipe=out_pipe, when=when)
+                for iname, idesc in cls.__inputs__.items():
+                    itract = input_store[idesc.title]
+                    if isinstance(itract, nxr.RedisBuffer):
+                        itract.setup_subscriber(tract, entity.id,
+                                                _nxpipe=in_pipe)
+        if in_pipe is not None:
+            in_pipe.execute()
+        if out_pipe is not None and out_pipe != in_pipe:
+            out_pipe.execute()
 
     @xprops.settablecachedproperty
     def input_store(self):
@@ -291,9 +233,8 @@ class Task(metaclass=TaskType):
                 return query.data()
 
     @classmethod
-    def fetch_output(cls, title, relation, entity, dt_range,
-                     store=None, nxpipe=None):
-        return cls.fetch_input(title, relation, entity, dt_range,
+    def fetch_output(cls, title, entity, dt_range, store=None, nxpipe=None):
+        return cls.fetch_input(title, None, entity, dt_range,
                                store=store, nxpipe=nxpipe)
 
     def retrieve_inputs(self):
@@ -378,12 +319,11 @@ class Task(metaclass=TaskType):
             msg = f"{sequence}'s id does not match {entity}."
             raise ValueError(msg)
         tract = store[title]
-        old_certificate = metadata.get('old_certificate', None)
+        old_certificate = metadata.get('certification', None)
         return tract.write(sequence, old_certificate=old_certificate,
                            _nxpipe=nxpipe)
 
-    def store_outputs(self, nxpipes, **kwargs):
-        certificates = kwargs
+    def store_outputs(self, nxpipes, **metadata):
         if isinstance(self.input_store, nxr.RedisStore):
             if self.input_store in nxpipes:
                 in_pipe = nxpipes[self.input_store]
@@ -407,13 +347,14 @@ class Task(metaclass=TaskType):
             if in_pipe is not None:
                 for iname, idesc in self.__inputs__.items():
                     in_tract = self.input_store[idesc.title]
-                    in_tract.update_subscriber(out_tract,
-                                               self.entity.id,
-                                               certificate,
-                                               _nxpipe=in_pipe)
-            old_certificate = certificates[name]
+                    if isinstance(in_tract, nxr.RedisProcessBuffer):
+                        in_tract.update_subscriber(out_tract,
+                                                   self.entity.id,
+                                                   certificate,
+                                                   _nxpipe=in_pipe)
+            meta = metadata[name]
             desc.store(self.entity, sequence, store=self.output_store,
-                       nxpipe=out_pipe, old_certificate=old_certificate)
+                       nxpipe=out_pipe, **meta)
         if in_pipe is not None and self.input_store not in nxpipes:
             in_pipe.execute()
         if out_pipe not in (None, in_pipe):
@@ -431,8 +372,8 @@ class Task(metaclass=TaskType):
             nxpipes = {}
         self.retrieve_inputs()
         if self.stream_mode:
-            certificates = {name: getattr(self, name).certification
-                            for name in self.__outputs__}
+            metadata = {name: getattr(self, name).metadata
+                        for name in self.__outputs__}
         try:
             outputs = self.__function__()
             if not isinstance(outputs, tuple):
@@ -453,7 +394,7 @@ class Task(metaclass=TaskType):
         if plot:
             self.plot()
         if self.stream_mode:
-            self.store_outputs(nxpipes, **certificates)
+            self.store_outputs(nxpipes, **metadata)
         return outputs
 
     def plot(self, **kwargs):
@@ -505,8 +446,7 @@ class UpdateTask(Task):
     __output_store__ = 'buffer'
 
     @classmethod
-    def fetch_output(cls, title, relation, entity, dt_range,
-                     store=None, nxpipe=None):
+    def fetch_output(cls, title, entity, dt_range, store=None, nxpipe=None):
         if nxpipe is None:
             if store is None:
                 msg = "A store must be specified to retrieve task data"
@@ -515,19 +455,34 @@ class UpdateTask(Task):
             store = nxpipe.store
         tract = store[title]
         try:
-            if relation is None:
-                id_range = entity.id
-            else:
-                target = getattr(entity, relation)
-                if isinstance(target, Sequence):
-                    msg = "Specification is incompatible with task type."
-                    raise TypeError(msg)
-                else:
-                    id_range = target.id
+            id_range = entity.id
         except AttributeError:
             msg = "Improper entity type or query specification."
             raise IOError(msg)
-        return tract.metadata(id=id_range, nxpipe=nxpipe)
+        return tract.mock(id=id_range, _nxpipe=nxpipe)
+
+    @classmethod
+    def merge(cls, original, new):
+        """Merges new sequence with original metadata."""
+        return new
+
+    @classmethod
+    def store_output(cls, title, entity, sequence, store=None, nxpipe=None,
+                     **metadata):
+        if nxpipe is None:
+            if store is None:
+                msg = "An output store must be specified to write task outputs"
+                raise TypeError(msg)
+        else:
+            store = nxpipe.store
+        try:
+            assert sequence.id_range == entity.id
+        except AssertionError:
+            msg = f"{sequence}'s id does not match {entity}."
+            raise ValueError(msg)
+        tract = store[title]
+        return tract.update(entity.id, sequence, old_metadata=metadata,
+                            _nxpipe=nxpipe)
 
     def __function__(self):
-        return self.inputs
+        return tuple(getattr(self, name) for name in self.__inputs__)
