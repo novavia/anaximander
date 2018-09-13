@@ -14,7 +14,7 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import defaultdict
 
-from ..utilities import nxrange as rge
+from ..utilities import nxrange as rge, xprops
 from ..meta import nxdescriptors as nxd
 from ..io import redis as nxr
 from . import logger as LOGGER
@@ -44,8 +44,15 @@ class JobTask(nxd.NxAttribute):
             else:
                 msg = f"Cannot set task {self.name} for {job}."
                 self.logger.exception(msg, exc_info=True)
-        task.input_store = self.input_store or job.input_store
-        task.output_store = self.output_store or job.output_store
+
+    def __call__(self, job):
+        task = self.task_type(job.entity, job.dt_range,
+                              stream_mode=job.stream_mode,
+                              logger=job.logger,
+                              input_store=self.input_store,
+                              output_store=self.output_store)
+        setattr(job, self.name, task)
+        return task
 
 
 class JobType(abc.ABCMeta):
@@ -59,8 +66,7 @@ class Job(metaclass=JobType):
     __input_store__ = None
     __output_store__ = None
 
-    def __init__(self, entity, dt_range=None, input_store=None,
-                 output_store=None, stream_mode=False, logger=LOGGER,
+    def __init__(self, entity, dt_range=None, stream_mode=False, logger=LOGGER,
                  **params):
         try:
             assert isinstance(entity, self.__etype__)
@@ -75,14 +81,10 @@ class Job(metaclass=JobType):
             self.dt_range = rge.time_range((None, None))
         else:
             self.dt_range = rge.time_range(dt_range)
-        self.input_store = input_store or self.__input_store__
-        self.output_store = output_store or self.__output_store__
         self.logger = logger
         self.inputs = defaultdict(dict)
         for name, desc in self.__tasks__.items():
-            task = desc.task_type(entity, dt_range, stream_mode=stream_mode,
-                                  logger=logger)
-            setattr(self, name, task)
+            task = desc(self)
             for ti in task.__inputs__.values():
                 self.inputs[task.input_store][ti] = None
             for to in task.__outputs__.values():
@@ -97,14 +99,14 @@ class Job(metaclass=JobType):
                 pipe = nxr.NxPipe(store)
             else:
                 pipe = None
-            for d in list(descriptors):
-                rval = d.fetch(self.entity, nxpipe=pipe,
-                               store=store, dt_range=self.dt_range)
+            for dsc in list(descriptors):
+                rval = dsc.fetch(self.entity, self.dt_range,
+                                 store=store, nxpipe=pipe)
                 if rval is not None:
-                    descriptors[d] = rval
+                    descriptors[dsc] = rval
             if pipe is not None:
-                for d, r in zip(list(descriptors), pipe.execute()):
-                    descriptors[d] = r
+                for dsc, res in zip(list(descriptors), pipe.execute()):
+                    descriptors[dsc] = res
 
     @classmethod
     def setup_streaming(cls, entity, input_store, output_store, logger=LOGGER):

@@ -193,8 +193,8 @@ def cleanup(store):
 @pytest.fixture(scope="module")
 def archive(featurelog, statelog, sessionlog, eventseq, cstateseq):
     """Creates a redis store for testing purposes."""
-    store = nxr.RedisArchive(role='archive',
-                             host=HOST, port=PORT, password=PWD)
+    store = nxr.RedisArchive(role='redarchive',
+                             host=ALT_HOST, port=ALT_PORT, password=PWD)
     tracts = [store.tract(FEATURE), store.tract(STATE), store.tract(SESSION),
               store.tract(EVENT), store.tract(CSTATE)]
     for t, log in zip(tracts, [featurelog, statelog, sessionlog,
@@ -208,7 +208,7 @@ def archive(featurelog, statelog, sessionlog, eventseq, cstateseq):
 @pytest.fixture(scope="module")
 def procstore(archive):
     """Creates a redis process store for testing purposes."""
-    store = nxr.RedisProcessStore(role='procstore',
+    store = nxr.RedisProcessStore(role='process',
                                   host=HOST, port=PORT, password=PWD,
                                   archive=archive)
     for title in [FEATURE, STATE, SESSION, EVENT, CSTATE]:
@@ -233,7 +233,7 @@ def appstore(archive):
 pytestmark = [pytest.mark.online, pytest.mark.gcloud]
 
 
-class IdentityTask(tsk.Task):
+class IdentityTask(tsk.TransformTask):
     __etype__ = Device
     features = tsk.TaskInput(FEATURE)
     output = tsk.TaskOutput(FEATURE)
@@ -242,7 +242,7 @@ class IdentityTask(tsk.Task):
         return self.features
 
 
-class FeatureAlertsAssessment(tsk.Task):
+class FeatureAlertsAssessment(tsk.TransformTask):
     __etype__ = Device
     features = tsk.TaskInput(FEATURE)
     alerts = tsk.TaskOutput(CSTATE)
@@ -279,7 +279,7 @@ class FeatureAlertsAssessment(tsk.Task):
             sessions.session_sequence(label).plot(staff=staff, make_main=True)
 
 
-class MachineEventAssessment(tsk.Task):
+class MachineEventAssessment(tsk.TransformTask):
     __etype__ = Machine
     features = tsk.TaskInput(FEATURE, 'devices')
     events = tsk.TaskOutput(EVENT)
@@ -299,17 +299,14 @@ class MachineEventAssessment(tsk.Task):
 
 
 class DeviceJob(jobs.Job):
-    identity = jobs.JobTask(IdentityTask)
-    alerts = jobs.JobTask(FeatureAlertsAssessment)
+    identity = jobs.JobTask(IdentityTask, input_store='redarchive')
+    alerts = jobs.JobTask(FeatureAlertsAssessment, input_store='redarchive')
     __etype__ = Device
-    __input_store__ = 'archive'
 
 
 class DeviceUpdate(jobs.Job):
     alerts = jobs.JobTask(FeatureAlertsAssessment)
     __etype__ = Device
-    __input_store__ = 'procstore'
-    __output_store__ = 'procstore'
 
 
 class InsertFeatures(tsk.InsertTask):
@@ -317,7 +314,7 @@ class InsertFeatures(tsk.InsertTask):
     latency = '3m'
 
 
-def test_device_job(archive):
+def test_device_job(featurelog, archive, procstore):
     job = DeviceJob(D1, FEATURE_TME, logger=None)
     job()
     assert len(job.alerts.alerts) == 6
@@ -329,10 +326,10 @@ def test_device_update(featurelog, archive, procstore):
     minute = pd.Timedelta('1min')
     updates = pd.date_range('2016-9-14 10:01', '2016-9-14 10:10',
                             freq='1T', tz='UTC')
-    DeviceUpdate.setup_streaming(D1, 'procstore', 'procstore')
+    DeviceUpdate.setup_streaming(D1, 'process', 'process')
     for i, t in enumerate(updates):
         insert = InsertFeatures(D1, *featurelog[D1.id][t - minute:t],
-                                output_store='procstore', logger=None,
+                                output_store='process', logger=None,
                                 stream_mode=True, when=t)
         insert()
         update = DeviceUpdate(D1, stream_mode=True, logger=None)

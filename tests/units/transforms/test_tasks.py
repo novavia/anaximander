@@ -230,7 +230,7 @@ def appstore(archive):
 pytestmark = [pytest.mark.online, pytest.mark.gcloud]
 
 
-class IdentityTask(tsk.Task):
+class IdentityTask(tsk.TransformTask):
     __etype__ = Device
     features = tsk.TaskInput(FEATURE)
     output = tsk.TaskOutput(FEATURE)
@@ -239,7 +239,7 @@ class IdentityTask(tsk.Task):
         return self.features
 
 
-class FeatureAlertsAssessment(tsk.Task):
+class FeatureAlertsAssessment(tsk.TransformTask):
     __etype__ = Device
     features = tsk.TaskInput(FEATURE)
     alerts = tsk.TaskOutput(CSTATE)
@@ -276,7 +276,7 @@ class FeatureAlertsAssessment(tsk.Task):
             sessions.session_sequence(label).plot(staff=staff, make_main=True)
 
 
-class MachineEventAssessment(tsk.Task):
+class MachineEventAssessment(tsk.TransformTask):
     __etype__ = Machine
     features = tsk.TaskInput(FEATURE, 'devices')
     events = tsk.TaskOutput(EVENT)

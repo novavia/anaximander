@@ -76,6 +76,18 @@ class StoreType(abc.ABCMeta):
     def __getitem__(self, name):
         return self.__registry__[name]
 
+    @property
+    def process(self):
+        return self.__registry__.get('process', None)
+
+    @property
+    def buffer(self):
+        return self.__registry__.get('buffer', None)
+
+    @property
+    def archive(self):
+        return self.__registry__.get('archive', None)
+
 
 class Store(Mapping, metaclass=StoreType):
     """A light wrapper for data stores with a mapping interface.
@@ -83,10 +95,27 @@ class Store(Mapping, metaclass=StoreType):
     The Store provides a mapping from Title name to Tract.
     """
     __tract__ = None  # The tract type associated with the Store class
+    __role__ = None
+
+    def __new__(cls, role=None, **kwargs):
+        if not kwargs:
+            try:
+                if role is not None:
+                    return cls[role]
+                else:
+                    return cls[cls.__role__]
+            except KeyError:
+                msg = "Cannot instantiate or retrieve store with supplied " + \
+                      "arguments."
+                raise ValueError(msg)
+        else:
+            return super().__new__(cls)
 
     def __init__(self, role=None, **kwargs):
-        self.role = role
-        if role is not None:
+        if hasattr(self, 'role'):
+            return
+        self.role = role or self.__role__
+        if self.role is not None:
             type(self).__registry__[role] = self
         self._io = self.__interface__(**kwargs)
         self._tracts = dict()

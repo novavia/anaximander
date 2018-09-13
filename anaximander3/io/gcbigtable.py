@@ -449,6 +449,7 @@ class BigTableQuery(Query):
 
 class BigTableStore(Store):
     __tract__ = BigTableTract
+    __role__ = 'archive'
 
     def __interface__(self, instance_id=None, project_id=None, admin=False):
         self.client = Client(project=project_id, admin=admin)

@@ -173,6 +173,9 @@ class NxPipe:
     def write(self, buffer, sequence, old_certificate=None):
         buffer.write(sequence, old_certificate=old_certificate, _nxpipe=self)
 
+    def update(self, buffer, sequence, old_metadata=None):
+        buffer.update(sequence, old_metadata=old_metadata, _nxpipe=self)
+
     def setup_subscriber(self, buffer, subscriber, id):
         buffer.setup_subscriber(subscriber, id, _nxpipe=self)
 
@@ -1029,10 +1032,12 @@ class RedisStore(Store):
 
 class RedisArchive(RedisStore):
     __tract__ = RedisDataTract
+    __role__ = 'archive'
 
 
 class RedisApplicationStore(RedisStore):
     __tract__ = RedisApplicationBuffer
+    __role__ = 'buffer'
 
     def __interface__(self, host, port, password, archive=None):
         """Archive is an optional archive store."""
@@ -1046,6 +1051,7 @@ class RedisApplicationStore(RedisStore):
 
 class RedisProcessStore(RedisStore):
     __tract__ = RedisProcessBuffer
+    __role__ = 'process'
 
     def __interface__(self, host, port, password, archive=None):
         """Archive is an optional archive store."""
