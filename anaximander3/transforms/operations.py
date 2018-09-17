@@ -13,11 +13,13 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 import copy
+import time
 
 import pandas as pd
 
 from ..utilities import xprops, functions as fun, nxrange as rge
 from ..data import datalogs as dtl
+from .exceptions import OperationalError
 from . import logger as LOGGER
 
 __all__ = []
@@ -33,6 +35,10 @@ class Operation(abc.ABC):
     __params__ = {}
 
     def __init__(self, *inputs, logger=LOGGER, **params):
+        self._inputs = inputs
+        self.logger = logger
+        self._params = copy.deepcopy(self.__params__)
+        self._params.update(params)
         try:
             assert all(isinstance(i, t)
                        for i, t in zip(inputs, self.__inputs__))
@@ -40,11 +46,8 @@ class Operation(abc.ABC):
             itypes = tuple([t.__name__ for t in self.__inputs__])
             msg = f"Invalid inputs {inputs} to {type(self).__name__}, " + \
                   f"which expects types {itypes}."
-            raise IOError(msg)
-        self._inputs = inputs
-        self.logger = logger
-        self._params = copy.deepcopy(self.__params__)
-        self._params.update(params)
+            self.logger.exception(msg)
+            raise OperationalError()
 
     @xprops.cachedproperty
     def inputs(self):
@@ -73,18 +76,23 @@ class Operation(abc.ABC):
 
     def __call__(self, plot=False):
         """Run interface."""
+        start = time.time()
+        msg = f"Running {self} with inputs {self.inputs}."
+        self.logger.debug(msg)
         try:
             output = self.__function__()
             assert isinstance(output, self.__output__)
         except:
-            if self.logger is None:
-                raise
             msg = f"{type(self).__name__} operation error on {self.inputs}."
-            self.logger.exception(msg, exc_info=True)
-            return None
+            self.logger.exception(msg)
+            raise OperationalError()
         self._output = output
         if plot:
             self.plot()
+        stop = time.time()
+        runtime_ms = round(1e3 * (stop - start))
+        msg = f"{self} returned {output} in {runtime_ms:,} milliseconds."
+        self.logger.debug(msg)
         return output
 
     def plot(self, **kwargs):
@@ -95,6 +103,9 @@ class Operation(abc.ABC):
     def __plot__(self, **kwargs):
         """Optional operator plot."""
         pass
+
+    def __repr__(self):
+        return f"<{type(self).__name__}>"
 
 
 class Identity(Operation):

@@ -59,7 +59,12 @@ FORMATTER = logging.Formatter(LOG_FORMAT, style='{')
 LOG_FILE = io.StringIO()
 FILE_HANDLER = logging.StreamHandler(LOG_FILE)
 FILE_HANDLER.setFormatter(FORMATTER)
+FILE_HANDLER.setLevel(logging.DEBUG)
+CONSOLE_HANDLER = logging.StreamHandler()
+CONSOLE_HANDLER.setFormatter(FORMATTER)
+CONSOLE_HANDLER.setLevel(logging.DEBUG)
 LOGGER.addHandler(FILE_HANDLER)
+LOGGER.addHandler(CONSOLE_HANDLER)
 
 
 class SampleSchema(sch.SampleLogsSchema):
@@ -155,13 +160,14 @@ def test_identity(samples):
     op = ops.LoggerIdentity(samples, logger=LOGGER)
     assert op() == samples
     assert 'Processing' in LOG_FILE.getvalue()
-    with pytest.raises(IOError):
+    with pytest.raises(ops.OperationalError):
         ops.Identity(None, logger=LOGGER)
 
 
 def test_thresholder(samples):
     op = ops.Thresholder(samples['88:4A:EA:69:35:BD'],
-                         column='accel_energy_512', threshold=95.3)
+                         column='accel_energy_512', threshold=95.3,
+                         logger=LOGGER)
     assert len(op()) == 12
 
 
@@ -169,7 +175,8 @@ def test_multi_thresholder(samples):
     thresholds = {'accel_energy_512': 95.3,
                   'temperature': 45}
     op = ops.MultiThresholder(samples['88:4A:EA:69:35:BD'],
-                              thresholds=thresholds)
+                              thresholds=thresholds,
+                              logger=LOGGER)
     assert len(op()) == 12
 
 
@@ -177,22 +184,22 @@ def test_sessionizer(samples):
     events = ops.Thresholder(samples['88:4A:EA:69:35:BD'],
                              column='accel_energy_512', threshold=95.3)()
     events.certify('2018-4-15 00:15:05')
-    op = ops.Sessionizer(events, max_gap='1s', logger=None)
+    op = ops.Sessionizer(events, max_gap='1s', logger=LOGGER)
     assert len(op()) == 5
     assert op().certification == pd.to_datetime('2018-04-15 00:15:04.08',
                                                 utc=True)
     events.certify('2018-4-15 00:15:07.2')
-    op = ops.Sessionizer(events, max_gap='1s', logger=None)
+    op = ops.Sessionizer(events, max_gap='1s', logger=LOGGER)
     assert len(op()) == 5
     assert op().certification == events.certification
     events.certify('2018-4-15 00:15:01')
-    op = ops.Sessionizer(events, max_gap='1s', logger=None)
+    op = ops.Sessionizer(events, max_gap='1s', logger=LOGGER)
     assert len(op()) == 5
     assert op().certification == pd.to_datetime('2018-04-15 00:15:01',
                                                 utc=True)
     events = events[:'2018-4-15 00:15:01.5']
     events.certify('2018-4-15 00:15:01.5')
-    op = ops.Sessionizer(events, max_gap='1s', logger=None)
+    op = ops.Sessionizer(events, max_gap='1s', logger=LOGGER)
     assert len(op()) == 0
     assert op().certification == events.certification
 
@@ -201,7 +208,7 @@ def test_multi_sessionizer(multi_events):
     multi_events = multi_events.copy()
     multi_events.certify('2018-4-15 00:16:30')
     op = ops.MultiSessionizer(multi_events, max_gap='75s',
-                              min_span='10s', logger=None)
+                              min_span='10s', logger=LOGGER)
     sessions = op()
     assert isinstance(sessions, dtl.MultiSessionSequence)
     assert len(sessions) == 2

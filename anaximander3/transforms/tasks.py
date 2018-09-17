@@ -13,6 +13,7 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import Sequence
+import time
 
 import pandas as pd
 
@@ -21,6 +22,7 @@ from ..meta import nxdescriptors as nxd
 from ..data import datalogs as dtl
 from ..io.store import Store
 from ..io import redis as nxr
+from .exceptions import OperationalError
 from . import logger as LOGGER
 
 __all__ = []
@@ -69,11 +71,9 @@ class TaskDescriptor(nxd.NxAttribute):
         try:
             super().__set__(task, value)
         except:
-            if task.logger is None:
-                raise
-            else:
-                msg = f"Cannot set {self.shortname} {self.name} for {task}."
-                self.logger.exception(msg, exc_info=True)
+            msg = f"Cannot set {self.shortname} {self.name} for {task}."
+            task.logger.exception(msg)
+            raise OperationalError()
 
     def __eq__(self, other):
         return self.title == other.title and self.relation == other.relation
@@ -86,10 +86,12 @@ class TaskInput(TaskDescriptor):
     shortname = 'input'
     __registry__ = '__inputs__'
 
-    def fetch(self, entity, dt_range, store=None, nxpipe=None):
+    def fetch(self, entity, dt_range, store=None, nxpipe=None,
+              logger=LOGGER):
         cls = self.archetype
         return cls.fetch_input(self.title, self.relation,
-                               entity, dt_range, store=store, nxpipe=nxpipe)
+                               entity, dt_range, store=store, nxpipe=nxpipe,
+                               logger=logger)
 
 
 class TaskOutput(TaskDescriptor):
@@ -99,19 +101,22 @@ class TaskOutput(TaskDescriptor):
     def __init__(self, title):
         super().__init__(title)
 
-    def fetch(self, entity, dt_range, store=None, nxpipe=None):
+    def fetch(self, entity, dt_range, store=None, nxpipe=None, logger=LOGGER):
         cls = self.archetype
         return cls.fetch_output(self.title, entity, dt_range,
-                                store=store, nxpipe=nxpipe)
+                                store=store, nxpipe=nxpipe,
+                                logger=logger)
 
-    def merge(self, extant, output):
+    def merge(self, extant, output, logger=LOGGER):
         cls = self.archetype
-        return cls.merge(extant, output)
+        return cls.merge(extant, output, logger=logger)
 
-    def store(self, entity, sequence, store=None, nxpipe=None, **metadata):
+    def store(self, entity, sequence, store=None, nxpipe=None,
+              logger=LOGGER, **metadata):
         cls = self.archetype
         return cls.store_output(self.title, entity, sequence,
-                                store=store, nxpipe=nxpipe, **metadata)
+                                store=store, nxpipe=nxpipe, logger=logger,
+                                **metadata)
 
 
 class TaskType(abc.ABCMeta):
@@ -130,6 +135,13 @@ class Task(metaclass=TaskType):
                  output_store=None, logger=LOGGER, stream_mode=False,
                  **inputs):
         self.entity = entity
+        try:
+            assert isinstance(entity, self.__etype__)
+        except AssertionError:
+            msg = f"Improper object type {entity} passed to " +\
+                  f"{type(self).__name__}."
+            self.logger.exception(msg)
+            raise OperationalError
         self.stream_mode = stream_mode
         if stream_mode:
             self.dt_range = rge.time_range((None, None))
@@ -161,6 +173,8 @@ class Task(metaclass=TaskType):
                 out_pipe = nxr.NxPipe(output_store)
         else:
             out_pipe = None
+        msg = f"Setting up {cls.__name__} Task streaming for {entity}."
+        LOGGER.debug(msg)
         for name, desc in cls.__outputs__.items():
             tract = output_store[desc.title]
             if isinstance(tract, nxr.RedisBuffer):
@@ -197,11 +211,12 @@ class Task(metaclass=TaskType):
 
     @classmethod
     def fetch_input(cls, title, relation, entity, dt_range,
-                    store=None, nxpipe=None):
+                    store=None, nxpipe=None, logger=LOGGER):
         if nxpipe is None:
             if store is None:
                 msg = "A store must be specified to retrieve task data"
-                raise TypeError(msg)
+                logger.exception(msg)
+                raise OperationalError
         else:
             store = nxpipe.store
         tract = store[title]
@@ -216,7 +231,8 @@ class Task(metaclass=TaskType):
                     id_range = target.id
         except AttributeError:
             msg = "Improper entity type or query specification."
-            raise IOError(msg)
+            logger.exception(msg)
+            raise OperationalError
         if dt_range is None:
             if nxpipe:
                 nxpipe.query(tract, id=id_range)
@@ -233,21 +249,26 @@ class Task(metaclass=TaskType):
                 return query.data()
 
     @classmethod
-    def fetch_output(cls, title, entity, dt_range, store=None, nxpipe=None):
+    def fetch_output(cls, title, entity, dt_range, store=None, nxpipe=None,
+                     logger=LOGGER):
         return cls.fetch_input(title, None, entity, dt_range,
-                               store=store, nxpipe=nxpipe)
+                               store=store, nxpipe=nxpipe, logger=logger)
 
     def retrieve_inputs(self):
+        start = time.time()
         if isinstance(self.input_store, nxr.RedisStore):
             in_pipe = nxr.NxPipe(self.input_store)
         else:
             in_pipe = None
         inputs = []
         outputs = []
+        fetch_count = 0
         for name, desc in self.__inputs__.items():
             if getattr(self, name) is None:
+                fetch_count += 1
                 rval = desc.fetch(self.entity, self.dt_range,
-                                  self.input_store, in_pipe)
+                                  self.input_store, in_pipe,
+                                  logger=self.logger)
                 if rval is not None:
                     setattr(self, name, rval)
                 else:
@@ -262,8 +283,10 @@ class Task(metaclass=TaskType):
                 out_pipe = None
             for name, desc in self.__outputs__.items():
                 if getattr(self, name) is None:
+                    fetch_count += 1
                     rval = desc.fetch(self.entity, self.dt_range,
-                                      self.output_store, out_pipe)
+                                      self.output_store, out_pipe,
+                                      logger=self.logger)
                     if rval is not None:
                         setattr(self, name, rval)
                     else:
@@ -281,9 +304,14 @@ class Task(metaclass=TaskType):
         if out_pipe is not None:
             for name, val in zip(outputs, out_pipe.execute()):
                 setattr(self, name, val)
+        stop = time.time()
+        runtime_ms = round(1e3 * (stop - start))
+        msg = f"{self} retrieved {fetch_count} data inputs in " + \
+              f"{runtime_ms:,} milliseconds."
+        self.logger.debug(msg)
 
     @classmethod
-    def merge(cls, original, new):
+    def merge(cls, original, new, logger=LOGGER):
         """Merges new sequence with original sequence."""
         if pd.isna(original.certification):
             return new
@@ -306,24 +334,27 @@ class Task(metaclass=TaskType):
 
     @classmethod
     def store_output(cls, title, entity, sequence, store=None, nxpipe=None,
-                     **metadata):
+                     logger=LOGGER, **metadata):
         if nxpipe is None:
             if store is None:
                 msg = "An output store must be specified to write task outputs"
-                raise TypeError(msg)
+                logger.exception(msg)
+                raise OperationalError
         else:
             store = nxpipe.store
         try:
             assert sequence.id_range == entity.id
         except AssertionError:
             msg = f"{sequence}'s id does not match {entity}."
-            raise ValueError(msg)
+            logger.exception(msg)
+            raise OperationalError
         tract = store[title]
         old_certificate = metadata.get('certification', None)
         return tract.write(sequence, old_certificate=old_certificate,
                            _nxpipe=nxpipe)
 
     def store_outputs(self, nxpipes, **metadata):
+        start = time.time()
         if isinstance(self.input_store, nxr.RedisStore):
             if self.input_store in nxpipes:
                 in_pipe = nxpipes[self.input_store]
@@ -340,6 +371,7 @@ class Task(metaclass=TaskType):
                 out_pipe = nxr.NxPipe(self.output_store)
         else:
             out_pipe = None
+        store_count = 0
         for name, desc in self.__outputs__.items():
             out_tract = self.output_store[desc.title]
             sequence = getattr(self, name)
@@ -355,11 +387,18 @@ class Task(metaclass=TaskType):
             meta = metadata[name]
             desc.store(self.entity, sequence, store=self.output_store,
                        nxpipe=out_pipe, **meta)
+            store_count += 1
         if in_pipe is not None and self.input_store not in nxpipes:
             in_pipe.execute()
         if out_pipe not in (None, in_pipe):
             if self.output_store not in nxpipes:
                 out_pipe.execute()
+        stop = time.time()
+        runtime_ms = round(1e3 * (stop - start))
+        if not self.stream_mode:
+            msg = f"{self} stored {store_count} data sequences in " + \
+                  f"{runtime_ms:,} milliseconds."
+            self.logger.debug(msg)
 
     @abc.abstractmethod
     def __function__(self):
@@ -368,6 +407,7 @@ class Task(metaclass=TaskType):
 
     def __call__(self, nxpipes=None, plot=False):
         """Run interface."""
+        start = time.time()
         if nxpipes is None:
             nxpipes = {}
         self.retrieve_inputs()
@@ -386,20 +426,26 @@ class Task(metaclass=TaskType):
                     merged = desc.merge(extant, output)
                     setattr(self, name, merged)
         except:
-            if self.logger is None:
-                raise
             msg = f"{type(self).__name__} task error on {self.inputs}."
             self.logger.exception(msg, exc_info=True)
-            return None
+            raise OperationalError
         if plot:
             self.plot()
         if self.stream_mode:
             self.store_outputs(nxpipes, **metadata)
+        stop = time.time()
+        runtime_ms = round(1e3 * (stop - start))
+        if not self.stream_mode:
+            msg = f"{self} completed in {runtime_ms:,} milliseconds."
+            self.logger.debug(msg)
         return outputs
 
     def plot(self, **kwargs):
         """Optional operator plot."""
         pass
+
+    def __repr__(self):
+        return fun.iformat('entity')(self)
 
 
 class InsertTask(Task):
@@ -446,11 +492,13 @@ class UpdateTask(Task):
     __output_store__ = 'buffer'
 
     @classmethod
-    def fetch_output(cls, title, entity, dt_range, store=None, nxpipe=None):
+    def fetch_output(cls, title, entity, dt_range, store=None, nxpipe=None,
+                     logger=LOGGER):
         if nxpipe is None:
             if store is None:
                 msg = "A store must be specified to retrieve task data"
-                raise TypeError(msg)
+                logger.exception(msg)
+                raise OperationalError
         else:
             store = nxpipe.store
         tract = store[title]
@@ -458,17 +506,18 @@ class UpdateTask(Task):
             id_range = entity.id
         except AttributeError:
             msg = "Improper entity type or query specification."
-            raise IOError(msg)
+            logger.exception(msg)
+            raise OperationalError
         return tract.mock(id=id_range, _nxpipe=nxpipe)
 
     @classmethod
-    def merge(cls, original, new):
+    def merge(cls, original, new, logger=LOGGER):
         """Merges new sequence with original metadata."""
         return new
 
     @classmethod
     def store_output(cls, title, entity, sequence, store=None, nxpipe=None,
-                     **metadata):
+                     logger=LOGGER, **metadata):
         if nxpipe is None:
             if store is None:
                 msg = "An output store must be specified to write task outputs"
@@ -479,7 +528,8 @@ class UpdateTask(Task):
             assert sequence.id_range == entity.id
         except AssertionError:
             msg = f"{sequence}'s id does not match {entity}."
-            raise ValueError(msg)
+            logger.exception(msg)
+            raise OperationalError
         tract = store[title]
         return tract.update(entity.id, sequence, old_metadata=metadata,
                             _nxpipe=nxpipe)

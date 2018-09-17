@@ -11,12 +11,15 @@ Copyright (C) Novavia Solutions, LLC.
 # Imports
 # =============================================================================
 
+import io
+import logging
 import os.path
 
 import pandas as pd
 import pytest
 
 import anaximander3 as nx
+from anaximander3.utilities import functions as fun
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl
 from anaximander3.io.store import Title
@@ -53,6 +56,19 @@ SESSIONS_TME = ['2018-4-15 00:15:00', '2018-4-15 00:18:00']
 MULTIEVENTS = pd.read_csv(MULTIEVENTS_PATH)
 MULTISESSIONS = pd.read_csv(MULTISESSIONS_PATH)
 
+LOGGER = logging.Logger('test', level=logging.DEBUG)
+LOG_FORMAT = "{asctime} - {levelname} - {name}: {message}"
+FORMATTER = logging.Formatter(LOG_FORMAT, style='{')
+LOG_FILE = io.StringIO()
+FILE_HANDLER = logging.StreamHandler(LOG_FILE)
+FILE_HANDLER.setFormatter(FORMATTER)
+FILE_HANDLER.setLevel(logging.DEBUG)
+CONSOLE_HANDLER = logging.StreamHandler()
+CONSOLE_HANDLER.setFormatter(FORMATTER)
+CONSOLE_HANDLER.setLevel(logging.DEBUG)
+LOGGER.addHandler(FILE_HANDLER)
+LOGGER.addHandler(CONSOLE_HANDLER)
+
 # =============================================================================
 # Environment
 # =============================================================================
@@ -62,6 +78,9 @@ class Device:
 
     def __init__(self, id):
         self.id = id
+
+    def __repr__(self):
+        return fun.iformat('id')(self)
 
 
 D0 = Device('68:9E:19:07:DE:C3')
@@ -190,37 +209,68 @@ def cleanup(store):
     store.io.connection_pool.disconnect()
 
 
-@pytest.fixture(scope="module")
-def archive(featurelog, statelog, sessionlog, eventseq, cstateseq):
-    """Creates a redis store for testing purposes."""
+def _archive(featurelog, statelog, sessionlog, eventseq, cstateseq):
+    """Primitive for archive."""
+    import time
+    t0 = time.time()
     store = nxr.RedisArchive(role='archive',
                              host=HOST, port=PORT, password=PWD)
+    t1 = time.time()
+    runtime_ms = round(1e3 * (t1 - t0))
+    print(f"Instantiated store in {runtime_ms:,} milliseconds.")
     tracts = [store.tract(FEATURE), store.tract(STATE), store.tract(SESSION),
               store.tract(EVENT), store.tract(CSTATE)]
+    t2 = time.time()
+    runtime_ms = round(1e3 * (t2 - t1))
+    print(f"Instantiated tracts in {runtime_ms:,} milliseconds.")
+    pipe = nxr.NxPipe(store)
     for t, log in zip(tracts, [featurelog, statelog, sessionlog,
                                eventseq, cstateseq]):
         t.create(warn=False, overwrite=True, force=True)
-        t.append(log)
+        pipe.append(t, log)
+    t3 = time.time()
+    runtime_ms = round(1e3 * (t3 - t2))
+    print(f"Created tracts in {runtime_ms:,} milliseconds.")
+    pipe.execute()
+    t4 = time.time()
+    runtime_ms = round(1e3 * (t4 - t3))
+    print(f"Uploaded logs in {runtime_ms:,} milliseconds.")
+    return store
+
+
+@pytest.fixture(scope="module")
+def archive(featurelog, statelog, sessionlog, eventseq, cstateseq):
+    """Creates a redis store for testing purposes."""
+    store = _archive(featurelog, statelog, sessionlog, eventseq, cstateseq)
     yield store
     cleanup(store)
+
+
+def _procstore(archive):
+    return nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
+                                 archive=archive)
 
 
 @pytest.fixture(scope="module")
 def procstore(archive):
     """Creates a redis process store for testing purposes."""
-    store = nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
-                                  archive=archive)
+    store = _procstore(archive)
     yield store
     cleanup(store)
+
+
+def _appstore(archive):
+    store = nxr.RedisApplicationStore(host=ALT_HOST, port=ALT_PORT,
+                                      password=PWD, archive=archive)
+    feature_tract = store.tract(FEATURE, depth='1h')
+    feature_tract.create(warn=False, overwrite=True, force=True)
+    return store
 
 
 @pytest.fixture(scope="module")
 def appstore(archive):
     """Creates a redis application store for testing purposes."""
-    store = nxr.RedisApplicationStore(host=ALT_HOST, port=ALT_PORT,
-                                      password=PWD, archive=archive)
-    feature_tract = store.tract(FEATURE, depth='1h')
-    feature_tract.create(warn=False, overwrite=True, force=True)
+    store = _appstore(archive)
     yield store
     cleanup(store)
 
@@ -260,10 +310,10 @@ class FeatureAlertsAssessment(tsk.Task):
                     continue
                 else:
                     onset_spans[l] = span
-        events = ops.MultiThresholder(self.features, logger=None,
+        events = ops.MultiThresholder(self.features, logger=self.logger,
                                       thresholds=thresholds)()
         sessions = ops.MultiSessionizer(events, max_gap='75s',
-                                        expand='1s', logger=None,
+                                        expand='1s', logger=self.logger,
                                         onset_spans=onset_spans)()
         return sessions.to_compound_state_sequence()
 
@@ -313,23 +363,23 @@ def test_task_input():
 
 
 def test_nothing_task(archive, featurelog):
-    task = IdentityTask(D0, None, archive, logger=None)
+    task = IdentityTask(D0, None, archive, logger=LOGGER)
     output, *_ = task()
     assert isinstance(output, dtl.DataSequence)
     assert output.empty
-    task = IdentityTask(D0, FEATURE_TME, archive, logger=None)
+    task = IdentityTask(D0, FEATURE_TME, archive, logger=LOGGER)
     output, *_ = task()
     assert output == featurelog[D0.id]
 
 
 def test_feature_alerts(archive):
-    task = FeatureAlertsAssessment(D1, FEATURE_TME, 'archive', logger=None)
+    task = FeatureAlertsAssessment(D1, FEATURE_TME, 'archive', logger=LOGGER)
     output, *_ = task()
     assert len(output.to_multisession_sequence()) == 4
 
 
 def test_machine_events(archive):
-    task = MachineEventAssessment(M0, FEATURE_TME, 'archive', logger=None)
+    task = MachineEventAssessment(M0, FEATURE_TME, 'archive', logger=LOGGER)
     output, *_ = task()
     assert len(output) == 7
 
@@ -340,7 +390,7 @@ def test_update_task(archive, featurelog, procstore, appstore):
     featurelog.certify('2018-9-14 10:05')
     tract.write(featurelog[D0.id])
     UpdateTask.setup_streaming(D0, when='2016-9-14 10:00')
-    task = UpdateTask(D0, logger=None, stream_mode=True)
+    task = UpdateTask(D0, logger=LOGGER, stream_mode=True)
     output, *_ = task()
     assert output.data.equals(featurelog[D0.id].data)
     query = appstore[FEATURE].query(id=D0.id, datetime=FEATURE_TME)

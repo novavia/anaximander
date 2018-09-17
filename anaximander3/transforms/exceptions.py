@@ -6,6 +6,6 @@ Copyright (C) Novavia Solutions, LLC.
 """
 
 
-class TransformError(Exception):
-    """A customized exception for transfomation errors."""
+class OperationalError(Exception):
+    """A customized exception for transfomation / streaming errors."""
     pass
