@@ -77,10 +77,10 @@ LOGGER.addHandler(CONSOLE_HANDLER)
 class Device:
 
     def __init__(self, id):
-        self.id = id
+        self.store_id = str(id)
 
     def __repr__(self):
-        return fun.iformat('id')(self)
+        return fun.iformat('store_id')(self)
 
 
 D0 = Device('68:9E:19:07:DE:C3')
@@ -92,7 +92,7 @@ D3 = Device('88:4A:EA:69:38:1A')
 class Machine:
 
     def __init__(self, id, *devices):
-        self.id = id
+        self.store_id = str(id)
         self.devices = devices
 
 
@@ -326,13 +326,13 @@ class MachineEventAssessment(tsk.TransformTask):
         params = {'column': 'accel_y', 'threshold': 8100}
         events = []
         for dev in self.entity.devices:
-            op = ops.Thresholder(self.features[dev.id], **params)
+            op = ops.Thresholder(self.features[dev.store_id], **params)
             evs = op().data
-            evs['label'] = dev.id
+            evs['label'] = dev.store_id
             events.append(evs)
         events = pd.concat(events)
         return dtl.DataSequence(events, schema=MultiEventSchema,
-                                id_range=self.entity.id,
+                                id_range=self.entity.store_id,
                                 dt_range=self.dt_range)
 
 
@@ -367,19 +367,19 @@ def test_device_update(featurelog, archive, procstore):
                             freq='1T', tz='UTC')
     DeviceUpdate.setup_streaming(D1, 'process', 'process')
     for i, t in enumerate(updates):
-        insert = InsertFeatures(D1, *featurelog[D1.id][t - minute:t],
+        insert = InsertFeatures(D1, *featurelog[D1.store_id][t - minute:t],
                                 output_store='process', logger=LOGGER,
                                 stream_mode=True, when=t)
         insert()
         update = DeviceUpdate(D1, stream_mode=True, logger=LOGGER)
         update()
-    alerts = procstore[CSTATE].query(id=D1.id).data().\
+    alerts = procstore[CSTATE].query(id=D1.store_id).data().\
         to_multisession_sequence()
-    features = procstore[FEATURE].sequence(D1.id)
-    archived_alerts_query = archive[CSTATE].query(id=D1.id,
+    features = procstore[FEATURE].sequence(D1.store_id)
+    archived_alerts_query = archive[CSTATE].query(id=D1.store_id,
                                                   datetime=FEATURE_TME)
     archived_alerts = archived_alerts_query.data().to_multisession_sequence()
-    archived_features_query = archive[FEATURE].query(id=D1.id,
+    archived_features_query = archive[FEATURE].query(id=D1.store_id,
                                                      datetime=FEATURE_TME)
     archived_features = archived_features_query.data()
     assert alerts.empty

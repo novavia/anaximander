@@ -640,7 +640,7 @@ def tskey(index):
     """Primitive to TimeSeriesIndex.__rowkey__."""
     id, dt = index
     postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-    return '#'.join((id[::-1], postfix))
+    return '#'.join((str(id)[::-1], postfix))
 
 
 class TimeSeriesIndex(SchemaIndex):
@@ -711,7 +711,7 @@ class MultiTimeSeriesIndex(SchemaIndex):
     def __rowkey__(self, index):
         id, dt, label = index
         postfix = str(int(1e6 * (nxtime.MAX_TIMESTAMP - dt.timestamp())))
-        return '#'.join((id[::-1], postfix, label))
+        return '#'.join((str(id)[::-1], postfix, label))
 
     def __rowidx__(self, key):
         id, postfix, label = key.split('#')
@@ -740,7 +740,7 @@ class MultiSessionLogsSchema(MultiLogsSchema, SessionLogsSchema):
     def altkey(self, index):
         id, dt, label = index
         postfix = str(int(1e6 * dt.timestamp()))
-        return '#'.join((id, postfix, label))
+        return '#'.join((str(id), postfix, label))
 
     def altidx(self, key):
         id, postfix, label = key.split('#')

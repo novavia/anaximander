@@ -77,7 +77,7 @@ class Job(metaclass=JobType):
         self.logger = logger
         try:
             assert isinstance(entity, self.__etype__)
-            assert hasattr(entity, 'id')
+            assert hasattr(entity, 'store_id')
         except AssertionError:
             msg = f"Improper entity {entity} supplied to " + \
                   f"{type(self).__name__}."

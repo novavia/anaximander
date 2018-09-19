@@ -293,7 +293,7 @@ class Levels(CategoricalRange, Set):
     def __init__(self, levels=None):
         if levels is None:
             levels = []
-        self._levels = OrderedSet(levels)
+        self._levels = OrderedSet(str(l) for l in levels)
 
     @property
     def levels(self):
@@ -366,7 +366,7 @@ class Levels(CategoricalRange, Set):
 @attr.s(frozen=True, repr=False, cmp=False)
 class Level(CategoricalRange):
     """Holds a single level."""
-    level = attr.ib()
+    level = attr.ib(convert=str)
 
     @property
     def levels(self):
@@ -668,6 +668,12 @@ class MultiInterval(MultiRange, Sequence):
             lower = min(i.lower for i in self)
             upper = max(i.upper for i in self)
             return type(self[0])(lower, upper)
+
+    def __contains__(self, item):
+        if isinstance(item, self.itype):
+            return item in self._intervals
+        else:
+            return any(item in i for i in self._intervals)
 
     def __getitem__(self, ix):
         return self._intervals.__getitem__(ix)

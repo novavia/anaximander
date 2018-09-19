@@ -14,13 +14,14 @@ Copyright (C) Novavia Solutions, LLC.
 import abc
 from collections import Sequence
 import time
+import types
 
 import pandas as pd
 
 from ..utilities import nxrange as rge, xprops, functions as fun
 from ..meta import nxdescriptors as nxd
 from ..data import datalogs as dtl
-from ..io.store import Store
+from ..io.store import Store, Title
 from ..io import redis as nxr
 from .exceptions import OperationalError
 from . import logger as LOGGER
@@ -178,11 +179,11 @@ class Task(metaclass=TaskType):
         for name, desc in cls.__outputs__.items():
             tract = output_store[desc.title]
             if isinstance(tract, nxr.RedisBuffer):
-                tract.setup(entity.id, _nxpipe=out_pipe, when=when)
+                tract.setup(entity.store_id, _nxpipe=out_pipe, when=when)
                 for iname, idesc in cls.__inputs__.items():
                     itract = input_store[idesc.title]
                     if isinstance(itract, nxr.RedisBuffer):
-                        itract.setup_subscriber(tract, entity.id,
+                        itract.setup_subscriber(tract, entity.store_id,
                                                 _nxpipe=in_pipe)
         if in_pipe is not None:
             in_pipe.execute()
@@ -222,13 +223,13 @@ class Task(metaclass=TaskType):
         tract = store[title]
         try:
             if relation is None:
-                id_range = entity.id
+                id_range = entity.store_id
             else:
                 target = getattr(entity, relation)
                 if isinstance(target, Sequence):
-                    id_range = [e.id for e in target]
+                    id_range = [e.store_id for e in target]
                 else:
-                    id_range = target.id
+                    id_range = target.store_id
         except AttributeError:
             msg = "Improper entity type or query specification."
             logger.exception(msg)
@@ -343,7 +344,7 @@ class Task(metaclass=TaskType):
         else:
             store = nxpipe.store
         try:
-            assert sequence.id_range == entity.id
+            assert sequence.id_range == entity.store_id
         except AssertionError:
             msg = f"{sequence}'s id does not match {entity}."
             logger.exception(msg)
@@ -381,7 +382,7 @@ class Task(metaclass=TaskType):
                     in_tract = self.input_store[idesc.title]
                     if isinstance(in_tract, nxr.RedisProcessBuffer):
                         in_tract.update_subscriber(out_tract,
-                                                   self.entity.id,
+                                                   self.entity.store_id,
                                                    certificate,
                                                    _nxpipe=in_pipe)
             meta = metadata[name]
@@ -448,7 +449,21 @@ class Task(metaclass=TaskType):
         return fun.iformat('entity')(self)
 
 
-class InsertTask(Task):
+class InsertTaskType(TaskType):
+    registry = {}
+
+    def __init__(cls, name, bases, namespace):
+        super().__init__(name, bases, namespace)
+        if cls.target.title is not None:
+            cls.registry[cls.target.title.name] = cls
+
+    def __getitem__(self, key):
+        if isinstance(key, Title):
+            key = key.name
+        return self.registry.__getitem__(key)
+
+
+class InsertTask(Task, metaclass=InsertTaskType):
     """A task dedicated to appending records."""
     target = TaskOutput(None)  # Replace None with meaningful Title
     max_latency = '5m'  # Heuristic watermark
@@ -475,9 +490,21 @@ class InsertTask(Task):
             lower = min(upper, lower)
         certificate = upper - self.max_latency
         return dtl.DataSequence.from_records(self.records, schema=schema,
-                                             id_range=self.entity.id,
+                                             id_range=self.entity.store_id,
                                              dt_range=(lower, upper),
                                              certification=certificate)
+
+
+def insert_task_factory(title, etype, max_latency='5m'):
+        task_name = f"{title.name}InsertTask"
+
+        def exec_body(ns):
+            ns.update(target=TaskOutput(title),
+                      __etype__=etype,
+                      max_latency=max_latency)
+            return ns
+
+        return types.new_class(task_name, (InsertTask,), exec_body=exec_body)
 
 
 class TransformTask(Task):
@@ -503,7 +530,7 @@ class UpdateTask(Task):
             store = nxpipe.store
         tract = store[title]
         try:
-            id_range = entity.id
+            id_range = entity.store_id
         except AttributeError:
             msg = "Improper entity type or query specification."
             logger.exception(msg)
@@ -525,13 +552,13 @@ class UpdateTask(Task):
         else:
             store = nxpipe.store
         try:
-            assert sequence.id_range == entity.id
+            assert sequence.id_range == entity.store_id
         except AssertionError:
             msg = f"{sequence}'s id does not match {entity}."
             logger.exception(msg)
             raise OperationalError
         tract = store[title]
-        return tract.update(entity.id, sequence, old_metadata=metadata,
+        return tract.update(entity.store_id, sequence, old_metadata=metadata,
                             _nxpipe=nxpipe)
 
     def __function__(self):

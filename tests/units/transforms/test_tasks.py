@@ -77,10 +77,10 @@ LOGGER.addHandler(CONSOLE_HANDLER)
 class Device:
 
     def __init__(self, id):
-        self.id = id
+        self.store_id = str(id)
 
     def __repr__(self):
-        return fun.iformat('id')(self)
+        return fun.iformat('store_id')(self)
 
 
 D0 = Device('68:9E:19:07:DE:C3')
@@ -92,7 +92,7 @@ D3 = Device('88:4A:EA:69:38:1A')
 class Machine:
 
     def __init__(self, id, *devices):
-        self.id = id
+        self.store_id = str(id)
         self.devices = devices
 
 
@@ -337,13 +337,13 @@ class MachineEventAssessment(tsk.Task):
         params = {'column': 'accel_y', 'threshold': 8100}
         events = []
         for dev in self.entity.devices:
-            op = ops.Thresholder(self.features[dev.id], **params)
+            op = ops.Thresholder(self.features[dev.store_id], **params)
             evs = op().data
-            evs['label'] = dev.id
+            evs['label'] = dev.store_id
             events.append(evs)
         events = pd.concat(events)
         return dtl.DataSequence(events, schema=MultiEventSchema,
-                                id_range=self.entity.id,
+                                id_range=self.entity.store_id,
                                 dt_range=self.dt_range)
 
 
@@ -369,7 +369,7 @@ def test_nothing_task(archive, featurelog):
     assert output.empty
     task = IdentityTask(D0, FEATURE_TME, archive, logger=LOGGER)
     output, *_ = task()
-    assert output == featurelog[D0.id]
+    assert output == featurelog[D0.store_id]
 
 
 def test_feature_alerts(archive):
@@ -388,12 +388,12 @@ def test_update_task(archive, featurelog, procstore, appstore):
     tract = procstore.tract(FEATURE)
     tract.create(warn=False, overwrite=True, force=True)
     featurelog.certify('2018-9-14 10:05')
-    tract.write(featurelog[D0.id])
+    tract.write(featurelog[D0.store_id])
     UpdateTask.setup_streaming(D0, when='2016-9-14 10:00')
     task = UpdateTask(D0, logger=LOGGER, stream_mode=True)
     output, *_ = task()
-    assert output.data.equals(featurelog[D0.id].data)
-    query = appstore[FEATURE].query(id=D0.id, datetime=FEATURE_TME)
+    assert output.data.equals(featurelog[D0.store_id].data)
+    query = appstore[FEATURE].query(id=D0.store_id, datetime=FEATURE_TME)
     assert query.data() == output
 
 
