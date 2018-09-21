@@ -130,8 +130,8 @@ STATE = Title('state', StateSchema)
 SESSION = Title('session', SessionSchema)
 EVENT = Title('event', MultiEventSchema)
 CSTATE = Title('cstate', sch.CompoundStateLogsSchema)
-BUFFER = Title('buffer', RdSchema)
-STATEBUF = Title('statebuf', StateSchema)
+SCROLL = Title('scroll', RdSchema)
+STATE_SCROLL = Title('state_scroll', StateSchema)
 GENERIC = Title('generic', GnSchema)
 
 
@@ -247,21 +247,21 @@ def archive(featurelog, statelog, sessionlog, eventseq, cstateseq):
 
 
 def _procstore(archive):
-    return nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
-                                 archive=archive)
+    return nxr.RedisPipeline(host=HOST, port=PORT, password=PWD,
+                             archive=archive)
 
 
 @pytest.fixture(scope="module")
 def procstore(archive):
-    """Creates a redis process store for testing purposes."""
+    """Creates a redis pipeline store for testing purposes."""
     store = _procstore(archive)
     yield store
     cleanup(store)
 
 
 def _appstore(archive):
-    store = nxr.RedisApplicationStore(host=ALT_HOST, port=ALT_PORT,
-                                      password=PWD, archive=archive)
+    store = nxr.RedisBuffer(host=ALT_HOST, port=ALT_PORT,
+                            password=PWD, archive=archive)
     feature_tract = store.tract(FEATURE, depth='1h')
     feature_tract.create(warn=False, overwrite=True, force=True)
     return store

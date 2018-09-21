@@ -130,8 +130,8 @@ STATE = Title('state', StateSchema)
 SESSION = Title('session', SessionSchema)
 EVENT = Title('event', MultiEventSchema)
 CSTATE = Title('cstate', sch.CompoundStateLogsSchema)
-BUFFER = Title('buffer', RdSchema)
-STATEBUF = Title('statebuf', StateSchema)
+SCROLL = Title('scroll', RdSchema)
+STATE_SCROLL = Title('state_scroll', StateSchema)
 GENERIC = Title('generic', GnSchema)
 
 
@@ -233,8 +233,8 @@ def archive(featurelog, statelog, sessionlog, eventseq, cstateseq):
 
 
 def _procstore(archive):
-    store = nxr.RedisProcessStore(host=HOST, port=PORT, password=PWD,
-                                  archive=archive)
+    store = nxr.RedisPipeline(host=HOST, port=PORT, password=PWD,
+                              archive=archive)
     for title in [FEATURE, STATE, SESSION, EVENT, CSTATE]:
         store.tract(title).create(warn=False, overwrite=True, force=True)
     return store
@@ -242,15 +242,15 @@ def _procstore(archive):
 
 @pytest.fixture(scope="module")
 def procstore(archive):
-    """Creates a redis process store for testing purposes."""
+    """Creates a redis pipeline store for testing purposes."""
     store = _procstore(archive)
     yield store
     cleanup(store)
 
 
 def _appstore(archive):
-    store = nxr.RedisApplicationStore(host=ALT_HOST, port=ALT_PORT,
-                                      password=PWD, archive=archive)
+    store = nxr.RedisBuffer(host=ALT_HOST, port=ALT_PORT,
+                            password=PWD, archive=archive)
     feature_tract = store.tract(FEATURE, depth='1h')
     feature_tract.create(warn=False, overwrite=True, force=True)
     return store
@@ -365,10 +365,10 @@ def test_device_update(featurelog, archive, procstore):
     minute = pd.Timedelta('1min')
     updates = pd.date_range('2016-9-14 10:01', '2016-9-14 10:10',
                             freq='1T', tz='UTC')
-    DeviceUpdate.setup_streaming(D1, 'process', 'process')
+    DeviceUpdate.setup_streaming(D1, 'pipeline', 'pipeline')
     for i, t in enumerate(updates):
         insert = InsertFeatures(D1, *featurelog[D1.store_id][t - minute:t],
-                                output_store='process', logger=LOGGER,
+                                output_store='pipeline', logger=LOGGER,
                                 stream_mode=True, when=t)
         insert()
         update = DeviceUpdate(D1, stream_mode=True, logger=LOGGER)

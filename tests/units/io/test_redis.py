@@ -93,8 +93,8 @@ STATE = Title('state', StateSchema)
 SESSION = Title('session', SessionSchema)
 EVENT = Title('event', MultiEventSchema)
 CSTATE = Title('cstate', sch.CompoundStateLogsSchema)
-BUFFER = Title('buffer', RdSchema)
-STATEBUF = Title('statebuf', StateSchema)
+SCROLL = Title('scroll', RdSchema)
+STATE_SCROLL = Title('state_scroll', StateSchema)
 GENERIC = Title('generic', GnSchema)
 
 
@@ -177,8 +177,8 @@ def archive():
     """Creates a redis store for testing purposes."""
     store = nxr.RedisArchive(role='archive',
                              host=HOST, port=PORT, password=PWD)
-    store.tract(BUFFER)
-    store.tract(STATEBUF)
+    store.tract(SCROLL)
+    store.tract(STATE_SCROLL)
     store.tract(GENERIC)
     yield store
     cleanup(store)
@@ -186,19 +186,19 @@ def archive():
 
 @pytest.fixture(scope="module")
 def procstore(archive):
-    """Creates a redis process store for testing purposes."""
-    store = nxr.RedisProcessStore(role='process',
-                                  host=HOST, port=PORT, password=PWD,
-                                  archive=archive)
+    """Creates a redis pipeline store for testing purposes."""
+    store = nxr.RedisPipeline(role='pipeline',
+                              host=HOST, port=PORT, password=PWD,
+                              archive=archive)
     yield store
     cleanup(store)
 
 
 @pytest.fixture(scope="module")
 def backupstore():
-    """Creates a backup process store for testing purposes."""
-    store = nxr.RedisProcessStore(role='backup',
-                                  host=ALT_HOST, port=ALT_PORT, password=PWD)
+    """Creates a backup pipeline store for testing purposes."""
+    store = nxr.RedisPipeline(role='backup',
+                              host=ALT_HOST, port=ALT_PORT, password=PWD)
     yield store
     cleanup(store)
 
@@ -206,9 +206,9 @@ def backupstore():
 @pytest.fixture(scope="module")
 def appstore(archive):
     """Creates a redis application store for testing purposes."""
-    store = nxr.RedisApplicationStore(role='buffer',
-                                      host=ALT_HOST, port=ALT_PORT,
-                                      password=PWD, archive=archive)
+    store = nxr.RedisBuffer(role='buffer',
+                            host=ALT_HOST, port=ALT_PORT,
+                            password=PWD, archive=archive)
     yield store
     cleanup(store)
 
@@ -298,9 +298,9 @@ def gen_tract(archive, genlog):
 
 
 @pytest.fixture(scope="module")
-def buffer_tract(procstore):
-    """Yields an empty buffer."""
-    tract = procstore.tract(BUFFER)
+def scroll_tract(procstore):
+    """Yields an empty scroll."""
+    tract = procstore.tract(SCROLL)
     tract.create(warn=False, overwrite=True, force=True)
     for id in FEATURE_IDS:
         tract.setup(id)
@@ -308,9 +308,9 @@ def buffer_tract(procstore):
 
 
 @pytest.fixture(scope="module")
-def statebuf_tract(procstore):
-    """Yields an empty buffer."""
-    tract = procstore.tract(STATEBUF)
+def state_scroll_tract(procstore):
+    """Yields an empty scroll."""
+    tract = procstore.tract(STATE_SCROLL)
     tract.create(warn=False, overwrite=True, force=True)
     for id in IDS:
         tract.setup(id)
@@ -319,7 +319,7 @@ def statebuf_tract(procstore):
 
 @pytest.fixture(scope="module")
 def app_full_tract(appstore):
-    """Yields an empty buffer."""
+    """Yields an empty scroll."""
     tract = appstore.tract(FULL, '2m')
     tract.create(warn=False, overwrite=True, force=True)
     return tract
@@ -327,7 +327,7 @@ def app_full_tract(appstore):
 
 @pytest.fixture(scope="module")
 def app_state_tract(appstore):
-    """Yields an empty buffer."""
+    """Yields an empty scroll."""
     tract = appstore.tract(STATE, '2m')
     tract.create(warn=False, overwrite=True, force=True)
     return tract
@@ -555,29 +555,29 @@ def test_generic(gen_tract):
     assert list(sequence.payload) == ['accel_x']
 
 
-def test_buffer_setup_teardown(buffer_tract, featurelog):
-    assert buffer_tract.metadata('68:9E:19:07:DE:C3')['lower'] is pd.NaT
-    buffer_tract.teardown('68:9E:19:07:DE:C3')
+def test_scroll_setup_teardown(scroll_tract, featurelog):
+    assert scroll_tract.metadata('68:9E:19:07:DE:C3')['lower'] is pd.NaT
+    scroll_tract.teardown('68:9E:19:07:DE:C3')
     with pytest.raises(nxr.NotInStoreException):
-        buffer_tract.metadata('68:9E:19:07:DE:C3')
+        scroll_tract.metadata('68:9E:19:07:DE:C3')
 
 
-def test_write_buffer(buffer_tract, featurelog):
+def test_write_scroll(scroll_tract, featurelog):
     with pytest.raises(TypeError):
-        buffer_tract.write(featurelog)
+        scroll_tract.write(featurelog)
     input_sequence = featurelog['68:9E:19:07:DE:C3']
-    buffer_tract.write(input_sequence)
-    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    scroll_tract.write(input_sequence)
+    sequence = scroll_tract.sequence('68:9E:19:07:DE:C3')
     assert sequence.data.equals(input_sequence.data)
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
     assert sequence.consumption is nxtime.MAX
 
 
-def test_metadata(buffer_tract, featurelog):
+def test_metadata(scroll_tract, featurelog):
     input_sequence = featurelog['68:9E:19:07:DE:C3']
-    buffer_tract.write(input_sequence)
-    metadata = buffer_tract.metadata('68:9E:19:07:DE:C3')
+    scroll_tract.write(input_sequence)
+    metadata = scroll_tract.metadata('68:9E:19:07:DE:C3')
     assert set(metadata.keys()) == {'lower', 'upper', 'certification'}
     assert metadata['lower'] == input_sequence.dt_range.lower
     assert metadata['upper'] == input_sequence.dt_range.upper
@@ -585,79 +585,79 @@ def test_metadata(buffer_tract, featurelog):
     subscriber = MagicMock()
     name_property = PropertyMock(return_value='subscriber')
     type(subscriber).name = name_property
-    buffer_tract.update_subscriber(subscriber,
+    scroll_tract.update_subscriber(subscriber,
                                    '68:9E:19:07:DE:C3',
                                    '2016-9-14 10:01')
-    metadata = buffer_tract.metadata('68:9E:19:07:DE:C3')
+    metadata = scroll_tract.metadata('68:9E:19:07:DE:C3')
     assert set(metadata.keys()) == {'lower', 'upper', 'certification',
                                     'subscriber'}
     assert metadata['certification'] is pd.NaT
     assert metadata['subscriber'] == pd.to_datetime('2016-9-14 10:01',
                                                     utc=True)
-    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    sequence = scroll_tract.sequence('68:9E:19:07:DE:C3')
     sequence.certify('2016-9-14 10:02')
-    buffer_tract.write(sequence)
-    metadata = buffer_tract.metadata('68:9E:19:07:DE:C3')
+    scroll_tract.write(sequence)
+    metadata = scroll_tract.metadata('68:9E:19:07:DE:C3')
     assert metadata['certification'] == pd.to_datetime('2016-9-14 10:02',
                                                        utc=True)
 
 
-def test_data(buffer_tract, featurelog):
+def test_data(scroll_tract, featurelog):
     input_sequence = featurelog['68:9E:19:07:DE:C3']
-    buffer_tract.write(input_sequence)
-    data = buffer_tract.data('68:9E:19:07:DE:C3')
+    scroll_tract.write(input_sequence)
+    data = scroll_tract.data('68:9E:19:07:DE:C3')
     assert data == list(input_sequence)[::-1]
 
 
-def test_xdata(statebuf_tract, statelog):
+def test_xdata(state_scroll_tract, statelog):
     input_sequence = statelog['88:4A:EA:69:35:BD']
-    statebuf_tract.write(input_sequence)
-    data = statebuf_tract.data('88:4A:EA:69:35:BD',
-                               lower='2018-4-15 00:16:30',
-                               upper='2018-4-15 00:16:45')
+    state_scroll_tract.write(input_sequence)
+    data = state_scroll_tract.data('88:4A:EA:69:35:BD',
+                                   lower='2018-4-15 00:16:30',
+                                   upper='2018-4-15 00:16:45')
     assert len(data) == 3
 
 
-def test_sequence(buffer_tract, featurelog):
+def test_sequence(scroll_tract, featurelog):
     archive = Store['archive']
     input_sequence = featurelog['68:9E:19:07:DE:C3']
-    buffer_tract.write(input_sequence)
+    scroll_tract.write(input_sequence)
     subscriber = MagicMock()
     name_property = PropertyMock(return_value='subscriber')
     type(subscriber).name = name_property
-    buffer_tract.update_subscriber(subscriber,
+    scroll_tract.update_subscriber(subscriber,
                                    '68:9E:19:07:DE:C3',
                                    pd.NaT)
-    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    sequence = scroll_tract.sequence('68:9E:19:07:DE:C3')
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
     assert sequence.consumption is pd.NaT
-    buffer_tract.update_subscriber(subscriber,
+    scroll_tract.update_subscriber(subscriber,
                                    '68:9E:19:07:DE:C3',
                                    '2016-9-14 10:01')
-    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    sequence = scroll_tract.sequence('68:9E:19:07:DE:C3')
     sequence.certify('2016-9-14 10:01:32.99')
-    archive[BUFFER].discard('68:9E:19:07:DE:C3', rge.time_range((None, None)))
-    buffer_tract.write(sequence)
-    sequence = buffer_tract.sequence('68:9E:19:07:DE:C3')
+    archive[SCROLL].discard('68:9E:19:07:DE:C3', rge.time_range((None, None)))
+    scroll_tract.write(sequence)
+    sequence = scroll_tract.sequence('68:9E:19:07:DE:C3')
     assert len(sequence) == 1
-    archived = archive[BUFFER].query(id='68:9E:19:07:DE:C3').data()
+    archived = archive[SCROLL].query(id='68:9E:19:07:DE:C3').data()
     assert len(archived) == 2
 
 
-def test_buffer_pipe(buffer_tract, featurelog):
-    pipe = nxr.NxPipe(buffer_tract.store)
-    pipe.metadata(buffer_tract, '68:9E:19:07:DE:C3')
-    pipe.teardown(buffer_tract, '68:9E:19:07:DE:C3')
-    pipe.setup(buffer_tract, '68:9E:19:07:DE:C3')
+def test_scroll_pipe(scroll_tract, featurelog):
+    pipe = nxr.NxPipe(scroll_tract.store)
+    pipe.metadata(scroll_tract, '68:9E:19:07:DE:C3')
+    pipe.teardown(scroll_tract, '68:9E:19:07:DE:C3')
+    pipe.setup(scroll_tract, '68:9E:19:07:DE:C3')
     input_sequence = featurelog['68:9E:19:07:DE:C3']
-    pipe.write(buffer_tract, input_sequence)
+    pipe.write(scroll_tract, input_sequence)
     subscriber = MagicMock()
     name_property = PropertyMock(return_value='subscriber')
     type(subscriber).name = name_property
     dt = pd.to_datetime('2016-9-14 10:01', utc=True)
-    pipe.update_subscriber(buffer_tract, subscriber, '68:9E:19:07:DE:C3', dt)
-    pipe.sequence(buffer_tract, '68:9E:19:07:DE:C3')
+    pipe.update_subscriber(scroll_tract, subscriber, '68:9E:19:07:DE:C3', dt)
+    pipe.sequence(scroll_tract, '68:9E:19:07:DE:C3')
     metadata, _, _, _, _, sequence = pipe.execute()
     assert isinstance(metadata['lower'], pd.Timestamp)
     assert sequence.data.equals(input_sequence.data)
@@ -665,10 +665,10 @@ def test_buffer_pipe(buffer_tract, featurelog):
     assert sequence.metadata['consumption'] == dt
 
 
-def test_buffer_query(buffer_tract, featurelog):
+def test_scroll_query(scroll_tract, featurelog):
     input_sequence = featurelog['68:9E:19:07:DE:C3']
-    buffer_tract.write(input_sequence)
-    query = buffer_tract.query(id=DEVICES)
+    scroll_tract.write(input_sequence)
+    query = scroll_tract.query(id=DEVICES)
     assert query.schema == RdSchema()
     assert len(list(query.fetch())) == len(input_sequence)
     assert len(list(query.fetch(limit=1))) == 1
@@ -678,33 +678,33 @@ def test_buffer_query(buffer_tract, featurelog):
     assert query_data[1].empty
 
 
-def test_buffer_query_pipe(procstore, buffer_tract, featurelog):
+def test_scroll_query_pipe(procstore, scroll_tract, featurelog):
     input_sequence = featurelog['68:9E:19:07:DE:C3']
-    buffer_tract.write(input_sequence)
+    scroll_tract.write(input_sequence)
     pipe = nxr.NxPipe(procstore)
-    pipe.query(buffer_tract, id=DEVICES)
+    pipe.query(scroll_tract, id=DEVICES)
     sequences = pipe.execute()[0]
     assert len(sequences) == 2
     assert sequences[0].data.equals(input_sequence.data)
     assert sequences[1].empty
 
 
-def test_write_xbuffer(statebuf_tract, statelog):
+def test_write_xscroll(state_scroll_tract, statelog):
     with pytest.raises(TypeError):
-        statebuf_tract.write(statelog)
+        state_scroll_tract.write(statelog)
     input_sequence = statelog['88:4A:EA:69:35:BD']
-    statebuf_tract.write(input_sequence)
-    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    state_scroll_tract.write(input_sequence)
+    sequence = state_scroll_tract.sequence('88:4A:EA:69:35:BD')
     assert sequence.data.equals(input_sequence.data)
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
     assert sequence.consumption is nxtime.MAX
 
 
-def test_xmetadata(statebuf_tract, statelog):
+def test_xmetadata(state_scroll_tract, statelog):
     input_sequence = statelog['88:4A:EA:69:35:BD']
-    statebuf_tract.write(input_sequence)
-    metadata = statebuf_tract.metadata('88:4A:EA:69:35:BD')
+    state_scroll_tract.write(input_sequence)
+    metadata = state_scroll_tract.metadata('88:4A:EA:69:35:BD')
     assert set(metadata.keys()) == {'lower', 'upper', 'certification'}
     assert metadata['lower'] == input_sequence.dt_range.lower
     assert metadata['upper'] == input_sequence.dt_range.upper
@@ -712,57 +712,57 @@ def test_xmetadata(statebuf_tract, statelog):
     subscriber = MagicMock()
     name_property = PropertyMock(return_value='subscriber')
     type(subscriber).name = name_property
-    statebuf_tract.update_subscriber(subscriber,
-                                     '88:4A:EA:69:35:BD',
-                                     '2018-4-15 00:16:30')
-    metadata = statebuf_tract.metadata('88:4A:EA:69:35:BD')
+    state_scroll_tract.update_subscriber(subscriber,
+                                         '88:4A:EA:69:35:BD',
+                                         '2018-4-15 00:16:30')
+    metadata = state_scroll_tract.metadata('88:4A:EA:69:35:BD')
     assert set(metadata.keys()) == {'lower', 'upper', 'certification',
                                     'subscriber'}
     assert metadata['certification'] is pd.NaT
     assert metadata['subscriber'] == pd.to_datetime('2018-4-15 00:16:30',
                                                     utc=True)
-    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    sequence = state_scroll_tract.sequence('88:4A:EA:69:35:BD')
     sequence.certify('2018-4-15 00:16:45')
-    statebuf_tract.write(sequence)
-    metadata = statebuf_tract.metadata('88:4A:EA:69:35:BD')
+    state_scroll_tract.write(sequence)
+    metadata = state_scroll_tract.metadata('88:4A:EA:69:35:BD')
     assert metadata['certification'] == pd.to_datetime('2018-4-15 00:16:45',
                                                        utc=True)
 
 
-def test_xsequence(statebuf_tract, archive, statelog):
+def test_xsequence(state_scroll_tract, archive, statelog):
     input_sequence = statelog['88:4A:EA:69:35:BD']
-    statebuf_tract.write(input_sequence)
+    state_scroll_tract.write(input_sequence)
     subscriber = MagicMock()
     name_property = PropertyMock(return_value='subscriber')
     type(subscriber).name = name_property
-    statebuf_tract.update_subscriber(subscriber,
-                                     '88:4A:EA:69:35:BD',
-                                     pd.NaT)
-    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    state_scroll_tract.update_subscriber(subscriber,
+                                         '88:4A:EA:69:35:BD',
+                                         pd.NaT)
+    sequence = state_scroll_tract.sequence('88:4A:EA:69:35:BD')
     assert sequence.dt_range == input_sequence.dt_range
     assert sequence.certification is pd.NaT
     assert sequence.consumption is pd.NaT
-    statebuf_tract.update_subscriber(subscriber,
-                                     '88:4A:EA:69:35:BD',
-                                     '2018-4-15 00:16:30')
-    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    state_scroll_tract.update_subscriber(subscriber,
+                                         '88:4A:EA:69:35:BD',
+                                         '2018-4-15 00:16:30')
+    sequence = state_scroll_tract.sequence('88:4A:EA:69:35:BD')
     sequence.certify('2018-4-15 00:16:45')
-    statebuf_tract.write(sequence)
-    sequence = statebuf_tract.sequence('88:4A:EA:69:35:BD')
+    state_scroll_tract.write(sequence)
+    sequence = state_scroll_tract.sequence('88:4A:EA:69:35:BD')
     assert len(sequence) == 5
-    archived = archive[STATEBUF].query(id='88:4A:EA:69:35:BD').data()
+    archived = archive[STATE_SCROLL].query(id='88:4A:EA:69:35:BD').data()
     assert len(archived) == 8
-    statebuf_tract.teardown('88:4A:EA:69:35:BD')
-    archived = archive[STATEBUF].query(id='88:4A:EA:69:35:BD').data()
+    state_scroll_tract.teardown('88:4A:EA:69:35:BD')
+    archived = archive[STATE_SCROLL].query(id='88:4A:EA:69:35:BD').data()
     record = archived[-1]
     assert record.datetime == sequence.certification
     assert record.label is None
 
 
-def test_xbuffer_query(statebuf_tract, statelog):
+def test_xscroll_query(state_scroll_tract, statelog):
     input_sequence = statelog['88:4A:EA:69:35:BD']
-    statebuf_tract.write(input_sequence)
-    query = statebuf_tract.query(id=IDS)
+    state_scroll_tract.write(input_sequence)
+    query = state_scroll_tract.query(id=IDS)
     assert query.schema == StateSchema()
     assert len(list(query.fetch())) == len(input_sequence)
     assert len(list(query.fetch(limit=1))) == 1
@@ -774,7 +774,7 @@ def test_xbuffer_query(statebuf_tract, statelog):
 
 def test_migrate(procstore, backupstore):
     procstore.migrate(backupstore)
-    sequence = backupstore['buffer'].sequence('68:9E:19:07:DE:C3')
+    sequence = backupstore['scroll'].sequence('68:9E:19:07:DE:C3')
     assert len(sequence) == 3
 
 

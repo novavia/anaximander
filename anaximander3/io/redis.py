@@ -161,32 +161,32 @@ class NxPipe:
     def discard(self, tract, *ids, datetime=(None, None), **kwargs):
         tract.discard(*ids, datetime=datetime, _nxpipe=self, **kwargs)
 
-    def setup(self, buffer, id):
-        buffer.setup(id, _nxpipe=self)
+    def setup(self, scroll, id):
+        scroll.setup(id, _nxpipe=self)
 
-    def teardown(self, buffer, id):
-        buffer.teardown(id, _nxpipe=self)
+    def teardown(self, scroll, id):
+        scroll.teardown(id, _nxpipe=self)
 
     def sequence(self, tract, id, **kwargs):
         tract.sequence(id, _nxpipe=self, **kwargs)
 
-    def write(self, buffer, sequence, old_certificate=None):
-        buffer.write(sequence, old_certificate=old_certificate, _nxpipe=self)
+    def write(self, scroll, sequence, old_certificate=None):
+        scroll.write(sequence, old_certificate=old_certificate, _nxpipe=self)
 
-    def update(self, buffer, sequence, old_metadata=None):
-        buffer.update(sequence, old_metadata=old_metadata, _nxpipe=self)
+    def update(self, scroll, sequence, old_metadata=None):
+        scroll.update(sequence, old_metadata=old_metadata, _nxpipe=self)
 
-    def setup_subscriber(self, buffer, subscriber, id):
-        buffer.setup_subscriber(subscriber, id, _nxpipe=self)
+    def setup_subscriber(self, scroll, subscriber, id):
+        scroll.setup_subscriber(subscriber, id, _nxpipe=self)
 
-    def update_subscriber(self, buffer, subscriber, id, datetime):
-        buffer.update_subscriber(subscriber, id, datetime, _nxpipe=self)
+    def update_subscriber(self, scroll, subscriber, id, datetime):
+        scroll.update_subscriber(subscriber, id, datetime, _nxpipe=self)
 
-    def metadata(self, buffer, id):
-        buffer.metadata(id, _nxpipe=self)
+    def metadata(self, scroll, id):
+        scroll.metadata(id, _nxpipe=self)
 
-    def data(self, buffer, id, lower=None, upper=None):
-        buffer.metadata(id, _nxpipe=self, lower=lower, upper=upper)
+    def data(self, scroll, id, lower=None, upper=None):
+        scroll.metadata(id, _nxpipe=self, lower=lower, upper=upper)
 
 
 class RedisDataTract(DataTract, RedisTract):
@@ -500,15 +500,15 @@ class RedisDataQuery(Query):
         return rval
 
 
-class BufferQuery(RedisDataQuery):
+class ScrollQuery(RedisDataQuery):
     """Specialized query type that doesn't aggregate results across ids."""
 
     def __init__(self, tract, *columns, **quargs):
         super().__init__(tract, *columns, **quargs)
         try:
-            assert isinstance(tract, RedisBuffer)
+            assert isinstance(tract, RedisScroll)
         except AssertionError:
-            msg = "A BufferQuery requires a  RedisBuffer tract."
+            msg = "A ScrollQuery requires a  RedisScroll tract."
             raise RedisQueryException(msg)
         self.data_query = tract.data_tract.query(**self.quargs)
 
@@ -647,7 +647,7 @@ class BufferQuery(RedisDataQuery):
 
 
 class NotInStoreException(ReadException):
-    """Exception raised on buffers if id is not found in store."""
+    """Exception raised on scrolls if id is not found in store."""
     pass
 
 
@@ -656,14 +656,14 @@ class NoArchive(WriteException):
     pass
 
 
-class RedisBuffer(RedisTract):
+class RedisScroll(RedisTract):
     """A specialized storage structure that combines data & metadata.
 
     The metadata is stored as a hash with the following structures:
-        lower: timestamp  # lower bound of the buffer
-        upper: timestamp  # upper bound of the buffer
-        certification: timestamp  # certification line within buffer
-        [subscriber title]: timestamp  # for each subscribing buffer, their
+        lower: timestamp  # lower bound of the scroll
+        upper: timestamp  # upper bound of the scroll
+        certification: timestamp  # certification line within scroll
+        [subscriber title]: timestamp  # for each subscribing scroll, their
             own certification line, which determines data eviction.
     """
 
@@ -793,7 +793,7 @@ class RedisBuffer(RedisTract):
             return self._metadata(pipe.execute()[0])
 
     def __query__(self, *columns, **kwargs):
-        return BufferQuery(self, *columns, **kwargs)
+        return ScrollQuery(self, *columns, **kwargs)
 
     @abc.abstractmethod
     def flushline(self, id, sequence):
@@ -805,10 +805,11 @@ class RedisBuffer(RedisTract):
                       _nxpipe=_nxpipe)
 
 
-class RedisApplicationBuffer(RedisBuffer):
+class BufferScroll(RedisScroll):
 
-    def __init__(self, store, title, depth, register=True):
+    def __init__(self, store, title, depth=None, register=True):
         super().__init__(store, title, register)
+        depth = fun.get(depth, store.depth)
         self.depth = pd.Timedelta(depth)
 
     def setup(self, id, when=None, _nxpipe=None):
@@ -867,13 +868,13 @@ class RedisApplicationBuffer(RedisBuffer):
             return callback(results)
 
     def write(self, sequence, old_certificate=None, _nxpipe=None):
-        """Writes the buffer by supplying a sequence.
+        """Writes the scroll by supplying a sequence.
 
         Overwrites data with sequence from old certificate on.
         Finally the metadata gets updated.
         """
         if not isinstance(sequence, dtl.DataSequence):
-            msg = f"Buffer write requires a DataSequence instance, not a " + \
+            msg = f"Scroll write requires a DataSequence instance, not a " + \
                   f"{type(sequence)} instance."
             raise TypeError(msg)
         if not isinstance(sequence.schema, type(self.schema)):
@@ -897,7 +898,7 @@ class RedisApplicationBuffer(RedisBuffer):
             return pipe.execute()
 
     def update(self, id, sequence, old_metadata=None, _nxpipe=None):
-        """Updates the buffer from old certificate on."""
+        """Updates the scroll from old certificate on."""
         if old_metadata is None:
             if _nxpipe is not None:
                 msg = "Cannot pipe an update without extant metadata."
@@ -931,7 +932,7 @@ class RedisApplicationBuffer(RedisBuffer):
             return pipe.execute()
 
 
-class RedisProcessBuffer(RedisBuffer):
+class PipelineScroll(RedisScroll):
 
     def teardown(self, id, _nxpipe=None):
         """Discards storage for supplied id.
@@ -955,7 +956,7 @@ class RedisProcessBuffer(RedisBuffer):
         """Sets up metadata for subscriber.
 
         Params:
-            subscriber: a RedisBuffer instance
+            subscriber: a RedisScroll instance
             id: the target id
         """
         self.update_subscriber(subscriber, id, pd.NaT, _nxpipe=None)
@@ -964,7 +965,7 @@ class RedisProcessBuffer(RedisBuffer):
         """Updates metadata for subscriber.
 
         Params:
-            subscriber: a RedisBuffer instance
+            subscriber: a RedisScroll instance
             id: the target id
             datetime: the new certification line of the subscriber
         """
@@ -996,14 +997,14 @@ class RedisProcessBuffer(RedisBuffer):
         return min((certification, consumption))
 
     def write(self, sequence, old_certificate=None, _nxpipe=None):
-        """Writes the buffer by supplying a sequence.
+        """Writes the scroll by supplying a sequence.
 
         Overwrites data with sequence.
         Newly certified data is archived.
         Finally the metadata gets updated.
         """
         if not isinstance(sequence, dtl.DataSequence):
-            msg = f"Buffer write requires a DataSequence instance, not a " + \
+            msg = f"Scroll write requires a DataSequence instance, not a " + \
                   f"{type(sequence)} instance."
             raise TypeError(msg)
         if not isinstance(sequence.schema, type(self.schema)):
@@ -1052,23 +1053,27 @@ class RedisArchive(RedisStore):
     __role__ = 'archive'
 
 
-class RedisApplicationStore(RedisStore):
-    __tract__ = RedisApplicationBuffer
+class RedisBuffer(RedisStore):
+    __tract__ = BufferScroll
     __role__ = 'buffer'
+
+    def __init__(self, role=None, depth='7D', **kwargs):
+        self.depth = depth
+        super().__init__(role, **kwargs)
 
     def __interface__(self, host, port, password, archive=None):
         """Archive is an optional archive store."""
         self.archive = archive
         return StrictRedis(host=host, port=port, password=password)
 
-    def tract(self, title, depth):
+    def tract(self, title, depth=None):
         """Instantiates a tract for self."""
-        return self.__tract__(self, title, depth)
+        return self.__tract__(self, title, depth=depth)
 
 
-class RedisProcessStore(RedisStore):
-    __tract__ = RedisProcessBuffer
-    __role__ = 'process'
+class RedisPipeline(RedisStore):
+    __tract__ = PipelineScroll
+    __role__ = 'pipeline'
 
     def __interface__(self, host, port, password, archive=None):
         """Archive is an optional archive store."""

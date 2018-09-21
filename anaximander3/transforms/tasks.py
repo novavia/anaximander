@@ -178,11 +178,11 @@ class Task(metaclass=TaskType):
         LOGGER.debug(msg)
         for name, desc in cls.__outputs__.items():
             tract = output_store[desc.title]
-            if isinstance(tract, nxr.RedisBuffer):
+            if isinstance(tract, nxr.RedisScroll):
                 tract.setup(entity.store_id, _nxpipe=out_pipe, when=when)
                 for iname, idesc in cls.__inputs__.items():
                     itract = input_store[idesc.title]
-                    if isinstance(itract, nxr.RedisBuffer):
+                    if isinstance(itract, nxr.RedisScroll):
                         itract.setup_subscriber(tract, entity.store_id,
                                                 _nxpipe=in_pipe)
         if in_pipe is not None:
@@ -380,7 +380,7 @@ class Task(metaclass=TaskType):
             if in_pipe is not None:
                 for iname, idesc in self.__inputs__.items():
                     in_tract = self.input_store[idesc.title]
-                    if isinstance(in_tract, nxr.RedisProcessBuffer):
+                    if isinstance(in_tract, nxr.PipelineScroll):
                         in_tract.update_subscriber(out_tract,
                                                    self.entity.store_id,
                                                    certificate,
@@ -467,7 +467,7 @@ class InsertTask(Task, metaclass=InsertTaskType):
     """A task dedicated to appending records."""
     target = TaskOutput(None)  # Replace None with meaningful Title
     max_latency = '5m'  # Heuristic watermark
-    __output_store__ = 'process'
+    __output_store__ = 'pipeline'
 
     def __init__(self, entity, *records, output_store=None, logger=LOGGER,
                  stream_mode=False, when=None, max_latency=None):
@@ -509,13 +509,13 @@ def insert_task_factory(title, etype, max_latency='5m'):
 
 class TransformTask(Task):
     """A task dedicated to transforming records."""
-    __input_store__ = 'process'
-    __output_store__ = 'process'
+    __input_store__ = 'pipeline'
+    __output_store__ = 'pipeline'
 
 
 class UpdateTask(Task):
     """A task that targets the application buffer."""
-    __input_store__ = 'process'
+    __input_store__ = 'pipeline'
     __output_store__ = 'buffer'
 
     @classmethod

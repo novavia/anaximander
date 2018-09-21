@@ -12,7 +12,7 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import OrderedDict, Mapping
+from collections import OrderedDict, Mapping, defaultdict
 
 import attr
 import pandas as pd
@@ -77,8 +77,8 @@ class StoreType(abc.ABCMeta):
         return self.__registry__[name]
 
     @property
-    def process(self):
-        return self.__registry__.get('process', None)
+    def pipeline(self):
+        return self.__registry__.get('pipeline', None)
 
     @property
     def buffer(self):
@@ -119,6 +119,8 @@ class Store(Mapping, metaclass=StoreType):
             type(self).__registry__[self.role] = self
         self._io = self.__interface__(**kwargs)
         self._tracts = dict()
+        for title, kwargs in _DEFERRED_TRACTS[self.role].items():
+            self.tract(title, **kwargs)
 
     @abc.abstractmethod
     def __interface__(self, **kwargs):
@@ -316,6 +318,19 @@ class DataTract(Tract):
         data['index'] = idx
         data['schema'] = self.schema
         return rcd.Record.from_dict(data)
+
+
+_DEFERRED_TRACTS = defaultdict(dict)
+
+
+def deferred_tract(role, schema, name=None, **kwargs):
+    if name is None:
+        if isinstance(schema, type):
+            name = schema.__name__
+        else:
+            name = type(schema).__name__
+    title = Title(name, schema)
+    _DEFERRED_TRACTS[role][title] = kwargs
 
 
 # =============================================================================
