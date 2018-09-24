@@ -22,7 +22,8 @@ import anaximander3 as nx
 from anaximander3.utilities import nxrange as rge, nxtime
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
-from anaximander3.io.store import Store, Title, EmptyQueryException
+from anaximander3.io.store import Store, Title, EmptyQueryException, \
+    archive
 from anaximander3.io import redis as nxr
 
 
@@ -59,6 +60,7 @@ MULTISESSIONS = pd.read_csv(MULTISESSIONS_PATH)
 # =============================================================================
 
 
+@archive(name='scroll')
 class RdSchema(sch.SampleLogsSchema):
     accel_x = cln.Measurement()
     accel_y = cln.Measurement()
@@ -94,8 +96,8 @@ SESSION = Title('session', SessionSchema)
 EVENT = Title('event', MultiEventSchema)
 CSTATE = Title('cstate', sch.CompoundStateLogsSchema)
 SCROLL = Title('scroll', RdSchema)
-STATE_SCROLL = Title('state_scroll', StateSchema)
-GENERIC = Title('generic', GnSchema)
+STATE_SCROLL = Title('state_scroll', StateSchema, archive={})
+GENERIC = Title('generic', GnSchema, stores=['archive'])
 
 
 @pytest.fixture(scope="module")
@@ -177,9 +179,9 @@ def archive():
     """Creates a redis store for testing purposes."""
     store = nxr.RedisArchive(role='archive',
                              host=HOST, port=PORT, password=PWD)
-    store.tract(SCROLL)
-    store.tract(STATE_SCROLL)
-    store.tract(GENERIC)
+#    store.tract(SCROLL)
+#    store.tract(STATE_SCROLL)
+#    store.tract(GENERIC)
     yield store
     cleanup(store)
 

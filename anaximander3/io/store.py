@@ -12,7 +12,8 @@ Copyright (C) Novavia Solutions, LLC.
 # =============================================================================
 
 import abc
-from collections import OrderedDict, Mapping, defaultdict
+from collections import OrderedDict, Mapping, defaultdict, Sequence
+from functools import partial
 
 import attr
 import pandas as pd
@@ -26,6 +27,8 @@ from ..data import datalogs as dtl, records as rcd
 __all__ = ['StorageException', 'StorageAdminException',
            'ReadException', 'WriteException', 'QueryException',
            'EmptyQueryException', 'Store', 'Title', 'Tract']
+
+NoneType = type(None)
 
 # =============================================================================
 # Custom exceptions
@@ -55,6 +58,8 @@ class WriteException(StorageException):
 # Class declarations
 # =============================================================================
 
+MapOrNone = (Mapping, NoneType)
+
 
 @attr.s(frozen=True)
 class Title:
@@ -68,6 +73,24 @@ class Title:
     schema = attr.ib(validator=attr.validators.instance_of((Schema,
                                                             MultiSchema)),
                      convert=lambda s: s() if isinstance(s, type) else s)
+    stores = attr.ib(default=[], cmp=False, repr=False,
+                     validator=attr.validators.instance_of(Sequence))
+    pipeline = attr.ib(default=None, cmp=False, repr=False,
+                       validator=attr.validators.instance_of(MapOrNone))
+    buffer = attr.ib(default=None, cmp=False, repr=False,
+                     validator=attr.validators.instance_of(MapOrNone))
+    archive = attr.ib(default=None, cmp=False, repr=False,
+                      validator=attr.validators.instance_of(MapOrNone))
+
+    def __attrs_post_init__(self):
+        for store in self.stores:
+            deferred_tract(store, self)
+        if self.pipeline is not None:
+            deferred_tract('pipeline', self, **self.pipeline)
+        if self.buffer is not None:
+            deferred_tract('buffer', self, **self.buffer)
+        if self.archive is not None:
+            deferred_tract('archive', self, **self.archive)
 
 
 class StoreType(abc.ABCMeta):
@@ -323,15 +346,35 @@ class DataTract(Tract):
 _DEFERRED_TRACTS = defaultdict(dict)
 
 
-def deferred_tract(role, schema, name=None, **kwargs):
-    if name is None:
-        if isinstance(schema, type):
-            name = schema.__name__
-        else:
-            name = type(schema).__name__
-    title = Title(name, schema)
+def deferred_tract(role, title=None, schema=None, name=None, **kwargs):
+    if title is None:
+        if name is None:
+            if not isinstance(schema, type):
+                schema = type(schema)
+            name = getattr(schema, '__title__', schema.__name__)
+        title = Title(name, schema)
     _DEFERRED_TRACTS[role][title] = kwargs
 
+
+def pipeline(schema=None, *, name=None, **kwargs):
+    if schema is None:
+        return partial(archive, name=name, **kwargs)
+    deferred_tract('pipeline', schema=schema, name=name, **kwargs)
+    return schema
+
+
+def buffer(schema=None, *, name=None, **kwargs):
+    if schema is None:
+        return partial(archive, name=name, **kwargs)
+    deferred_tract('buffer', schema=schema, name=name, **kwargs)
+    return schema
+
+
+def archive(schema=None, *, name=None, **kwargs):
+    if schema is None:
+        return partial(archive, name=name, **kwargs)
+    deferred_tract('archive', schema=schema, name=name, **kwargs)
+    return schema
 
 # =============================================================================
 # Query base class
