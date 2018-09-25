@@ -16,6 +16,7 @@ from collections import OrderedDict, Mapping, defaultdict, Sequence
 from functools import partial
 
 import attr
+from frozendict import frozendict
 import pandas as pd
 
 from ..utilities import nxrange as rge, xprops, functions as fun
@@ -58,8 +59,6 @@ class WriteException(StorageException):
 # Class declarations
 # =============================================================================
 
-MapOrNone = (Mapping, NoneType)
-
 
 @attr.s(frozen=True)
 class Title:
@@ -73,14 +72,15 @@ class Title:
     schema = attr.ib(validator=attr.validators.instance_of((Schema,
                                                             MultiSchema)),
                      convert=lambda s: s() if isinstance(s, type) else s)
-    stores = attr.ib(default=[], cmp=False, repr=False,
+    stores = attr.ib(default=(), cmp=False, repr=False,
+                     convert=tuple,
                      validator=attr.validators.instance_of(Sequence))
     pipeline = attr.ib(default=None, cmp=False, repr=False,
-                       validator=attr.validators.instance_of(MapOrNone))
+                       convert=lambda a: a if a is None else frozendict(a))
     buffer = attr.ib(default=None, cmp=False, repr=False,
-                     validator=attr.validators.instance_of(MapOrNone))
+                     convert=lambda a: a if a is None else frozendict(a))
     archive = attr.ib(default=None, cmp=False, repr=False,
-                      validator=attr.validators.instance_of(MapOrNone))
+                      convert=lambda a: a if a is None else frozendict(a))
 
     def __attrs_post_init__(self):
         for store in self.stores:
