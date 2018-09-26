@@ -49,9 +49,11 @@ def offline(assertion=None):
 
 
 from . import utilities
-#from . import meta
-#from .structures import NxStructure
-#from .operators import NxOperator
+from . import meta
+from . import data
+from . import io
+from . import transforms
+from . import declarations
 
 # Sets the anaximander directory
 NXDIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

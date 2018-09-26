@@ -13,7 +13,6 @@ Copyright (C) Novavia Solutions, LLC.
 
 import abc
 from collections import OrderedDict, Mapping, defaultdict, Sequence
-from functools import partial
 
 import attr
 from frozendict import frozendict
@@ -82,15 +81,11 @@ class Title:
     archive = attr.ib(default=None, cmp=False, repr=False,
                       convert=lambda a: a if a is None else frozendict(a))
 
+    def _init_patch(self):
+        pass
+
     def __attrs_post_init__(self):
-        for store in self.stores:
-            deferred_tract(store, self)
-        if self.pipeline is not None:
-            deferred_tract('pipeline', self, **self.pipeline)
-        if self.buffer is not None:
-            deferred_tract('buffer', self, **self.buffer)
-        if self.archive is not None:
-            deferred_tract('archive', self, **self.archive)
+        self._init_patch()
 
 
 class StoreType(abc.ABCMeta):
@@ -142,7 +137,7 @@ class Store(Mapping, metaclass=StoreType):
             type(self).__registry__[self.role] = self
         self._io = self.__interface__(**kwargs)
         self._tracts = dict()
-        for title, kwargs in _DEFERRED_TRACTS[self.role].items():
+        for title, kwargs in Tract._deferred[self.role].items():
             self.tract(title, **kwargs)
 
     @abc.abstractmethod
@@ -182,8 +177,9 @@ class Tract(StorageResource):
     Basically a light wrapper around table objects defined by various
     database APIs to unify basic commands.
     """
+    _deferred = defaultdict(dict)
 
-    def __init__(self, store, title, register=True):
+    def __init__(self, store, title, register=True, **kwargs):
         self.store = store
         self.title = title
         if register:
@@ -341,40 +337,6 @@ class DataTract(Tract):
         data['index'] = idx
         data['schema'] = self.schema
         return rcd.Record.from_dict(data)
-
-
-_DEFERRED_TRACTS = defaultdict(dict)
-
-
-def deferred_tract(role, title=None, schema=None, name=None, **kwargs):
-    if title is None:
-        if name is None:
-            if not isinstance(schema, type):
-                schema = type(schema)
-            name = getattr(schema, '__title__', schema.__name__)
-        title = Title(name, schema)
-    _DEFERRED_TRACTS[role][title] = kwargs
-
-
-def pipeline(schema=None, *, name=None, **kwargs):
-    if schema is None:
-        return partial(archive, name=name, **kwargs)
-    deferred_tract('pipeline', schema=schema, name=name, **kwargs)
-    return schema
-
-
-def buffer(schema=None, *, name=None, **kwargs):
-    if schema is None:
-        return partial(archive, name=name, **kwargs)
-    deferred_tract('buffer', schema=schema, name=name, **kwargs)
-    return schema
-
-
-def archive(schema=None, *, name=None, **kwargs):
-    if schema is None:
-        return partial(archive, name=name, **kwargs)
-    deferred_tract('archive', schema=schema, name=name, **kwargs)
-    return schema
 
 # =============================================================================
 # Query base class

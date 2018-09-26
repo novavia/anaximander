@@ -14,6 +14,10 @@ from . import xprops
 from . import nxattr
 from . import cmpmixin
 from . import nxrange
+from . import datastore
+from . import jsonmixin
+from . import nxspecs
 
 
-__all__ = ['nxtime', 'functions', 'xprops', 'nxattr', 'cmpmixin', 'nxrange']
+__all__ = ['nxtime', 'functions', 'xprops', 'nxattr', 'cmpmixin', 'nxrange',
+           'datastore', 'jsonmixin', 'nxspecs']

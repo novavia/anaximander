@@ -496,7 +496,7 @@ class InsertTask(Task, metaclass=InsertTaskType):
 
 
 def insert_task_factory(title, etype, max_latency='5m'):
-        task_name = f"{title.name}InsertTask"
+        task_name = f"{title.name}"
 
         def exec_body(ns):
             ns.update(target=TaskOutput(title),

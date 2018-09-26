@@ -22,9 +22,9 @@ import anaximander3 as nx
 from anaximander3.utilities import nxrange as rge, nxtime
 from anaximander3.data import nxcolumns as cln, nxschema as sch, \
     datalogs as dtl, records as rec
-from anaximander3.io.store import Store, Title, EmptyQueryException, \
-    archive
+from anaximander3.io.store import Store, Title, EmptyQueryException
 from anaximander3.io import redis as nxr
+from anaximander3.declarations import archive
 
 
 HOST = 'redis-15511.c1.us-central1-2.gce.cloud.redislabs.com'
@@ -179,9 +179,6 @@ def archive():
     """Creates a redis store for testing purposes."""
     store = nxr.RedisArchive(role='archive',
                              host=HOST, port=PORT, password=PWD)
-#    store.tract(SCROLL)
-#    store.tract(STATE_SCROLL)
-#    store.tract(GENERIC)
     yield store
     cleanup(store)
 

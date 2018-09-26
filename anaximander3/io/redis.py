@@ -191,8 +191,8 @@ class NxPipe:
 
 class RedisDataTract(DataTract, RedisTract):
 
-    def __init__(self, store, title, register=True):
-        super().__init__(store, title, register)
+    def __init__(self, store, title, register=True, **kwargs):
+        super().__init__(store, title, register, **kwargs)
 
     def storage_key(self, id):
         """Returns the storage key given an application id."""
@@ -667,8 +667,8 @@ class RedisScroll(RedisTract):
             own certification line, which determines data eviction.
     """
 
-    def __init__(self, store, title, register=True):
-        super().__init__(store, title, register)
+    def __init__(self, store, title, register=True, **kwargs):
+        super().__init__(store, title, register, **kwargs)
         data_title = Title(title.name + '_data', title.schema)
         self.data_tract = RedisDataTract(store, data_title, register=False)
 
@@ -807,8 +807,8 @@ class RedisScroll(RedisTract):
 
 class BufferScroll(RedisScroll):
 
-    def __init__(self, store, title, depth=None, register=True):
-        super().__init__(store, title, register)
+    def __init__(self, store, title, depth=None, register=True, **kwargs):
+        super().__init__(store, title, register, **kwargs)
         depth = fun.get(depth, store.depth)
         self.depth = pd.Timedelta(depth)
 
