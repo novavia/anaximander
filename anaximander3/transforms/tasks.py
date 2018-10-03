@@ -135,6 +135,7 @@ class Task(metaclass=TaskType):
     def __init__(self, entity, dt_range=None, input_store=None,
                  output_store=None, logger=LOGGER, stream_mode=False,
                  **inputs):
+        self.logger = logger
         self.entity = entity
         try:
             assert isinstance(entity, self.__etype__)
@@ -150,7 +151,6 @@ class Task(metaclass=TaskType):
             self.dt_range = rge.time_range(dt_range)
         self.input_store = input_store or self.__input_store__
         self.output_store = output_store or self.__output_store__
-        self.logger = logger
         for k, v in inputs.items():
             setattr(self, k, v)
 
@@ -496,7 +496,7 @@ class InsertTask(Task, metaclass=InsertTaskType):
 
 
 def insert_task_factory(title, etype, max_latency='5m'):
-        task_name = f"{title.name}"
+        task_name = f"Insert_{title.name}"
 
         def exec_body(ns):
             ns.update(target=TaskOutput(title),

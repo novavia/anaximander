@@ -59,8 +59,15 @@ class WriteException(StorageException):
 # =============================================================================
 
 
+class TitleType(abc.ABCMeta):
+    __registry__ = {}
+
+    def __getitem__(self, name):
+        return self.__registry__[name]
+
+
 @attr.s(frozen=True)
-class Title:
+class Title(metaclass=TitleType):
     """A wrapper for a name / schema association.
 
     The name is used by stores for naming storage resources.
@@ -86,6 +93,7 @@ class Title:
 
     def __attrs_post_init__(self):
         self._init_patch()
+        type(self).__registry__[self.name] = self
 
 
 class StoreType(abc.ABCMeta):

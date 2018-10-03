@@ -68,13 +68,13 @@ class Job(metaclass=JobType):
 
     def __init__(self, entity, dt_range=None, stream_mode=False, logger=LOGGER,
                  **params):
+        self.logger = logger
         self.entity = entity
         self.stream_mode = stream_mode
         if stream_mode:
             self.dt_range = rge.time_range((None, None))
         else:
             self.dt_range = rge.time_range(dt_range)
-        self.logger = logger
         try:
             assert isinstance(entity, self.__etype__)
             assert hasattr(entity, 'store_id')

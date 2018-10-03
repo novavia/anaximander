@@ -1066,9 +1066,9 @@ class RedisBuffer(RedisStore):
         self.archive = archive
         return StrictRedis(host=host, port=port, password=password)
 
-    def tract(self, title, depth=None):
+    def tract(self, title, depth=None, **kwargs):
         """Instantiates a tract for self."""
-        return self.__tract__(self, title, depth=depth)
+        return self.__tract__(self, title, depth=depth, **kwargs)
 
 
 class RedisPipeline(RedisStore):
