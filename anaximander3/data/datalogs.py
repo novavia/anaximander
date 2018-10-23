@@ -386,11 +386,12 @@ class DataLogsBase(DataObject, Sequence):
             assert len(schema_set) == 1
             pop_schema = schema_set.pop()
             if schema is not None:
-                assert pop_schema == schema
+                assert isinstance(pop_schema, type(schema))
             else:
                 schema = pop_schema
         except AssertionError:
-            msg = "All records must share the same schema."
+            msg = "All records must share the same schema." + \
+                  f"{schema} != {pop_schema}"
             raise ConformityError(msg)
         rows = [r.tabulated for r in records]
         data = pd.DataFrame.from_records(rows)

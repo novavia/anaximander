@@ -92,6 +92,11 @@ class RedisTract(Tract):
         if keys:
             self.client.delete(*keys)
 
+    def keys(self):
+        redis_keys = self.client.keys(self.name + '*')
+        for k in redis_keys:
+            yield k.decode().split('#')[-1]
+
     def migrate(self, store, batch_size=100):
         """Migrates a tract to the supplied destination store."""
         keys = self.client.keys(self.name + '*')
@@ -803,6 +808,11 @@ class RedisScroll(RedisTract):
     def write(self, sequence, old_certificate=None, _nxpipe=None):
         super().write(sequence, old_certificate=old_certificate,
                       _nxpipe=_nxpipe)
+
+    def keys(self):
+        redis_keys = self.client.keys(self.name + '_meta' + '*')
+        for k in redis_keys:
+            yield k.decode().split('#')[-1]
 
 
 class BufferScroll(RedisScroll):

@@ -193,8 +193,11 @@ def sessionize(event_times, max_gap='0s', min_span='0s', expand='0s',
             upper = lower + expand
         spans.append(rge.TimeInterval(lower, upper))
     # Check for onset session, and merge it if necessary
-    onset_span = rge.time_range(onset_span)
-    spans.append(onset_span)
+    if onset_span is not None:
+        onset_span = rge.time_range(onset_span)
+        lower = onset_span.upper
+        spans = [s for s in spans if s.lower > lower]
+        spans.append(onset_span)
     # Normalize spans
     spans = rge.MultiTimeInterval(spans, tolerance=max_gap).intervals
     # Extract qualified spans based on min_span

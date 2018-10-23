@@ -37,6 +37,8 @@ class TaskDescriptor(nxd.NxAttribute):
     shortname = None
 
     def __init__(self, title, relation=None):
+        if isinstance(title, str):
+            title = Title[title]
         self.title = title
         self.relation = relation
         super().__init__()
@@ -140,8 +142,8 @@ class Task(metaclass=TaskType):
         try:
             assert isinstance(entity, self.__etype__)
         except AssertionError:
-            msg = f"Improper object type {entity} passed to " +\
-                  f"{type(self).__name__}."
+            msg = f"Improper object {entity} passed to " +\
+                  f"{type(self).__name__} (expects {self.__etype__})."
             self.logger.exception(msg)
             raise OperationalError
         self.stream_mode = stream_mode
@@ -328,10 +330,11 @@ class Task(metaclass=TaskType):
         else:
             certification = original.certification
         consumption = original.consumption
-        return dtl.DataSequence(data, schema=original.schema,
-                                id_range=id_range, dt_range=dt_range,
-                                certification=certification,
-                                consumption=consumption)
+        s = dtl.DataSequence(data, schema=original.schema,
+                             id_range=id_range, dt_range=dt_range,
+                             certification=certification,
+                             consumption=consumption)
+        return s
 
     @classmethod
     def store_output(cls, title, entity, sequence, store=None, nxpipe=None,
@@ -473,7 +476,7 @@ class InsertTask(Task, metaclass=InsertTaskType):
                  stream_mode=False, when=None, max_latency=None):
         super().__init__(entity, output_store=output_store, logger=logger,
                          stream_mode=stream_mode)
-        self.records = records
+        self.inputs = records
         if when is None:
             self.when = pd.Timestamp.utcnow()
         else:
@@ -483,13 +486,13 @@ class InsertTask(Task, metaclass=InsertTaskType):
 
     def __function__(self):
         schema = type(self).target.title.schema
-        lower = min([r.datetime for r in self.records] + [pd.NaT])
-        upper = max([r.datetime for r in self.records] + [pd.NaT])
+        lower = min([r.datetime for r in self.inputs] + [pd.NaT])
+        upper = max([r.datetime for r in self.inputs] + [pd.NaT])
         if self.stream_mode:
             upper = max(self.when, upper)
             lower = min(upper, lower)
         certificate = upper - self.max_latency
-        return dtl.DataSequence.from_records(self.records, schema=schema,
+        return dtl.DataSequence.from_records(self.inputs, schema=schema,
                                              id_range=self.entity.store_id,
                                              dt_range=(lower, upper),
                                              certification=certificate)
