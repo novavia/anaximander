@@ -23,6 +23,7 @@ google-cloud-storage==1.3.2
 greenlet
 gunicorn
 Jinja2
+numpy==1.12.0
 pytz
 pandas==0.22
 paho-mqtt
