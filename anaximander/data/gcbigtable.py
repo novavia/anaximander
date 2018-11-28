@@ -520,6 +520,8 @@ class BigTableQuery(DataQuery):
                 a per-non-sequential key basis. The default reads all rows.
         """
         rowkeypairs = list(self._make_rowkeypairs())
+        if len(rowkeypairs) == 0:
+            raise StopIteration
 
         def row_group(keys):
             start_key, end_key = keys
