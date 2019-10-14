@@ -22,7 +22,7 @@ import attr
 import marshmallow as msh
 from marshmallow.utils import get_value as msh_get_value
 from marshmallow.fields import Field, Raw, Nested, Dict, List, String, UUID, \
-    Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
+    Number, Integer, Decimal, Boolean, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
     Str, Bool, Int, Constant
 import pandas as pd
@@ -42,7 +42,7 @@ elif MARSHMALLOW_VERSION == 3:
         return msh_get_value(obj, key, default=default)
 
 __all__ = ['Field', 'Nested', 'String', 'UUID', 'Number', 'Integer',
-           'Decimal', 'Boolean', 'FormattedString', 'Float', 'DateTime',
+           'Decimal', 'Boolean', 'Float', 'DateTime',
            'LocalDateTime', 'Time', 'Date', 'TimeDelta', 'Url', 'URL',
            'Email', 'Str', 'Bool', 'Int', 'ReString', 'Scalar', 'Timestamp',
            'Duration', 'Period', 'FieldError']
@@ -63,7 +63,6 @@ _field_check = {Field: True,
                 Integer: True,
                 Decimal: True,
                 Boolean: True,
-                FormattedString: True,
                 Float: True,
                 DateTime: True,
                 LocalDateTime: True,

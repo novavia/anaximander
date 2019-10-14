@@ -28,7 +28,7 @@ from .exceptions import DataError
 from .base import IndexedDataObject
 from .schema import Schema
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
-    Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
+    Number, Integer, Decimal, Boolean, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
     Str, Bool, Int, Constant, NxDataField, Scalar, Timestamp, Duration, Period
 from .annotations import interval, domain
@@ -55,7 +55,6 @@ _field_map = {Field: np.dtype('object'),
               Integer: np.dtype('int'),
               Decimal: np.dtype('float'),
               Boolean: np.dtype('bool'),
-              FormattedString: np.dtype('object'),
               Float: np.dtype('float'),
               DateTime: np.dtype('datetime64[ns]'),
               LocalDateTime: np.dtype('datetime64[ns]'),

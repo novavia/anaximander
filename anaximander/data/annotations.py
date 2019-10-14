@@ -32,7 +32,7 @@ from ..meta import NxObject, archetype, typeattribute, typeproperty, \
 from .base import DataObject
 from .data import NxScalar
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
-    Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
+    Number, Integer, Decimal, Boolean, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
     Str, Bool, Int, Constant, Scalar, Timestamp, Duration, Period
 
@@ -60,7 +60,6 @@ _field_domain = {Field: None,
                  Integer: 'float',
                  Decimal: 'float',
                  Boolean: 'float',
-                 FormattedString: 'string',
                  Float: 'float',
                  DateTime: 'time',
                  LocalDateTime: 'time',

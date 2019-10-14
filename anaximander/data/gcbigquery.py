@@ -18,7 +18,7 @@ from google.cloud.bigquery.dataset import Dataset
 from ..utilities import functions as fun, nxattr, xprops
 from ..meta import prototype, metacharacter
 from .fields import Field, Raw, Nested, Dict, List, String, UUID, \
-    Number, Integer, Decimal, Boolean, FormattedString, Float, DateTime, \
+    Number, Integer, Decimal, Boolean, Float, DateTime, \
     LocalDateTime, Time, Date, TimeDelta, Url, URL, Email, Method, Function, \
     Str, Bool, Int, Constant, Scalar, Timestamp, Duration, Period
 from .schema import Schema
@@ -43,7 +43,6 @@ _field_map = {Field: 'STRING',
               Integer: 'INTEGER',
               Decimal: 'FLOAT',
               Boolean: 'BOOLEAN',
-              FormattedString: 'STRING',
               Float: 'FLOAT',
               DateTime: 'TIMESTAMP',
               LocalDateTime: 'TIMESTAMP',
