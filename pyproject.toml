@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "anaximander"
+version = "0.1.0"
+description = "The rapid application development framework for data-intensive Python"
+license = "MPL-2.0"
+authors = [
+    "Novavia Solutions <info@novavia.us>",
+    "JD Margulici <jdmargulici@gmail.com>",
+]
+readme = "README.md"
+homepage = "https://www.anaximander.dev"
+repository = "https://github.com/novavia/anaximander"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Operating System :: OS Independent",
+    "Development Status :: 2 - Pre-Alpha",
+]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+frozendict = "^2.3"
+pandas = "^1.4"
+pydantic = "^1.9"
+"ruamel.yaml" = "^0.17"
+
+[tool.poetry.dev-dependencies]
+black = "*"
+ipython = "^8.2"
+mypy = "*"
+pip = "*"
+pytest = "^5.2"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
