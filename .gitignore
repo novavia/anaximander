@@ -1,3 +1,18 @@
+# user directories
+**/user/**
+
+# Files that might appear on external disks
+.vscode/launch.json
+.Spotlight-V100
+.Trashes
+.emacs.desktop
+.spyderworkspace
+.spyderproject
+.project
+.pydevproject
+.settings/
+.cache/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -127,3 +142,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# OS-generated files
+Thumbs.db
+.DS_Store
