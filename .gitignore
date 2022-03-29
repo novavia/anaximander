@@ -2,7 +2,7 @@
 **/user/**
 
 # Files that might appear on external disks
-.vscode/launch.json
+.vscode
 .Spotlight-V100
 .Trashes
 .emacs.desktop
