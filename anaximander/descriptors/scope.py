@@ -44,6 +44,19 @@ class DataScope(Mapping):
 
     _data: ScopeMap
 
+    @classmethod
+    def to_datetime(cls, datetime, tz=None):
+        timestamp = pd.to_datetime(datetime)
+        if tz is None:
+            return timestamp
+        if (locale := timestamp.tz) is None:
+            localized = timestamp.tz_localize(tz)
+        elif locale == tz:
+            localized = timestamp
+        else:
+            localized = timestamp.tz_convert(tz)
+        return localized
+
     def __init__(
         self,
         data: Mapping[str, Any],
@@ -52,9 +65,18 @@ class DataScope(Mapping):
             Union[date, str, Collection[date], Collection[str], pd.Interval]
         ] = None,
         space=None,
+        *,
+        tz=None,
     ):
         if isinstance(data, DataScope) and all(v is None for v in [keys, time, space]):
-            self._data = data._data
+            if tz is None:
+                self._data = data
+            else:
+                keys, time, space = data._data.values()
+                time = pd.Interval(
+                    self.to_datetime(time.left, tz), self.to_datetime(time.right, tz)
+                )
+                self._data = frozendict(keys=keys, time=time, space=space)
         else:
             kwargs = dict(keys=keys, time=time, space=space)
             data = data | {k: v for k, v in kwargs.items() if v is not None}
@@ -66,20 +88,22 @@ class DataScope(Mapping):
             if time_scope is not None:
                 if isinstance(time_scope, pd.Interval):
                     time_scope = pd.Interval(
-                        pd.to_datetime(time_scope.left),
-                        pd.to_datetime(time_scope.right),
+                        self.to_datetime(time_scope.left, tz),
+                        self.to_datetime(time_scope.right, tz),
                         "left",
                     )
                 elif isinstance(time_scope, Collection):
                     # Assume this is a pair of timestamps
                     time_scope = pd.Interval(
-                        pd.to_datetime(time_scope[0]),
-                        pd.to_datetime(time_scope[1]),
+                        self.to_datetime(time_scope[0], tz),
+                        self.to_datetime(time_scope[1], tz),
                         "left",
                     )
                 else:
                     time_scope = pd.Interval(
-                        pd.to_datetime(time_scope), pd.to_datetime(time_scope), "both"
+                        self.to_datetime(time_scope, tz),
+                        self.to_datetime(time_scope, tz),
+                        "both",
                     )
 
             self._data = frozendict(keys=keys_scope, time=time_scope, space=space_scope)
@@ -104,9 +128,6 @@ class DataScope(Mapping):
             return self._data != other._data
         except AttributeError:
             return False
-
-    def __hash__(self):
-        return hash(self._data)
 
     def __hash__(self):
         return hash(self._data)

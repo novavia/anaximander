@@ -630,10 +630,10 @@ class SchemaValidator(Descriptor):
     method: BasicModelValidator = dc.field(repr=False)
 
 
-class DataIndex(Mapping, DataModelSpecifier):
+class IndexSchema(Mapping, DataModelSpecifier):
     """A mapping of index roles to field names."""
 
-    name: ClassVar[str] = "dataindex"
+    name: ClassVar[str] = "index"
     __index_tags__: ClassVar = {
         "nx_id",
         "nx_key",
@@ -645,8 +645,9 @@ class DataIndex(Mapping, DataModelSpecifier):
     }
     _data: frozendict[str, tuple[str]]
 
-    def __init__(self, data: Mapping[str, Iterable]):
+    def __init__(self, data: Mapping[str, Iterable], tz=None):
         self._data = frozendict({k: tuple(v) for k, v in data.items()})
+        self._tz = tz
         self.validate()
 
     def __getitem__(self, key):
@@ -687,6 +688,8 @@ class DataIndex(Mapping, DataModelSpecifier):
     def from_fields(cls, *fields: DataField):
         data = defaultdict(list)
         index_tags = {t: True for t in cls.__index_tags__}
+        time_tags = ("nx_timestamp", "nx_start_time", "nx_end_time", "nx_period")
+        time_zones = set()
         for f in fields:
             tags = {t[0] for t in set(index_tags.items()) & set(f.extensions.items())}
             if len(tags) > 1:
@@ -695,24 +698,35 @@ class DataIndex(Mapping, DataModelSpecifier):
             if tags:
                 tag = tags.pop()
                 data[tag].append(f.name)
-        return cls(data)
+                if tag in time_tags:
+                    if field_tz := f.extensions.get("tz"):
+                        time_zones.add(field_tz)
+        if time_zones:
+            if len(time_zones) > 1:
+                msg = "Incompatible time zones supplied to index"
+                raise ValueError(msg)
+            else:
+                tz = time_zones.pop()
+        else:
+            tz = None
+        return cls(data, tz=tz)
 
-    def __le__(self, other: "DataIndex"):
+    def __le__(self, other: "IndexSchema"):
         """Asserts that other extends self."""
         self_items = set(chain(*[[(k, v) for v in l] for k, l in self.items()]))
         other_items = set(chain(*[[(k, v) for v in l] for k, l in other.items()]))
         return self_items <= other_items
 
-    def __ge__(self, other: "DataIndex"):
+    def __ge__(self, other: "IndexSchema"):
         """Asserts that self extends other."""
         self_items = set(chain(*[[(k, v) for v in l] for k, l in self.items()]))
         other_items = set(chain(*[[(k, v) for v in l] for k, l in other.items()]))
         return self_items >= other_items
 
-    def __lt__(self, other: "DataIndex"):
+    def __lt__(self, other: "IndexSchema"):
         return self <= other and self != other
 
-    def __gt__(self, other: "DataIndex"):
+    def __gt__(self, other: "IndexSchema"):
         return self >= other and self != other
 
     @property
@@ -778,6 +792,10 @@ class DataIndex(Mapping, DataModelSpecifier):
         )
 
     @property
+    def tz(self):
+        return self._tz
+
+    @property
     def nxids(self) -> tuple[str]:
         return self._data.get("nx_identifier", ())
 
@@ -801,13 +819,13 @@ class DataIndex(Mapping, DataModelSpecifier):
     def nxperiod(self) -> Optional[str]:
         return self._data.get("nx_period", [None])[0]
 
-    def __eq__(self, other: "DataIndex"):
+    def __eq__(self, other: "IndexSchema"):
         try:
             return self._data == other._data
         except AttributeError:
             return False
 
-    def __ne__(self, other: "DataIndex"):
+    def __ne__(self, other: "IndexSchema"):
         try:
             return self._data != other._data
         except AttributeError:
@@ -825,7 +843,7 @@ class DataSchema(Schema[DataField]):
     fields: dict[str, DataField] = dc.field(default_factory=dict)
     input_parser: Optional[DataModelParser] = dc.field(default=None, repr=False)
     validators: list[DataModelValidator] = dc.field(default_factory=list, repr=False)
-    index: DataIndex = dc.field(init=False, repr=False)
+    index: IndexSchema = dc.field(init=False, repr=False)
     config: dict = dc.field(default_factory=dict, repr=False)
     _hash: Optional[int] = dc.field(default=None, repr=False)
 
@@ -844,7 +862,7 @@ class DataSchema(Schema[DataField]):
         )
 
     def __post_init__(self):
-        self.index = DataIndex.from_fields(*self.fields.values())
+        self.index = IndexSchema.from_fields(*self.fields.values())
         temporal_fields = [
             self.fields[field_name] for field_name in self.index.temporal_fields
         ]
@@ -1153,7 +1171,7 @@ class MetadataSchema(Schema[MetadataField]):
                 freeze_settings=freeze_settings,
                 filter=lambda f: not f.objectspec,
                 **settings,
-            )            
+            )
         else:
             return self._to_pydantic(
                 all_optional=all_optional, freeze_settings=freeze_settings, **settings

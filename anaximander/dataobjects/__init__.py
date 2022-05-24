@@ -20,13 +20,11 @@ __all__ = [
     "Dict",
 ]
 
-from .base import (
-    DataObject,
-    Data,
-    Integer,
-    Float,
-    Measurement,
-    Column,
+from .base import DataObject
+from .data import Data, Integer, Float, Measurement
+
+from .columnar import Column
+from .models import (
     Entity,
     Record,
     Fact,
@@ -36,6 +34,6 @@ from .base import (
     Session,
     Journal,
     Spec,
-    Table,
 )
+from .tabular import Table
 from .collections import List, Set, Dict

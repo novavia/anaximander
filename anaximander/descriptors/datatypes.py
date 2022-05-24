@@ -30,6 +30,7 @@ from typing import (
 import uuid
 
 from beartype._decor.main import beartype
+from frozendict import frozendict
 from numpy.lib.arraysetops import isin
 from pydantic import BaseModel, ValidationError
 import numpy as np

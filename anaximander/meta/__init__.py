@@ -97,3 +97,6 @@ class Object(nxobject, metaclass=nxtype):
         if not (same_type := (type(self) == type(other))):
             return False
         return self.metadata == other.metadata
+
+    def __str__(self):
+        return repr(self)

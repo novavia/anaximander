@@ -15,7 +15,7 @@ __all__ = [
     "metaproperty",
     "DataSchema",
     "DataSpec",
-    "DataIndex",
+    "IndexSchema",
     "DataScope",
     "relation",
     "submodel",
@@ -41,7 +41,7 @@ from .schema import (
     OptionParser as _OptionParser,
     OptionValidator as _OptionValidator,
     DataSchema,
-    DataIndex,
+    IndexSchema,
 )
 from .scope import DataScope
 

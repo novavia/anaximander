@@ -461,7 +461,7 @@ class MetaDescriptor(Descriptor):
 
 
 class DataModelSpecifier:
-    """Base class for data types specifiers Field, Schema, DataIndex, and TypeSpec."""
+    """Base class for data types specifiers Field, Schema, IndexSchema, and TypeSpec."""
 
     @classmethod
     def __get_validators__(cls_):

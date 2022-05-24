@@ -21,6 +21,7 @@ from typing import Any, Callable, Collection, Iterable, Mapping, Optional, Union
 
 import numpy as np
 import pandas as pd
+import petl as etl
 
 Namespace = dict[str, Any]
 Filter = Callable[[Any], bool]
