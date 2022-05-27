@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "anaximander"
-version = "0.1.0"
+version = "0.4a1"
 description = "The rapid application development framework for data-intensive Python"
 license = "MPL-2.0"
 authors = [
@@ -14,7 +14,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
     "Operating System :: OS Independent",
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
 ]
 
 [tool.poetry.dependencies]
@@ -23,13 +23,18 @@ frozendict = "^2.3"
 pandas = "^1.4"
 pydantic = "^1.9"
 "ruamel.yaml" = "^0.17"
+python-dotenv = "^0.20.0"
+beartype = "^0.10.4"
+sortedcontainers = "^2.4.0"
+petl = "^1.7.9"
 
 [tool.poetry.dev-dependencies]
 black = "*"
-ipython = "^8.2"
+ipython = "*"
 mypy = "*"
 pip = "*"
-pytest = "^5.2"
+pytest = "*"
+ipykernel = "^6.13.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
