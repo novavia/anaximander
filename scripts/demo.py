@@ -162,7 +162,7 @@ try:
 except ValueError as e:
     print(e)
 
-# Here is a printout of our Journal instance, along with a basic property
+# Here is a printout of our Journal instance
 print(hourly)
 
 # And finally a printout of our overheating sessions' timespans, a pandas

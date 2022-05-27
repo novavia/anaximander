@@ -44,7 +44,9 @@ class Model(DataObject):
 
         def field_transformer(field: DataField):
             dataspec = field.dataspec()
-            fieldtype = Data[dataspec]
+            archetype = getattr(field.type_, "archetype", Data)
+            metadata = dataspec.extensions.get("metadata", {})
+            fieldtype = archetype.subtype(dataspec=dataspec, **metadata)
 
             def transformer(value):
                 return fieldtype(

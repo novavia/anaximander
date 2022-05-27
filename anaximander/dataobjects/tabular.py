@@ -92,7 +92,9 @@ class Table(DataObject):
 
         def index_field_retriever(field: DataField):
             dataspec = field.dataspec()
-            fieldtype = Data[dataspec]
+            archetype = getattr(field.type_, "archetype", Data)
+            metadata = dataspec.extensions.get("metadata", {})
+            fieldtype = archetype.subtype(dataspec=dataspec, **metadata)
             coltype = Column[fieldtype]
 
             def retriever(table: Table):
@@ -112,7 +114,9 @@ class Table(DataObject):
 
         def payload_field_retriever(field: DataField):
             dataspec = field.dataspec()
-            fieldtype = Data[dataspec]
+            archetype = getattr(field.type_, "archetype", Data)
+            metadata = dataspec.extensions.get("metadata", {})
+            fieldtype = archetype.subtype(dataspec=dataspec, **metadata)
             coltype = Column[fieldtype]
 
             def retriever(table: Table) -> pd.Series:

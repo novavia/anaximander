@@ -3,7 +3,7 @@ from attr import has
 
 from frozendict import frozendict
 
-from ..descriptors.base import DescriptorRegistry
+from ..descriptors.base import DescriptorRegistry, SettingRegistry
 from ..descriptors.datatypes import nxdata, nxmodel
 from ..descriptors.dataspec import DataSpec
 from ..descriptors.schema import IndexSchema
@@ -53,9 +53,13 @@ class Data(DataObject):
         elif base_spec is None:
             return {}
         base_descriptors = getattr(cls, "__descriptors__")
+        base_settings = getattr(cls, "__settings__")
         descriptor_registry = DescriptorRegistry(parent=base_descriptors)
         descriptor_registry.collect(namespace, "data", strip=True)
+        settings_registry = SettingRegistry(descriptor_registry, parent=base_settings)
+        settings_registry.collect(namespace, "metadata")
         extensions = {k: v for k, v in namespace.items() if k in _dataspec_keys}
+        extensions["metadata"] = settings_registry.fetch("metadata")
         pydantic_validators = {
             k: v for k, v in namespace.items() if k in _pydantic_validator_keys
         }
