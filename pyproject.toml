@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "anaximander"
-version = "0.1.0"
+version = "0.4a1"
 description = "The rapid application development framework for data-intensive Python"
 license = "MPL-2.0"
 authors = [
@@ -14,7 +14,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
     "Operating System :: OS Independent",
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
 ]
 
 [tool.poetry.dependencies]
