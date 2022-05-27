@@ -9,6 +9,7 @@ from multiprocessing.sharedctypes import Value
 from types import new_class
 from typing import Any, Callable, Optional, TypeVar, Generic, Union, ClassVar
 
+import pandas as pd
 import pydantic
 
 from ..utilities.functions import auto_label, camel_to_snake, freeze
@@ -436,7 +437,9 @@ class Schema(Validated, SchemaBase[T], DataModelSpecifier):
                 if (tz := field.extensions.get("tz", None)) is not None:
                     validator = field._pydantic_tz_parser(fname, tz)
                     validators[validator.__name__] = validator
-                if (freq := field.extensions.get("freq", None)) is not None:
+                if (
+                    freq := field.extensions.get("freq", None)
+                ) is not None and field.type_ == pd.Period:
                     validator = field._pydantic_freq_parser(fname, freq)
                     validators[validator.__name__] = validator
                 if dataspec is not None:
@@ -802,6 +805,10 @@ class IndexSchema(Mapping, DataModelSpecifier):
     @property
     def nxkeys(self) -> tuple[str]:
         return self._data.get("nx_key", ())
+
+    @property
+    def nxkey(self) -> tuple[str]:
+        return self._data.get("nx_key", [None])[0]
 
     @property
     def nxtime(self) -> Optional[str]:

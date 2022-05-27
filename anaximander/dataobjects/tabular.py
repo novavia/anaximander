@@ -373,6 +373,10 @@ class TimespannedTable(Table):
         return self._data.index.get_level_values("timespan")
 
     @property
+    def timespan(self) -> pd.IntervalIndex:
+        return self._data.index.get_level_values("timespan")
+
+    @property
     def start_times(self) -> pd.DatetimeIndex:
         start_field = self.dataschema.index.nxstart
         return pd.DatetimeIndex(self._data[start_field])
