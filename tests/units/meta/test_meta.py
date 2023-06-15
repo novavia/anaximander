@@ -264,8 +264,7 @@ def CustomObject(DerivedObject):
 def ObjectWithClassMetadataAttributes():
     @archetype
     class ObjectWithClassMetadataAttributes(Object.Base):
-        # collection_type: type[Collection] = metadata(typespec=True)
-        collection_type = metadata(typespec=True)
+        collection_type: type[Collection] = metadata(typespec=True)
 
     return ObjectWithClassMetadataAttributes
 
