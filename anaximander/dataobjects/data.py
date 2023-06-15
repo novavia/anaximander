@@ -1,5 +1,4 @@
 from typing import ClassVar, Optional, Union
-from attr import has
 
 from frozendict import frozendict
 

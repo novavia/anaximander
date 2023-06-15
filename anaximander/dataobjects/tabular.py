@@ -19,7 +19,8 @@ from .models import Record, Fact, Sample, Event, Transition, Session, Journal
 
 @archetype
 class Table(DataObject):
-    modeltype: type[nxmodel] = metadata(typespec=True)
+    # modeltype: type[nxmodel] = metadata(typespec=True)
+    modeltype = metadata(typespec=True)
     datascope: Optional[DataScope] = metadata(objectspec=True)
 
     def __init__(

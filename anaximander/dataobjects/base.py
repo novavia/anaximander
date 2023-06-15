@@ -1,8 +1,8 @@
 from copy import copy
-from typing import ClassVar
 import pandas as pd
 
 from ..descriptors import option, metamethod
+
 from ..meta import Object, archetype
 
 

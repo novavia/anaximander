@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 import dataclasses
-from typing import Optional, Union
+from typing import Optional, Union, dataclass_transform
 
 from pydantic import BaseModel
 import pandas as pd
@@ -11,6 +11,7 @@ from ..utilities.nxdataclasses import DataClass
 from ..descriptors.base import DescriptorRegistry
 from ..descriptors.schema import DataSchema
 from ..descriptors import metadata, metamethod, metaproperty
+
 
 from ..meta import archetype, metamorph, trait
 

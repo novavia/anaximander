@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.11"
 frozendict = "^2.3"
 pandas = "^1.4"
 pydantic = "^1.9"

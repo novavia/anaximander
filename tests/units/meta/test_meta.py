@@ -44,14 +44,14 @@ def TestObject():
         def square(cls, param):
             @classmethod
             def method(cls_):
-                return param ** 2
+                return param**2
 
             return method
 
         @metamethod
         def cube(cls, param, **metadata):
             def owner_method(self):
-                return param ** 3
+                return param**3
 
             def no_owner_method(self):
                 return NotImplemented
@@ -264,7 +264,8 @@ def CustomObject(DerivedObject):
 def ObjectWithClassMetadataAttributes():
     @archetype
     class ObjectWithClassMetadataAttributes(Object.Base):
-        collection_type: type[Collection] = metadata(typespec=True)
+        # collection_type: type[Collection] = metadata(typespec=True)
+        collection_type = metadata(typespec=True)
 
     return ObjectWithClassMetadataAttributes
 

@@ -35,7 +35,8 @@ from .data import Data
 # Series.
 @archetype
 class Column(DataObject):
-    datatype: type[Data] = metadata(typespec=True)
+    # datatype: type[Data] = metadata(typespec=True)
+    datatype = metadata(typespec=True)
     index_schema: Optional[IndexSchema] = metadata(objectspec=True)
     datascope: Optional[DataScope] = metadata(objectspec=True)
 
