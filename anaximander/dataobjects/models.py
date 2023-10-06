@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 import dataclasses
-from typing import Optional, Union, dataclass_transform
+from typing import Optional, Union
 
 from pydantic import BaseModel
 import pandas as pd
