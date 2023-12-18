@@ -1,23 +1,16 @@
-from typing import ClassVar, Optional, Union
+from typing import Optional, Union
 
-from frozendict import frozendict
-
-from ..descriptors.base import DescriptorRegistry, SettingRegistry
-from ..descriptors.datatypes import nxdata, nxmodel
-from ..descriptors.dataspec import DataSpec
-from ..descriptors.schema import IndexSchema
-from ..descriptors.scope import DataScope
 from ..descriptors import (
-    metadata,
-    metamethod,
     _dataspec_keys,
     _pydantic_validator_keys,
+    metadata,
+    metamethod,
 )
-
+from ..descriptors.base import DescriptorRegistry, SettingRegistry
+from ..descriptors.dataspec import DataSpec
+from ..descriptors.datatypes import nxdata, nxmodel
 from ..meta import archetype
-
 from .base import DataObject
-
 
 NoneType = type(None)
 
