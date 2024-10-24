@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 import pydantic
 from pydantic.fields import FieldInfo
-from pyparsing import Opt
 
 from ..utilities.functions import (
     freeze,
