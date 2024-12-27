@@ -1,0 +1,11 @@
+
+
+Hello Frieda!
+
+
+I'm happy to inform you that you did very well on today's Python Challenge.
+
+You reached 92 out of 100 points.
+
+See you tomorrow!
+Anke

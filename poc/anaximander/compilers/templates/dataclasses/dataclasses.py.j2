@@ -1,0 +1,18 @@
+from dataclasses import dataclass
+
+{% macro field(metadescriptor) -%}
+    {{metadescriptor.name}}: {{metadescriptor.hint}}
+{%- endmacro %}
+
+{% macro dataclass(modeltype) -%}
+@dataclass
+class {{modeltype.__name__}}:
+{% for metadescriptor in modeltype.metadescriptors().values() %}
+    {{ field(metadescriptor) }}
+{% endfor %}
+{%- endmacro %}
+
+
+{% for modeltype in compiler.modeltypes -%}
+    {{ dataclass(modeltype) }}
+{% endfor %}

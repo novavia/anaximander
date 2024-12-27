@@ -1,0 +1,10 @@
+{% macro field(metadescriptor) -%}
+    {{metadescriptor.name}}: {{metadescriptor.hint}}
+{%- endmacro %}
+
+{% macro modelclass(modeltype) -%}
+class {{modeltype.__name__}}(BaseModel):
+{% for metadescriptor in modeltype.metadescriptors().values() %}
+    {{ field(metadescriptor) }}
+{% endfor %}
+{%- endmacro %}
