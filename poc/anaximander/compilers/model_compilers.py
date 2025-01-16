@@ -1,4 +1,4 @@
-from . import ModuleCompiler
+from .bases import ModuleCompiler
 
 
 class DataclassCompiler(ModuleCompiler, handle="dataclasses"):
@@ -6,4 +6,8 @@ class DataclassCompiler(ModuleCompiler, handle="dataclasses"):
 
 
 class PydanticCompiler(ModuleCompiler, handle="pydantic"):
+    pass
+
+
+class SQLAlchemyCompiler(ModuleCompiler, handle="sqlalchemy"):
     pass

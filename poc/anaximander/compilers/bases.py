@@ -5,7 +5,7 @@ import sys
 
 from jinja2 import Environment, PackageLoader, Template
 
-from ..aml.modeltype import modeltype
+from ..aml import Model
 
 J2ENV = Environment(
     loader=PackageLoader("anaximander.compilers"), trim_blocks=True, lstrip_blocks=True
@@ -52,23 +52,18 @@ class ModuleCompiler:
         return Path(self.module.__spec__.origin)
 
     @property
-    def destination_path(self) -> Path:
-        if self.destination is None:
-            return None
-        return (self.destination / self.module.__name__).with_suffix(".py")
-
-    @property
-    def modeltypes(self) -> list[modeltype]:
+    def modeltypes(self) -> list[type[Model]]:
         rval = []
         for k, v in self.module.__dict__.items():
-            if isinstance(v, modeltype):
-                if self.handle in v.__compilations__:
-                    rval.append(v)
+            if isinstance(v, type):
+                if issubclass(v, Model):
+                    if self.handle in v.__compilations__:
+                        rval.append(v)
         return rval
 
     def __call__(self, **kwargs):
         code = self.template.render(compiler=self, **kwargs)
-        if write_path := self.destination_path:
+        if write_path := self.destination:
             write_path.parent.mkdir(parents=True, exist_ok=True)
             with open(write_path, "w") as f:
                 f.write(code)
@@ -138,6 +133,6 @@ class ProjectCompiler:
             compiler_class = ModuleCompiler[handle]
             for mpath in self.modules():
                 relative_path = mpath.relative_to(models_path)
-                destination = (compile_path / "{handle}" / relative_path).as_posix()
+                destination = (compile_path / f"{handle}_" / relative_path).as_posix()
                 module_compiler = compiler_class.from_path(mpath, destination=destination)
                 module_compiler(**kwargs)
