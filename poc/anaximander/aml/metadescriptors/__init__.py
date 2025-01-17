@@ -1,3 +1,3 @@
-from .datatypes import dataobject, data, model  #noqa
-from .base import metadescriptor, dataobject_metadescriptor  #noqa
-from .modeldescriptors import field, relationship
+from .datatypes import dataobject, data, model  # noqa
+from .base import Metadescriptor, DataobjectMetadescriptor  # noqa
+from .modeldescriptors import Field, field, relationship

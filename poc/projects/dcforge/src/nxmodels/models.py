@@ -4,10 +4,11 @@ import anaximander as nx
 @nx.compile("dataclasses")
 @nx.compile("pydantic")
 class MyModel(nx.Model):
-    x: int = nx.field()
-    y: list[str] = nx.field()
-    z: str | None = nx.field()
+    x: int = nx.Field()
+    y: list[str] = nx.Field()
+    z: str | None = nx.Field()
+
 
 @nx.compile("pydantic")
 class MySubModel(MyModel):
-    z: int = nx.field()
+    z: int = nx.Field()

@@ -1,1 +1,1 @@
-from .aml import Model, compile, field, relationship
+from .aml import Field, Model, compile, relationship

@@ -1,8 +1,8 @@
-from anaximander.aml.metadescriptors.modeldescriptors import field
+from anaximander.aml.metadescriptors.modeldescriptors import Field, field
 from anaximander.aml.prototypes.model import Model, compile
 
 
-class derived_field(field):
+class DerivedField(Field):
     pass
 
 
@@ -12,7 +12,7 @@ class C(Model):
 
 
 class D(C):
-    y: int = derived_field()
+    y: int = DerivedField()  # type: ignore
 
 
 def test_compile():
@@ -23,4 +23,4 @@ def test_metadescriptors():
     assert C.metadescriptors() == {"x": C.x}
     assert D.metadescriptors() == {"x": C.x, "y": D.y}
     assert D.metadescriptors(inherited=False) == {"y": D.y}
-    assert D.metadescriptors(derived_field) == {"y": D.y}
+    assert D.metadescriptors(DerivedField) == {"y": D.y}

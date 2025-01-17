@@ -1,19 +1,20 @@
 import pytest
+from anaximander.aml.metadescriptors.base import Metadescriptor
 
-from anaximander.aml.metadescriptors.base import metadescriptor
 
 class C:
-    x: int = metadescriptor()
+    x: int = Metadescriptor()  # type: ignore
 
 
-class restricted_metadescriptor(metadescriptor):
+class restricted_metadescriptor(Metadescriptor):
     __reserved_names__ = ["x"]
 
 
 def test_set_name():
-    assert metadescriptor.__reserved_names__ == set()
+    assert Metadescriptor.__reserved_names__ == set()
     assert restricted_metadescriptor.__reserved_names__ == {"x"}
-    assert C.x.name == "x"
+    assert C.x.name == "x"  # type: ignore
     with pytest.raises(ValueError):
+
         class D:
-            x: int = restricted_metadescriptor()
+            x: int = restricted_metadescriptor()  # type: ignore

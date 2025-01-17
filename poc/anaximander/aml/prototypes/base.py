@@ -1,6 +1,6 @@
 from abc import ABCMeta
 
-from ..metadescriptors import metadescriptor
+from ..metadescriptors import Metadescriptor
 
 
 class Prototype(ABCMeta):
@@ -10,14 +10,14 @@ class Prototype(ABCMeta):
         super().__init__(name, bases, attrs)
         cls.__compilations__ = {}
 
-    def metadescriptors(cls, *types: type[metadescriptor], inherited: bool = True):
+    def metadescriptors(cls, *types: type[Metadescriptor], inherited: bool = True):
         """Returns a dictionary of metadescriptors of the supplied types.
 
         If inherited is set to True, metadescriptors declared in parent models are included.
         Otherwise, only the metadescriptors directly declared by cls are returned.
         """
         if not types:
-            types = (metadescriptor,)
+            types = (Metadescriptor,)
         cls_metadescriptors = {k: v for k, v in cls.__dict__.items() if isinstance(v, types)}
         if inherited:
             parent = cls.mro()[1]
