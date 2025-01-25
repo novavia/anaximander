@@ -57,5 +57,5 @@ class TypedMetadescriptor(Metadescriptor):
 class DataobjectMetadescriptor(TypedMetadescriptor):
     hint: type[dataobject] | GenericAlias | UnionType = attrs.field(init=False)
 
-    def validate_hint(self, hint: Any) -> bool:
-        return dataobject.validate_hint(hint)
+    # def validate_hint(self, hint: Any) -> bool:
+    #     return dataobject.validate_hint(hint)

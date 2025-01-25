@@ -1,6 +1,6 @@
 from typing import Callable, TypeVar, dataclass_transform
 
-from ..metadescriptors import Field, field, model
+from ..metadescriptors import Field, datatypes, field
 from .base import Prototype
 
 
@@ -11,7 +11,7 @@ class ModelType(Prototype):
 
 
 @dataclass_transform(field_specifiers=(Field, field))
-class Model(model, metaclass=ModelType):
+class Model(datatypes.Model, metaclass=ModelType):
     pass
 
 

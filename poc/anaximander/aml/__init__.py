@@ -1,9 +1,12 @@
-from .metadescriptors import (
-    Field,
+from .data import Data
+from .meta import (
     Metadescriptor,
+    Prototype,
+    compile,
     data,
     dataobject,
     model,
-    relationship,
+    prototype,
 )
-from .prototypes import Data, Model, Prototype, compile
+from .model import Model
+from .modeldescriptors import field, relationship

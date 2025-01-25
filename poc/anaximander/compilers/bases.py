@@ -1,27 +1,19 @@
 from pathlib import Path
 from types import ModuleType
-import importlib.util
-import sys
 
 from jinja2 import Environment, PackageLoader, Template
 
+from .. import Project
 from ..aml import Model
 
 J2ENV = Environment(
     loader=PackageLoader("anaximander.compilers"), trim_blocks=True, lstrip_blocks=True
 )
 
-def import_from_path(module_name: str, file_path: Path | str):
-    """Programatically imports a module from its name and file path."""
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
 
 class ModuleCompiler:
     """Encapsulates the steps to compile a module."""
+
     __types__ = {}
 
     def __init_subclass__(cls, handle: str):
@@ -33,23 +25,14 @@ class ModuleCompiler:
     def __class_getitem__(cls, key):
         return cls.__types__[key]
 
-    def __init__(self, module: ModuleType, destination: Path | str = None):
+    def __init__(self, module: ModuleType, destination: Path | str | None = None):
         self.module = module
         self.destination = Path(destination) if destination else None
-
-    @classmethod
-    def from_path(cls, path: Path | str, destination: Path | str = None):
-        module = import_from_path(path.stem, path)
-        return cls(module, destination)
 
     @property
     def template(self) -> Template:
         template_name = f"{self.handle}/{self.handle}.py.j2"
         return J2ENV.get_template(template_name)
-
-    @property
-    def source_path(self) -> Path:
-        return Path(self.module.__spec__.origin)
 
     @property
     def modeltypes(self) -> list[type[Model]]:
@@ -70,69 +53,35 @@ class ModuleCompiler:
         return code
 
 
-# TODO: probably unnecessary, but a more pertinent architecture would be to design
-# the PackageCompiler based on compilation handles -i.e. map to the destination packages
-# rather than the input packages.
-
-# class PackageCompiler:
-
-#     def __init__(self, package: ModuleType, *compilations: str, destination: str = None):
-#         self.package = package
-#         self.compilations = list(compilations) or list(ModuleCompiler.__types__)
-#         self.destination = destination
-
-#     @classmethod
-#     def from_path(cls, path: Path | str, *compilations: str, destination: Path | str = None):
-#         sys.path.append(path.parent.as_posix())
-#         import_module(path.stem)
-#         package = sys.modules[path.stem]
-#         sys.path.remove(path.parent.as_posix())
-#         return cls(package, *compilations, destination=destination)
-
-#     @property
-#     def source_path(self):
-#         return Path(self.package.__path__[-1])
-
-#     def modules(self, recursive: bool = False):
-#         if recursive:
-#             module_paths = self.source_path.glob("**/*.py")
-#         else:
-#             module_paths = self.source_path.glob("*.py")
-#         return [import_from_path(mp.stem, mp) for mp in module_paths]
-
-#     def __call__(self, **kwargs):
-#         for handle in self.compilations:
-#             module_compiler_type = ModuleCompiler[handle]
-#             compile_path = self.destination.format(handle = (handle + "_"))
-#             for module in self.modules():
-#                 module_compiler = module_compiler_type(module, destination=compile_path)
-#                 module_compiler(**kwargs)
-
-
 class ProjectCompiler:
+    """Encapsulates the steps to compile a project."""
 
-    def __init__(self, path: Path | str, *compilations: str):
-        self.path = Path(path)
+    def __init__(self, project: Project, *compilations: str):
+        self.project = project
         self.compilations = list(compilations) or list(ModuleCompiler.__types__)
 
-    @property
-    def project_name(self):
-        return self.path.name
-
-    def modules(self):
-        models_path = self.path / "src/nxmodels"
-        return models_path.rglob("*.py")
-
     def __call__(self, **kwargs):
-        models_path = self.path / "src/nxmodels"
-        compile_path = self.path / f"src/{self.project_name}"
-        if not models_path.exists():
-            msg = f"Project {self.path.name} does not contain the requisite nxmodels folder."
-            raise FileNotFoundError(msg)
+        modules = self.project.import_nxmodels_modules()
+        models_path = self.project.models_path
+        compile_path = self.project.compile_path
         for handle in self.compilations:
             compiler_class = ModuleCompiler[handle]
-            for mpath in self.modules():
-                relative_path = mpath.relative_to(models_path)
+            for module in modules:
+                if not (spec := module.__spec__):
+                    raise RuntimeError(f"Module {module} has no spec.")
+                if not (origin := spec.origin):
+                    raise RuntimeError(f"Module {module} has no origin.")
+                module_path = Path(origin)
+                relative_path = module_path.relative_to(models_path)
                 destination = (compile_path / f"{handle}_" / relative_path).as_posix()
-                module_compiler = compiler_class.from_path(mpath, destination=destination)
+                module_compiler = compiler_class(module, destination=destination)
                 module_compiler(**kwargs)
+
+
+# Monkey patching Project to include a compile method.
+def _compile_project(self: Project, *compilations: str, **kwargs):
+    compiler = ProjectCompiler(self, *compilations)
+    compiler(**kwargs)
+
+
+Project.compile = _compile_project

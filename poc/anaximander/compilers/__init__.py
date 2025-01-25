@@ -1,2 +1,2 @@
-from .bases import ProjectCompiler, ModuleCompiler
-from . import model_compilers
+from .bases import ModuleCompiler, ProjectCompiler
+from .model_compilers import DataclassCompiler, PydanticCompiler, SQLAlchemyCompiler

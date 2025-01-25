@@ -1,11 +1,12 @@
+from ..metadescriptors import datatypes
 from .base import Prototype
-from ..metadescriptors import data
 
 
 class DataType(Prototype):
     """Metaclass for Data and its subclasses."""
+
     pass
 
 
-class Data(data, metaclass=DataType):
+class Data(datatypes.Data, metaclass=DataType):
     pass

@@ -2,9 +2,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Literal, Optional, get_type_hints
 
+from anaximander.aml.metadescriptors.datatypes import data, dataobject, model
 from pydantic import BaseModel
-
-from anaximander.aml.metadescriptors.datatypes import dataobject, data, model
 
 
 @dataclass
@@ -46,6 +45,7 @@ class E(D):
 
 
 def test_is_subclass():
+    assert isinstance(3, dataobject)
     assert issubclass(bool, dataobject)
     assert issubclass(bool, data)
     assert not issubclass(bool, model)
