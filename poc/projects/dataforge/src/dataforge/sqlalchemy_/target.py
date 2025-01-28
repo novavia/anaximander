@@ -36,7 +36,7 @@ class Facility(Base):
     """A customer facility where machines are located."""
 
     __tablename__ = "facilities"
-    id: Mapped[str] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True
     )

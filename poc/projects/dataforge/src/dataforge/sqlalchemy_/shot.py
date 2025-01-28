@@ -1,38 +1,71 @@
-from pydantic import BaseModel
+from typing import Any, List, Optional
 
-class Account(BaseModel):
-    name: 
-    facilities: 
-    groups: 
+from sqlalchemy import (
+    JSON,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
-class Facility(BaseModel):
-    account: 
-    name: 
-    groups: 
-    machines: 
+from . import Base
 
-class MachineGroup(BaseModel):
-    account: 
-    name: 
-    description: 
-    machines: 
+class Account(Base):
+    """A customer account, which also maps to an application tenant."""
 
-class Machine(BaseModel):
-    name: 
-    facility: 
-    group: 
-    mtype: 
-    spec: 
-    monitors: 
+    __tablename__ = "accounts"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[] = mapped_column()
 
-class Monitor(BaseModel):
-    machine: 
-    name: 
-    description: 
-    device: 
+class Facility(Base):
+    """A customer facility where machines are located."""
 
-class MonitoringDevice(BaseModel):
-    monitor: 
-    mac_id: 
-    hardware: 
+    __tablename__ = "facilitys"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    account: Mapped[] = mapped_column()
+    name: Mapped[] = mapped_column()
+
+class MachineGroup(Base):
+    """A (optional) hierchical grouping of machines."""
+
+    __tablename__ = "machinegroups"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    account: Mapped[] = mapped_column()
+    name: Mapped[] = mapped_column()
+    description: Mapped[] = mapped_column()
+
+class Machine(Base):
+    """A digital twin of an industrial machine."""
+
+    __tablename__ = "machines"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[] = mapped_column()
+    facility: Mapped[] = mapped_column()
+    group: Mapped[] = mapped_column()
+    mtype: Mapped[] = mapped_column()
+    spec: Mapped[] = mapped_column()
+
+class Monitor(Base):
+    """None"""
+
+    __tablename__ = "monitors"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    machine: Mapped[] = mapped_column()
+    name: Mapped[] = mapped_column()
+    description: Mapped[] = mapped_column()
+
+class MonitoringDevice(Base):
+    """None"""
+
+    __tablename__ = "monitoringdevices"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    monitor: Mapped[] = mapped_column()
+    mac_id: Mapped[] = mapped_column()
+    hardware: Mapped[] = mapped_column()
 

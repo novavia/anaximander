@@ -4,11 +4,25 @@ from types import ModuleType
 from jinja2 import Environment, PackageLoader, Template
 
 from .. import Project
-from ..aml import Model
+from ..aml import Metadescriptor, Model
+from ..utils.funcs import subclasses
 
 J2ENV = Environment(
     loader=PackageLoader("anaximander.compilers"), trim_blocks=True, lstrip_blocks=True
 )
+
+
+def get_macro(template, name):
+    macro = template._TemplateReference__context.vars[name]
+    if callable(macro):
+        return macro
+    raise ValueError(f"Macro '{name}' not found.")
+
+
+J2ENV.globals["get_macro"] = get_macro
+
+for meatadescriptor_type in subclasses(Metadescriptor, strict=False):
+    J2ENV.globals[meatadescriptor_type.__name__] = meatadescriptor_type
 
 
 class ModuleCompiler:

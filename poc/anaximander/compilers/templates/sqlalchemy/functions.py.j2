@@ -1,10 +1,14 @@
-{% macro field(metadescriptor) -%}
-    {{metadescriptor.name}}: {{metadescriptor.hint}}
+{% macro field_statement(field) -%}
+    {{field.name}}: Mapped[{{field.hint}}] = mapped_column()
 {%- endmacro %}
 
 {% macro modelclass(modeltype) -%}
-class {{modeltype.__name__}}(BaseModel):
-{% for metadescriptor in modeltype.metadescriptors().values() %}
-    {{ field(metadescriptor) }}
+class {{modeltype.__name__}}(Base):
+    """{{modeltype.__doc__}}"""
+
+    __tablename__ = "{{modeltype.__name__.lower()}}s"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+{% for field in modeltype.metadescriptors(Field).values() %}
+    {{field_statement(field)}}
 {% endfor %}
 {%- endmacro %}

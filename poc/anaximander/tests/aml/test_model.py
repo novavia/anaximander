@@ -11,3 +11,9 @@ class C(Model):
 def test_compile():
     assert C.__compilations__ == {"test": {}}
     assert C.metadescriptors(Field) == {"x": C.x}
+
+
+def test_set_annotation():
+    C.__set_type_annotations__()
+    assert C.x.annotation == "int"
+    assert C.x.hint == int

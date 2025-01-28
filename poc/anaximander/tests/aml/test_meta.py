@@ -1,6 +1,14 @@
+from dataclasses import dataclass
+from enum import Enum
+
 import pytest
-from anaximander.aml.meta import Metadescriptor, Prototype, data
-from beartype.door import is_bearable
+import runtype
+from anaximander.aml.meta import (
+    Metadescriptor,
+    Prototype,
+    data,
+    model,
+)
 
 
 class C:
@@ -9,6 +17,17 @@ class C:
 
 class RestrictedMetadescriptor(Metadescriptor):
     __reserved_names__ = ["x"]
+
+
+class Color(Enum):
+    red = "red"
+    green = "green"
+    blue = "blue"
+
+
+@dataclass
+class DC:
+    x: int
 
 
 def test_metadescriptor_set_name():
@@ -40,7 +59,15 @@ def test_prototype_metadescriptors():
 
 
 def test_data():
-    assert is_bearable(0, data)
-    assert is_bearable(0.0, data)
-    assert not is_bearable([0, 1], data)
-    assert not is_bearable(C(), data)
+    assert runtype.isa(0, data)
+    assert runtype.isa(0.0, data)
+    assert not runtype.isa([0, 1], data)
+    assert not runtype.isa(C(), data)
+    assert runtype.issubclass(int, data)
+    assert runtype.issubclass(Color, data)
+    assert not runtype.issubclass(C, data)
+
+
+def test_model():
+    assert not runtype.isa(C(), model)
+    assert runtype.issubclass(DC, model)

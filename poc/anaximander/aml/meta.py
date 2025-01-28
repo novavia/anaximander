@@ -3,10 +3,13 @@
 import datetime
 from abc import ABC, ABCMeta
 from collections.abc import Collection
-from typing import Any, Callable, ClassVar, Protocol, TypeVar
+from enum import Enum
+from typing import Any, Callable, ClassVar, TypeVar, get_type_hints
 
 import attrs
-from pydantic import BaseModel
+from annotationlib import Format, get_annotations
+
+# from pydantic import BaseModel   # pydantic not yet compatible with python 3.14
 
 
 @attrs.define
@@ -38,6 +41,9 @@ class Metadescriptor(ABC):
         self.name = name
 
 
+M = TypeVar("M", bound=Metadescriptor)
+
+
 class Prototype(ABCMeta):
     """Metaclass for model and data declarative types."""
 
@@ -45,14 +51,14 @@ class Prototype(ABCMeta):
         super().__init__(name, bases, attrs)
         cls.__compilations__: dict[str, dict] = {}
 
-    def metadescriptors(cls, *types: type[Metadescriptor], inherited: bool = True):
+    def metadescriptors(cls, *types: type[M], inherited: bool = True) -> dict[str, M]:
         """Returns a dictionary of metadescriptors of the supplied types.
 
         If inherited is set to True, metadescriptors declared in parent models are included.
         Otherwise, only the metadescriptors directly declared by cls are returned.
         """
         if not types:
-            types = (Metadescriptor,)
+            types = (Metadescriptor,)  # type: ignore
         cls_metadescriptors = {k: v for k, v in cls.__dict__.items() if isinstance(v, types)}
         if inherited:
             parent = cls.mro()[1]
@@ -66,17 +72,58 @@ class Prototype(ABCMeta):
             metadescriptors = cls_metadescriptors
         return metadescriptors
 
+    def __set_type_annotations__(cls):
+        """Sets type annotations on typed metadescriptors."""
+        annotations = get_annotations(cls, format=Format.STRING)
+        superhints = get_type_hints(cls)  # This includes super classes
+        metadescriptors = cls.metadescriptors(TypedMetadescriptor, inherited=False)
+        for name, metadescriptor in metadescriptors.items():
+            metadescriptor.annotation = annotations.get(name, "")
+            metadescriptor.hint = superhints.get(name, None)
+
 
 class DataABC(ABC):
     """Abstract base class for data types."""
 
-    pass
+    __primitives__ = (
+        bool,
+        int,
+        float,
+        str,
+        bytes,
+        datetime.date,
+        datetime.datetime,
+        datetime.time,
+        datetime.timedelta,
+    )
+
+    @classmethod
+    def __subclasshook__(cls, subclass: type) -> bool:
+        if issubclass(subclass, Enum):
+            return all(isinstance(m._value_, cls) for m in subclass.__members__.values())
+        return super().__subclasshook__(subclass)
+
+
+for primitive in DataABC.__primitives__:
+    DataABC.register(primitive)
+
+data = DataABC  # literal alias for enhanced readability
 
 
 class ModelABC(ABC):
     """Abstract base class for model types."""
 
-    pass
+    @classmethod
+    def __subclasshook__(cls, subclass: type) -> bool:
+        # case dataclass
+        if hasattr(subclass, "__dataclass_fields__"):
+            return True
+        return super().__subclasshook__(subclass)
+
+
+# ModelABC.register(BaseModel)  # pydantic not yet compatible with python 3.14
+
+model = ModelABC  # literal alias for enhanced readability
 
 
 class DataObjectABC(ABC):
@@ -90,29 +137,14 @@ class DataObjectABC(ABC):
     pass
 
 
-type data = (
-    DataABC
-    | bool
-    | int
-    | float
-    | str
-    | bytes
-    | datetime.date
-    | datetime.datetime
-    | datetime.time
-    | datetime.timedelta
-)
+DataObjectABC.register(DataABC)
+DataObjectABC.register(ModelABC)
 
 
-class Dataclass(Protocol):
-    __dataclass_fields__: ClassVar[dict[str, Any]]
+prototype = type[DataABC] | type[ModelABC]
 
+type dataobject = DataObjectABC | DataABC | ModelABC | Collection[dataobject]
 
-type model = ModelABC | BaseModel | Dataclass
-
-type prototype = type[DataABC] | type[model]
-
-type dataobject = DataObjectABC | data | model | Collection[dataobject]
 
 P = TypeVar("P", bound=prototype)
 
@@ -132,9 +164,10 @@ def compile(*compilers: str, **kwargs) -> Callable[[P], P]:
 
 @attrs.define
 class TypedMetadescriptor(Metadescriptor):
-    hint: Any = attrs.field(init=False)
+    annotation: str = attrs.field(init=False)  # Literal type annotation as a string
+    hint: Any = attrs.field(init=False)  # Evaluated type annotation
 
 
 @attrs.define
 class DataobjectMetadescriptor(TypedMetadescriptor):
-    hint: type[dataobject] = attrs.field(init=False)
+    hint: dataobject = attrs.field(init=False)
