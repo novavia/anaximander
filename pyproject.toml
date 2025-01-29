@@ -29,6 +29,7 @@ cookiecutter = "^2.6.0"
 sqlalchemy = "^2.0.36"
 psycopg2 = "^2.9.10"
 runtype = "^0.5.2"
+inflect = "^7.5.0"
 
 [tool.poetry.dev-dependencies]
 black = "*"

@@ -9,4 +9,19 @@ from .meta import (
     prototype,
 )
 from .model import Model
-from .modeldescriptors import field, relationship
+from .modeldescriptors import field, parent, query
+
+__all__ = [
+    "Data",
+    "Metadescriptor",
+    "Prototype",
+    "compile",
+    "data",
+    "dataobject",
+    "model",
+    "prototype",
+    "Model",
+    "field",
+    "parent",
+    "query",
+]

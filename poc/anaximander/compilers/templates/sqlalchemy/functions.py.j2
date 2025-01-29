@@ -1,14 +1,20 @@
 {% macro field_statement(field) -%}
-    {{field.name}}: Mapped[{{field.hint}}] = mapped_column()
+    {{field.name}}: Mapped[{{field.annotation}}] = mapped_column()
 {%- endmacro %}
+
+
 
 {% macro modelclass(modeltype) -%}
 class {{modeltype.__name__}}(Base):
+    {% if modeltype.__doc__ %}
     """{{modeltype.__doc__}}"""
 
-    __tablename__ = "{{modeltype.__name__.lower()}}s"
+    {% endif %}
+    __tablename__ = "{{modeltype.collection_name}}"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 {% for field in modeltype.metadescriptors(Field).values() %}
     {{field_statement(field)}}
 {% endfor %}
-{%- endmacro %}
+
+
+{% endmacro %}

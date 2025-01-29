@@ -9,8 +9,9 @@ from .aml import (
     dataobject,
     field,
     model,
+    parent,
     prototype,
-    relationship,
+    query,
 )
 from .compilers import ProjectCompiler
 
@@ -26,7 +27,8 @@ __all__ = [
     "dataobject",
     "field",
     "model",
+    "parent",
     "prototype",
-    "relationship",
+    "query",
     "ProjectCompiler",
 ]

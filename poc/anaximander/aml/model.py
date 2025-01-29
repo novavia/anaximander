@@ -1,7 +1,7 @@
 from typing import dataclass_transform
 
-from .meta import ModelABC, Prototype
-from .modeldescriptors import Field, field
+from .meta import DataobjectMetadescriptor, ModelABC, Prototype
+from .modeldescriptors import field, parent, query
 
 
 class ModelType(Prototype):
@@ -10,6 +10,6 @@ class ModelType(Prototype):
     pass
 
 
-@dataclass_transform(field_specifiers=(Field, field))
+@dataclass_transform(field_specifiers=(DataobjectMetadescriptor, field, parent, query))
 class Model(ModelABC, metaclass=ModelType):
     pass

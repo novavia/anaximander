@@ -9,6 +9,8 @@ from typing import Any, Callable, ClassVar, TypeVar, get_type_hints
 import attrs
 from annotationlib import Format, get_annotations
 
+from ..utils.funcs import type_name_to_collection_name
+
 # from pydantic import BaseModel   # pydantic not yet compatible with python 3.14
 
 
@@ -80,6 +82,14 @@ class Prototype(ABCMeta):
         for name, metadescriptor in metadescriptors.items():
             metadescriptor.annotation = annotations.get(name, "")
             metadescriptor.hint = superhints.get(name, None)
+
+    @property
+    def collection_name(cls):
+        """A collection name using camel case and pluralization.
+
+        This can be customized by passing metadata (#TODO).
+        """
+        return type_name_to_collection_name(cls.__name__)
 
 
 class DataABC(ABC):

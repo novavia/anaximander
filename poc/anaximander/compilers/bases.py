@@ -4,7 +4,7 @@ from types import ModuleType
 from jinja2 import Environment, PackageLoader, Template
 
 from .. import Project
-from ..aml import Metadescriptor, Model
+from ..aml import Metadescriptor, Model, Prototype
 from ..utils.funcs import subclasses
 
 J2ENV = Environment(
@@ -75,7 +75,14 @@ class ProjectCompiler:
         self.compilations = list(compilations) or list(ModuleCompiler.__types__)
 
     def __call__(self, **kwargs):
+        # Perform imports
         modules = self.project.import_nxmodels_modules()
+        # Resolve and assign type annotations
+        for module in modules:
+            for k, v in module.__dict__.items():
+                if isinstance(v, Prototype):
+                    v.__set_type_annotations__()
+        # Compile modules
         models_path = self.project.models_path
         compile_path = self.project.compile_path
         for handle in self.compilations:

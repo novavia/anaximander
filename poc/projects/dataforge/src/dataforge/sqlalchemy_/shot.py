@@ -16,56 +16,53 @@ from sqlalchemy.orm import (
 
 from . import Base
 
+
 class Account(Base):
     """A customer account, which also maps to an application tenant."""
 
     __tablename__ = "accounts"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[] = mapped_column()
+    name: Mapped[str] = mapped_column()
+
 
 class Facility(Base):
     """A customer facility where machines are located."""
 
-    __tablename__ = "facilitys"
+    __tablename__ = "facilities"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    account: Mapped[] = mapped_column()
-    name: Mapped[] = mapped_column()
+    name: Mapped[str] = mapped_column()
+
 
 class MachineGroup(Base):
-    """A (optional) hierchical grouping of machines."""
+    """An (optional) hierchical grouping of machines."""
 
-    __tablename__ = "machinegroups"
+    __tablename__ = "machine_groups"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    account: Mapped[] = mapped_column()
-    name: Mapped[] = mapped_column()
-    description: Mapped[] = mapped_column()
+    name: Mapped[str] = mapped_column()
+    description: Mapped[str] = mapped_column()
+
 
 class Machine(Base):
     """A digital twin of an industrial machine."""
 
     __tablename__ = "machines"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[] = mapped_column()
-    facility: Mapped[] = mapped_column()
-    group: Mapped[] = mapped_column()
-    mtype: Mapped[] = mapped_column()
-    spec: Mapped[] = mapped_column()
+    name: Mapped[str] = mapped_column()
+    mtype: Mapped[str] = mapped_column()
+    spec: Mapped[dict] = mapped_column()
+
 
 class Monitor(Base):
-    """None"""
-
     __tablename__ = "monitors"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    machine: Mapped[] = mapped_column()
-    name: Mapped[] = mapped_column()
-    description: Mapped[] = mapped_column()
+    name: Mapped[str] = mapped_column()
+    description: Mapped[str] = mapped_column()
+
 
 class MonitoringDevice(Base):
-    """None"""
-
-    __tablename__ = "monitoringdevices"
+    __tablename__ = "monitoring_devices"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    monitor: Mapped[] = mapped_column()
-    mac_id: Mapped[] = mapped_column()
-    hardware: Mapped[] = mapped_column()
+    mac_id: Mapped[str] = mapped_column()
+    hardware: Mapped[dict] = mapped_column()
+
 

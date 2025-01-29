@@ -17,6 +17,7 @@ from sqlalchemy.orm import (
 
 from . import Base
 
+
 {% for modeltype in compiler.modeltypes -%}
     {{ functions.modelclass(modeltype) }}
-{% endfor %}
+{%- endfor %}
