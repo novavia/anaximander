@@ -92,7 +92,22 @@ class Project:
             raise FileNotFoundError(msg)
         if self.app_models_path not in sys.path:
             sys.path.insert(0, self.app_models_path.as_posix())
-        return self._import_from_directory(self.app_models_path)
+        modules = self._import_from_directory(self.app_models_path)
+        # Next we validate that no import targets the original modules in the nxmodels
+        # directory, which could be the case if absolute imports are used
+        for name, module in sys.modules.items():
+            try:
+                module_path = Path(module.__file__)  # type: ignore
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if module_path.is_relative_to(self.models_path):
+                msg = (
+                    "Modules in the nxmodels directory that import other modules in that "
+                    + f"directory must use relative syntax. {name} in module "
+                    + f"{module.__name__} does not."
+                )
+                raise ImportError(msg)
+        return modules
 
     def copy_nxmodels_modules(self):
         """Copies modules from the src/nxmodels directory to the application directory."""

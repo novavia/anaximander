@@ -1,3 +1,4 @@
+import pytest
 from anaximander import NXPATH, Project
 
 TESTDIR = NXPATH / "tests"
@@ -5,6 +6,7 @@ TESTDATA = TESTDIR / "testdata"
 
 SIMPLE_PROJECT_PATH = TESTDATA / "projects/simple_project"
 COMPLEX_PROJECT_PATH = TESTDATA / "projects/complex_project"
+BAD_IMPORTS_PROJECT_PATH = TESTDATA / "projects/bad_imports"
 
 
 def test_project_name():
@@ -24,18 +26,6 @@ def test_project_compile_path():
     assert project.compile_path.exists()
 
 
-def test_import_nxmodels_modules():
-    simple_project = Project(path=SIMPLE_PROJECT_PATH)
-    modules = simple_project.import_nxmodels_modules()
-    assert len(modules) == 1
-    assert modules[0].__name__ == "models"
-    complex_project = Project(path=COMPLEX_PROJECT_PATH)
-    modules = complex_project.import_nxmodels_modules()
-    assert len(modules) == 10
-    assert modules[0].__name__ == "package.subpackage.__init__"
-    assert modules[-1].__name__ == "top_level_module"
-
-
 def test_copy_nxmodels_modules():
     simple_project = Project(path=SIMPLE_PROJECT_PATH)
     simple_project.copy_nxmodels_modules()
@@ -44,3 +34,21 @@ def test_copy_nxmodels_modules():
     complex_project.copy_nxmodels_modules()
     assert (complex_project.compile_path / "nxmodels_/package/subpackage/__init__.py").exists()
     assert (complex_project.compile_path / "nxmodels_/top_level_module.py").exists()
+
+
+def test_import_nxmodels_modules():
+    simple_project = Project(path=SIMPLE_PROJECT_PATH)
+    simple_project.copy_nxmodels_modules()
+    modules = simple_project.import_nxmodels_modules()
+    assert len(modules) == 1
+    assert modules[0].__name__ == "models"
+    complex_project = Project(path=COMPLEX_PROJECT_PATH)
+    complex_project.copy_nxmodels_modules()
+    modules = complex_project.import_nxmodels_modules()
+    assert len(modules) == 10
+    assert modules[0].__name__ == "package.subpackage.__init__"
+    assert modules[-1].__name__ == "top_level_module"
+    bad_imports_project = Project(path=BAD_IMPORTS_PROJECT_PATH)
+    bad_imports_project.copy_nxmodels_modules()
+    with pytest.raises(ImportError):
+        bad_imports_project.import_nxmodels_modules()
