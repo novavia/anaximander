@@ -1,6 +1,12 @@
+from enum import Enum
 from typing import Optional
 
 import anaximander as nx
+
+
+class MachineType(Enum):
+    MOTOR = "motor"
+    PUMP = "pump"
 
 
 @nx.compile("sqlalchemy")
@@ -30,7 +36,7 @@ class MachineGroup(nx.Model):
 
     account: Account = nx.parent(key=True)
     name: str = nx.field(key=True)
-    description: str = nx.field()
+    description: str | None = nx.field()
 
     machines: list["Machine"] = nx.query()
 

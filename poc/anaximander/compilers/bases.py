@@ -1,10 +1,13 @@
+from abc import ABC
+from functools import singledispatchmethod
 from pathlib import Path
 from types import ModuleType
 
 from jinja2 import Environment, PackageLoader, Template
 
 from .. import Project
-from ..aml import Metadescriptor, Model, Prototype
+from ..aml.meta import Metadescriptor, set_type_annotations
+from ..aml.model import Model
 from ..utils.funcs import subclasses
 
 J2ENV = Environment(
@@ -25,7 +28,7 @@ for meatadescriptor_type in subclasses(Metadescriptor, strict=False):
     J2ENV.globals[meatadescriptor_type.__name__] = meatadescriptor_type
 
 
-class ModuleCompiler:
+class ModuleCompiler(ABC):
     """Encapsulates the steps to compile a module."""
 
     __types__ = {}
@@ -58,6 +61,17 @@ class ModuleCompiler:
                         rval.append(v)
         return rval
 
+    @classmethod
+    def _print_descriptor(cls, name: str, type: str | None, assignment: str | None) -> str:
+        return f"{name}{f': {type}' if type else ''}{f' = {assignment}' if assignment else ''}"
+
+    @singledispatchmethod
+    def descriptor(self, metadescriptor: Metadescriptor) -> str:
+        name = metadescriptor.name
+        type = None
+        assignment = None
+        return self._print_descriptor(name, type, assignment)
+
     def __call__(self, **kwargs):
         code = self.template.render(compiler=self, **kwargs)
         if write_path := self.destination:
@@ -75,15 +89,15 @@ class ProjectCompiler:
         self.compilations = list(compilations) or list(ModuleCompiler.__types__)
 
     def __call__(self, **kwargs):
+        # Copies model files into the application code
+        self.project.copy_nxmodels_modules()
         # Perform imports
         modules = self.project.import_nxmodels_modules()
         # Resolve and assign type annotations
         for module in modules:
-            for k, v in module.__dict__.items():
-                if isinstance(v, Prototype):
-                    v.__set_type_annotations__()
+            set_type_annotations(module)
         # Compile modules
-        models_path = self.project.models_path
+        models_path = self.project.app_models_path
         compile_path = self.project.compile_path
         for handle in self.compilations:
             compiler_class = ModuleCompiler[handle]

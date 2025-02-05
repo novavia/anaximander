@@ -26,6 +26,36 @@ class Project:
     def compile_path(self) -> Path:
         return self.path / f"src/{self.name}"
 
+    @property
+    def app_models_path(self) -> Path:
+        return self.compile_path / "nxmodels_"
+
+    @classmethod
+    def _collect_from_directory(cls, directory: Path) -> list[Path]:
+        """Primitive method for collect_nxmodels_modules.
+
+        Args:
+            directory (Path): The directory containing python files to import.
+
+        Returns:
+            list[Path]: A list of module file paths.
+        """
+        module_paths = []
+        subdirectories = directory.glob("*/")
+        for sub in subdirectories:
+            if sub.name == "__pycache__":
+                continue
+            module_paths.extend(cls._collect_from_directory(sub))
+        module_paths.extend(directory.glob("*.py"))
+        return module_paths
+
+    def collect_nxmodels_modules(self) -> list[Path]:
+        """Collects modules from the nxmodels directory."""
+        if not self.models_path.exists():
+            msg = f"Project {self.name} does not contain the requisite nxmodels folder."
+            raise FileNotFoundError(msg)
+        return self._collect_from_directory(self.models_path)
+
     @classmethod
     def _import_from_directory(
         cls, directory: Path, package: str | None = None
@@ -56,13 +86,23 @@ class Project:
         return modules
 
     def import_nxmodels_modules(self) -> list[ModuleType]:
-        """Imports the modules in the project's src/nxmodels directory."""
-        if not self.models_path.exists():
-            msg = f"Project {self.name} does not contain the requisite nxmodels folder."
+        """Imports the modules in the project's src/<project>/api/nxmodels_ directory."""
+        if not self.app_models_path.exists():
+            msg = f"Project {self.name} does not contain the requisite nxmodels_ folder."
             raise FileNotFoundError(msg)
-        if self.models_path not in sys.path:
-            sys.path.insert(0, self.models_path.as_posix())
-        return self._import_from_directory(self.models_path)
+        if self.app_models_path not in sys.path:
+            sys.path.insert(0, self.app_models_path.as_posix())
+        return self._import_from_directory(self.app_models_path)
+
+    def copy_nxmodels_modules(self):
+        """Copies modules from the src/nxmodels directory to the application directory."""
+        models_path = self.models_path
+        copy_path = self.app_models_path
+        for module_path in self.collect_nxmodels_modules():
+            relative_path = module_path.relative_to(models_path)
+            destination = copy_path / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            module_path.copy(destination)
 
     def compile(self, *compilations: str, **kwargs):
         """Compiles the project using the specified compilers."""

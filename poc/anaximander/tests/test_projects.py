@@ -34,3 +34,13 @@ def test_import_nxmodels_modules():
     assert len(modules) == 10
     assert modules[0].__name__ == "package.subpackage.__init__"
     assert modules[-1].__name__ == "top_level_module"
+
+
+def test_copy_nxmodels_modules():
+    simple_project = Project(path=SIMPLE_PROJECT_PATH)
+    simple_project.copy_nxmodels_modules()
+    assert (simple_project.compile_path / "nxmodels_/models.py").exists()
+    complex_project = Project(path=COMPLEX_PROJECT_PATH)
+    complex_project.copy_nxmodels_modules()
+    assert (complex_project.compile_path / "nxmodels_/package/subpackage/__init__.py").exists()
+    assert (complex_project.compile_path / "nxmodels_/top_level_module.py").exists()

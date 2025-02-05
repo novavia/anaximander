@@ -3,8 +3,11 @@
 import datetime
 from abc import ABC, ABCMeta
 from collections.abc import Collection
+from decimal import Decimal
 from enum import Enum
+from types import ModuleType
 from typing import Any, Callable, ClassVar, TypeVar, get_type_hints
+from uuid import UUID
 
 import attrs
 from annotationlib import Format, get_annotations
@@ -92,19 +95,28 @@ class Prototype(ABCMeta):
         return type_name_to_collection_name(cls.__name__)
 
 
+def set_type_annotations(module: ModuleType):
+    """Sets type annotations on typed metadescriptors."""
+    for cls in module.__dict__.values():
+        if isinstance(cls, Prototype):
+            cls.__set_type_annotations__()
+
+
 class DataABC(ABC):
     """Abstract base class for data types."""
 
     __primitives__ = (
         bool,
-        int,
-        float,
-        str,
         bytes,
         datetime.date,
         datetime.datetime,
         datetime.time,
         datetime.timedelta,
+        Decimal,
+        float,
+        int,
+        str,
+        UUID,
     )
 
     @classmethod
@@ -112,6 +124,19 @@ class DataABC(ABC):
         if issubclass(subclass, Enum):
             return all(isinstance(m._value_, cls) for m in subclass.__members__.values())
         return super().__subclasshook__(subclass)
+
+    @classmethod
+    def primitive(cls, datatype: type) -> type:
+        """Returns the primitive python type for a supplied data type."""
+        if not isinstance(datatype, type):
+            msg = f"Non-type object {datatype} supplied to primitive method."
+            raise TypeError(msg)
+        if datatype in cls.__primitives__:
+            return datatype
+        if primitive := getattr(datatype, "__primitive__", None):
+            return primitive
+        msg = f"Cannot extract primitive type from {datatype}"
+        raise TypeError(msg)
 
 
 for primitive in DataABC.__primitives__:
@@ -144,7 +169,7 @@ class DataObjectABC(ABC):
     built from these.
     """
 
-    pass
+    __collections__ = (list, tuple, dict, set)
 
 
 DataObjectABC.register(DataABC)
@@ -180,4 +205,4 @@ class TypedMetadescriptor(Metadescriptor):
 
 @attrs.define
 class DataobjectMetadescriptor(TypedMetadescriptor):
-    hint: dataobject = attrs.field(init=False)
+    hint: type[dataobject] = attrs.field(init=False)

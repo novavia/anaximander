@@ -1,4 +1,4 @@
-{% import 'sqlalchemy/functions.py.j2' as functions %}
+{# {% import 'sqlalchemy/functions.py.j2' as functions %} #}
 from typing import Any, List, Optional
 
 from sqlalchemy import (
@@ -17,7 +17,17 @@ from sqlalchemy.orm import (
 
 from . import Base
 
+{% for modeltype in compiler.modeltypes %}
 
-{% for modeltype in compiler.modeltypes -%}
-    {{ functions.modelclass(modeltype) }}
-{%- endfor %}
+class {{modeltype.__name__}}(Base):
+{% if modeltype.__doc__ %}
+    """{{modeltype.__doc__}}"""
+
+{% endif %}
+    __tablename__ = "{{modeltype.collection_name}}"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+{% for md in modeltype.metadescriptors(Field, Parent, Query).values() %}
+    {{compiler.descriptor(md)}}
+{% endfor %}
+
+{% endfor %}
