@@ -1,9 +1,81 @@
+import itertools
+import os
 import re
+import socket
 
 import inflect
 from inflect import Word
 
 IE = inflect.engine()
+
+
+def boolean(string):
+    """Converts a string to a boolean."""
+    if string == "True":
+        return True
+    elif string == "False":
+        return False
+    else:
+        raise ValueError
+
+
+def is_online():
+    """Function that determines if the tester is online."""
+    connection = None
+    try:
+        host = socket.gethostbyname("www.google.com")
+        connection = socket.create_connection((host, 80), 2)
+    except:  # noqa
+        return False
+    else:
+        return True
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def offline(assertion=None):
+    """Returns application status, or sets it if assertion is passed.
+
+    Asserting offline is False is subject to verifying that the application
+    truly is online.
+    """
+    if assertion is not None:
+        if assertion is False:
+            try:
+                assert is_online()
+            except AssertionError:
+                pass
+            else:
+                os.environ["OFFLINE"] = "False"
+                return False
+        os.environ["OFFLINE"] = "True"
+        return True
+    try:
+        return boolean(os.environ["OFFLINE"])
+    except KeyError:
+        which = not is_online()
+        os.environ["OFFLINE"] = str(which)
+        return which
+
+
+def local_runtime() -> bool:
+    """Returns True if an app runtime executes locally, False in the cloud environment."""
+    return bool(os.getenv("IS_RUNNING_LOCALLY"))
+
+
+def is_close(a, b, tolerance=1e-9):
+    """Near-equality test function."""
+    return abs(a - b) < tolerance
+
+
+def batched(iterable, n: int):
+    # batched('ABCDEFG', 3) → ABC DEF G
+    if n < 1:
+        raise ValueError("n must be at least one")
+    iterator = iter(iterable)
+    while batch := tuple(itertools.islice(iterator, n)):
+        yield batch
 
 
 def subclasses(cls, depth: int = -1, strict: bool = True) -> list[type]:

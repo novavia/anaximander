@@ -15,9 +15,12 @@ from .aml import (
 )
 from .compilers import ProjectCompiler
 
+REPO = NXPATH.parent.parent
+
 __all__ = [
     "Project",
     "NXPATH",
+    "REPO",
     "Data",
     "Metadescriptor",
     "Model",

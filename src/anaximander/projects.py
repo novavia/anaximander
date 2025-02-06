@@ -1,11 +1,14 @@
+import os
 import sys
 from importlib import import_module
 from pathlib import Path
 from types import ModuleType
 
 import attrs
+from cookiecutter.main import cookiecutter
 
 NXPATH = Path(__file__).parent
+PROJECT_TEMPLATE = NXPATH / "config/projects/project_template"
 
 
 @attrs.define
@@ -13,6 +16,21 @@ class Project:
     """A class that represents an Anaximander project."""
 
     path: Path = attrs.field(converter=Path)
+
+    @classmethod
+    def create(
+        cls, project_name: str, root_directory: str | Path | None = None, **kwargs
+    ) -> "Project":
+        """Creates a new Anaximander project into the specified directory."""
+        if root_directory is None:
+            root_directory = Path.cwd()
+        else:
+            root_directory = Path(root_directory)
+        os.chdir(root_directory)
+        config = {"project_name": project_name}
+        config.update(kwargs)
+        cookiecutter(PROJECT_TEMPLATE.as_posix(), no_input=True, extra_context=config)
+        return cls(path=root_directory / project_name)
 
     @property
     def name(self):
