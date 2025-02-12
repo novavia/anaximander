@@ -1,9 +1,13 @@
 from dataclasses import dataclass
 from enum import Enum
+from types import NoneType
+from typing import TypedDict
 
 import pytest
 import runtype
+
 from anaximander.aml.meta import (
+    DataObjectABC,
     Metadescriptor,
     Prototype,
     data,
@@ -23,6 +27,19 @@ class Color(Enum):
     red = "red"
     green = "green"
     blue = "blue"
+
+
+class ColorDict(TypedDict):
+    red: int
+    green: int
+    blue: int
+
+
+class RainbowDict(ColorDict):
+    yellow: int
+    orange: int
+    indigo: int
+    violet: int
 
 
 @dataclass
@@ -71,3 +88,26 @@ def test_data():
 def test_model():
     assert not runtype.isa(C(), model)
     assert runtype.issubclass(DC, model)
+
+
+def test_dataobject_subtype():
+    assert DataObjectABC.__is_subtype__(int)
+    assert DataObjectABC.__is_subtype__(list[int])
+    assert DataObjectABC.__is_subtype__(Color)
+    assert DataObjectABC.__is_subtype__(DC)
+    assert DataObjectABC.__is_subtype__(list[DC])
+    assert DataObjectABC.__is_subtype__(dict[str, list[DC]])
+    assert DataObjectABC.__is_subtype__(ColorDict)
+    assert DataObjectABC.__is_subtype__(RainbowDict)
+    assert not DataObjectABC.__is_subtype__(NoneType)
+    assert not DataObjectABC.__is_subtype__(C)
+    assert not DataObjectABC.__is_subtype__(list)
+    assert not DataObjectABC.__is_subtype__(list[C])
+    # with data as *super
+    assert DataObjectABC.__is_subtype__(int, data)
+    assert DataObjectABC.__is_subtype__(list[int], data)
+    assert DataObjectABC.__is_subtype__(Color, data)
+    assert DataObjectABC.__is_subtype__(dict[str, list[int]], data)
+    assert DataObjectABC.__is_subtype__(ColorDict, data)
+    assert DataObjectABC.__is_subtype__(RainbowDict, data)
+    assert not DataObjectABC.__is_subtype__(DC, data)

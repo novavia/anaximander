@@ -820,6 +820,20 @@ files = [
 ]
 
 [[package]]
+name = "mirakuru"
+version = "2.6.0"
+description = "Process executor (not only) for tests."
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "mirakuru-2.6.0-py3-none-any.whl", hash = "sha256:0ff7080997e63289dc309d0237e137ca2cfa863b3d26b3d5e8fd4e1c2b2ef659"},
+    {file = "mirakuru-2.6.0.tar.gz", hash = "sha256:3256fcf81ef090a30be97a8ce50ff0c178292d7e542866c5fedc5ae6801e3a17"},
+]
+
+[package.dependencies]
+psutil = {version = ">=4.0.0", markers = "sys_platform != \"cygwin\""}
+
+[[package]]
 name = "more-itertools"
 version = "10.6.0"
 description = "More routines for operating on iterables, beyond itertools"
@@ -1168,6 +1182,17 @@ dev = ["pre-commit", "tox"]
 testing = ["pytest", "pytest-benchmark"]
 
 [[package]]
+name = "port-for"
+version = "0.7.4"
+description = "Utility that helps with local TCP ports management. It can find an unused TCP localhost port and remember the association."
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "port_for-0.7.4-py3-none-any.whl", hash = "sha256:08404aa072651a53dcefe8d7a598ee8a1dca320d9ac44ac464da16ccf2a02c4a"},
+    {file = "port_for-0.7.4.tar.gz", hash = "sha256:fc7713e7b22f89442f335ce12536653656e8f35146739eccaeff43d28436028d"},
+]
+
+[[package]]
 name = "prompt-toolkit"
 version = "3.0.50"
 description = "Library for building powerful interactive command lines in Python"
@@ -1210,6 +1235,28 @@ files = [
 [package.extras]
 dev = ["abi3audit", "black", "check-manifest", "coverage", "packaging", "pylint", "pyperf", "pypinfo", "pytest-cov", "requests", "rstcheck", "ruff", "sphinx", "sphinx_rtd_theme", "toml-sort", "twine", "virtualenv", "vulture", "wheel"]
 test = ["pytest", "pytest-xdist", "setuptools"]
+
+[[package]]
+name = "psycopg"
+version = "3.2.4"
+description = "PostgreSQL database adapter for Python"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "psycopg-3.2.4-py3-none-any.whl", hash = "sha256:43665368ccd48180744cab26b74332f46b63b7e06e8ce0775547a3533883d381"},
+    {file = "psycopg-3.2.4.tar.gz", hash = "sha256:f26f1346d6bf1ef5f5ef1714dd405c67fb365cfd1c6cea07de1792747b167b92"},
+]
+
+[package.dependencies]
+tzdata = {version = "*", markers = "sys_platform == \"win32\""}
+
+[package.extras]
+binary = ["psycopg-binary (==3.2.4)"]
+c = ["psycopg-c (==3.2.4)"]
+dev = ["ast-comments (>=1.1.2)", "black (>=24.1.0)", "codespell (>=2.2)", "dnspython (>=2.1)", "flake8 (>=4.0)", "mypy (>=1.14)", "pre-commit (>=4.0.1)", "types-setuptools (>=57.4)", "wheel (>=0.37)"]
+docs = ["Sphinx (>=5.0)", "furo (==2022.6.21)", "sphinx-autobuild (>=2021.3.14)", "sphinx-autodoc-typehints (>=1.12)"]
+pool = ["psycopg-pool"]
+test = ["anyio (>=4.0)", "mypy (>=1.14)", "pproxy (>=2.7)", "pytest (>=6.2.5)", "pytest-cov (>=3.0)", "pytest-randomly (>=3.5)"]
 
 [[package]]
 name = "psycopg2"
@@ -1298,6 +1345,24 @@ pluggy = ">=1.5,<2"
 
 [package.extras]
 dev = ["argcomplete", "attrs (>=19.2)", "hypothesis (>=3.56)", "mock", "pygments (>=2.7.2)", "requests", "setuptools", "xmlschema"]
+
+[[package]]
+name = "pytest-postgresql"
+version = "6.1.1"
+description = "Postgresql fixtures and fixture factories for Pytest."
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "pytest_postgresql-6.1.1-py3-none-any.whl", hash = "sha256:bd4c0970d25685ac3d34d42263fcbfbf134bf02d22519fce7e1ccf4122d8b99a"},
+    {file = "pytest_postgresql-6.1.1.tar.gz", hash = "sha256:f996637367e6aecebba1349da52eea95340bdb434c90e4b79739e62c656056e2"},
+]
+
+[package.dependencies]
+mirakuru = "*"
+port-for = ">=0.7.3"
+psycopg = ">=3.0.0"
+pytest = ">=6.2"
+setuptools = "*"
 
 [[package]]
 name = "python-dateutil"
@@ -1616,6 +1681,26 @@ files = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "75.8.0"
+description = "Easily download, build, install, upgrade, and uninstall Python packages"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "setuptools-75.8.0-py3-none-any.whl", hash = "sha256:e3982f444617239225d675215d51f6ba05f845d4eec313da4418fdbb56fb27e3"},
+    {file = "setuptools-75.8.0.tar.gz", hash = "sha256:c5afc8f407c626b8313a86e10311dd3f661c6cd9c09d4bf8c15c0e11f9f2b0e6"},
+]
+
+[package.extras]
+check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1)", "ruff (>=0.8.0)"]
+core = ["importlib_metadata (>=6)", "jaraco.collections", "jaraco.functools (>=4)", "jaraco.text (>=3.7)", "more_itertools", "more_itertools (>=8.8)", "packaging", "packaging (>=24.2)", "platformdirs (>=4.2.2)", "tomli (>=2.0.1)", "wheel (>=0.43.0)"]
+cover = ["pytest-cov"]
+doc = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "pygments-github-lexers (==0.0.5)", "pyproject-hooks (!=1.1)", "rst.linker (>=1.9)", "sphinx (>=3.5)", "sphinx-favicon", "sphinx-inline-tabs", "sphinx-lint", "sphinx-notfound-page (>=1,<2)", "sphinx-reredirects", "sphinxcontrib-towncrier", "towncrier (<24.7)"]
+enabler = ["pytest-enabler (>=2.2)"]
+test = ["build[virtualenv] (>=1.0.3)", "filelock (>=3.4.0)", "ini2toml[lite] (>=0.14)", "jaraco.develop (>=7.21)", "jaraco.envs (>=2.2)", "jaraco.path (>=3.7.2)", "jaraco.test (>=5.5)", "packaging (>=24.2)", "pip (>=19.1)", "pyproject-hooks (!=1.1)", "pytest (>=6,!=8.1.*)", "pytest-home (>=0.5)", "pytest-perf", "pytest-subprocess", "pytest-timeout", "pytest-xdist (>=3)", "tomli-w (>=1.0.0)", "virtualenv (>=13.0.0)", "wheel (>=0.44.0)"]
+type = ["importlib_metadata (>=7.0.2)", "jaraco.develop (>=7.21)", "mypy (==1.14.*)", "pytest-mypy"]
+
+[[package]]
 name = "six"
 version = "1.17.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -1898,4 +1983,4 @@ watchdog = ["watchdog (>=2.3)"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.14,<4.0"
-content-hash = "9ed481cc318540541a7b944a028ea82751b119429d9df359b207f1458aa1276b"
+content-hash = "6389d66c06291015230074687c52e9d65d50dfbed84277732579397d008ca579"

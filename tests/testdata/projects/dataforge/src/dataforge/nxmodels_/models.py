@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Optional
 
 import anaximander as nx
 
@@ -36,7 +35,7 @@ class MachineGroup(nx.Model):
 
     account: Account = nx.parent(key=True)
     name: str = nx.field(key=True)
-    description: str | None = nx.field()
+    description: str = nx.field()
 
     machines: list["Machine"] = nx.query()
 
@@ -47,9 +46,9 @@ class Machine(nx.Model):
 
     name: str = nx.field(key=True)
     facility: Facility = nx.parent(key=True)
-    group: MachineGroup | None = nx.parent(key=True)
+    group: MachineGroup = nx.parent(key=True)
     mtype: str = nx.field(index=True)
-    spec: dict = nx.field()
+    spec: dict[str, nx.data] = nx.field()
 
     monitors: list["Monitor"] = nx.query()
 
@@ -60,11 +59,11 @@ class Monitor(nx.Model):
     name: str = nx.field(key=True)
     description: str = nx.field()
 
-    device: Optional["MonitoringDevice"] = nx.query()
+    device: "MonitoringDevice" = nx.query()
 
 
 @nx.compile("sqlalchemy")
 class MonitoringDevice(nx.Model):
-    monitor: Optional[Monitor] = nx.parent(unique=True)
+    monitor: Monitor = nx.parent(unique=True)
     mac_id: str = nx.field(key=True)
-    hardware: dict = nx.field()
+    hardware: dict[str, nx.data] = nx.field()

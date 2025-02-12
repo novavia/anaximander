@@ -1,12 +1,20 @@
 """This module defines base types and metaclasses for the Anaximander Modeling Language (AML)."""
 
 import datetime
-from abc import ABC, ABCMeta
+from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Collection
 from decimal import Decimal
 from enum import Enum
 from types import ModuleType
-from typing import Any, Callable, ClassVar, TypeVar, get_type_hints
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    TypeVar,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 from uuid import UUID
 
 import attrs
@@ -38,7 +46,7 @@ class Metadescriptor(ABC):
         else:
             cls.__reserved_names__ = reserved_names
 
-    def __set_name__(self, owner: type, name: str):
+    def __set_name__(self, owner: "Prototype", name: str):
         if name in self.__reserved_names__:
             mdtype = self.__class__.__name__
             msg = f"Cannot use reserved name {name} for Metadescriptor or type {mdtype}."
@@ -83,8 +91,9 @@ class Prototype(ABCMeta):
         superhints = get_type_hints(cls)  # This includes super classes
         metadescriptors = cls.metadescriptors(TypedMetadescriptor, inherited=False)
         for name, metadescriptor in metadescriptors.items():
-            metadescriptor.annotation = annotations.get(name, "")
-            metadescriptor.hint = superhints.get(name, None)
+            annotation = annotations.get(name, "")
+            hint = superhints.get(name, None)
+            metadescriptor.__set_type__(cls, annotation, hint)
 
     @property
     def collection_name(cls):
@@ -171,6 +180,35 @@ class DataObjectABC(ABC):
 
     __collections__ = (list, tuple, dict, set)
 
+    @classmethod
+    def __is_subtype__(cls, hint: Any, *super: type):
+        """Runtime check on supplied type hints.
+
+        The optional super types restrict the subclassing test to those instead of cls.
+        """
+        super = super or (cls,)
+        if isinstance(hint, type):
+            if issubclass(hint, Enum):
+                values = [m._value_ for m in hint.__members__.values()]
+                vtypes = {type(v) for v in values}
+                return all(cls.__is_subtype__(t, *super) for t in vtypes)
+            elif issubclass(hint, dict):
+                # This case handles TypedDict
+                typed_dict_attrs = {"__required_keys__", "__optional_keys__"}
+                try:
+                    assert typed_dict_attrs < set(vars(hint))
+                except (AttributeError, AssertionError):
+                    pass
+                else:
+                    member_hints = get_type_hints(hint)
+                    return all(cls.__is_subtype__(t, *super) for t in member_hints.values())
+            return issubclass(hint, super)
+        origin = get_origin(hint)
+        args = get_args(hint)
+        if origin in cls.__collections__:
+            return all(cls.__is_subtype__(arg, *super) for arg in args)
+        return False
+
 
 DataObjectABC.register(DataABC)
 DataObjectABC.register(ModelABC)
@@ -178,7 +216,7 @@ DataObjectABC.register(ModelABC)
 
 prototype = type[DataABC] | type[ModelABC]
 
-type dataobject = DataObjectABC | DataABC | ModelABC | Collection[dataobject]
+type dataobject = DataObjectABC | Collection[dataobject]
 
 
 P = TypeVar("P", bound=prototype)
@@ -202,7 +240,27 @@ class TypedMetadescriptor(Metadescriptor):
     annotation: str = attrs.field(init=False)  # Literal type annotation as a string
     hint: Any = attrs.field(init=False)  # Evaluated type annotation
 
+    @abstractmethod
+    def __validate_hint__(self, owner: Prototype, hint: Any) -> bool:
+        return True
+
+    def __set_type__(self, owner: Prototype, annotation: str, hint: Any):
+        """Sets the type by supplying annotation (string) and hint (expects a type)."""
+        self.annotation = annotation
+        if not self.__validate_hint__(owner, hint):
+            descriptor = self.name
+            owner_name = owner.__name__
+            msg = (
+                f"Incompatible annotation {annotation} supplied to {descriptor} descriptor "
+                + f"of {owner_name}."
+            )
+            raise TypeError(msg)
+        self.hint = hint
+
 
 @attrs.define
-class DataobjectMetadescriptor(TypedMetadescriptor):
+class DataObjectMetadescriptor(TypedMetadescriptor):
     hint: type[dataobject] = attrs.field(init=False)
+
+    def __validate_hint__(self, owner: Prototype, hint: type[dataobject]) -> bool:
+        return DataObjectABC.__is_subtype__(hint)

@@ -45,7 +45,7 @@ class MachineGroup(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     account: Mapped[Account] = mapped_column()
     name: Mapped[str] = mapped_column()
-    description: Mapped[str | None] = mapped_column()
+    description: Mapped[str] = mapped_column()
     machines: Mapped[list['Machine']] = relationship()
 
 
@@ -56,7 +56,7 @@ class Machine(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column()
     facility: Mapped[Facility] = mapped_column()
-    group: Mapped[MachineGroup | None] = mapped_column()
+    group: Mapped[MachineGroup] = mapped_column()
     mtype: Mapped[str] = mapped_column()
     spec: Mapped[dict] = mapped_column()
     monitors: Mapped[list['Monitor']] = relationship()
@@ -68,13 +68,13 @@ class Monitor(Base):
     machine: Mapped[Machine] = mapped_column()
     name: Mapped[str] = mapped_column()
     description: Mapped[str] = mapped_column()
-    device: Mapped[Optional['MonitoringDevice']] = relationship()
+    device: Mapped[MonitoringDevice] = relationship()
 
 
 class MonitoringDevice(Base):
     __tablename__ = "monitoring_devices"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    monitor: Mapped[Optional[Monitor]] = mapped_column()
+    monitor: Mapped[Monitor] = mapped_column()
     mac_id: Mapped[str] = mapped_column()
     hardware: Mapped[dict] = mapped_column()
 

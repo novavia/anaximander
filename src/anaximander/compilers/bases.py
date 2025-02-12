@@ -62,8 +62,10 @@ class ModuleCompiler(ABC):
         return rval
 
     @classmethod
-    def _print_descriptor(cls, name: str, type: str | None, assignment: str | None) -> str:
-        return f"{name}{f': {type}' if type else ''}{f' = {assignment}' if assignment else ''}"
+    def _print_descriptor(cls, name: str, annotation: str | None, assignment: str | None) -> str:
+        left_stmt = f"{name}{f': {annotation}' if annotation else ''}"
+        right_stmt = f" = {assignment}" if assignment else ""
+        return left_stmt + right_stmt
 
     @singledispatchmethod
     def descriptor(self, metadescriptor: Metadescriptor) -> str:
