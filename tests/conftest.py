@@ -223,31 +223,33 @@ def teardown_tempdata_path(path: Path | str):
 @pytest.fixture(scope="function")
 def function_data() -> Generator[Callable[[Path], Path], None, None]:
     """Creates a temporary copy of a file or directory into tempdata for use in tests."""
-    tempdata_path = Path()  # This is a placeholder
+    tempdata_paths = []
 
     def _path(path: Path | str) -> Path:
-        nonlocal tempdata_path
         tempdata_path = make_tempdata_path(path)
+        tempdata_paths.append(tempdata_path)
         return tempdata_path
 
     yield _path
 
-    teardown_tempdata_path(tempdata_path)
+    for tempdata_path in tempdata_paths:
+        teardown_tempdata_path(tempdata_path)
 
 
 @pytest.fixture(scope="module")
 def module_data() -> Generator[Callable[[Path], Path], None, None]:
     """Creates a temporary copy of a file or directory into tempdata for use in tests."""
-    tempdata_path = Path()  # This is a placeholder
+    tempdata_paths = []
 
     def _path(path: Path | str) -> Path:
-        nonlocal tempdata_path
         tempdata_path = make_tempdata_path(path)
+        tempdata_paths.append(tempdata_path)
         return tempdata_path
 
     yield _path
 
-    teardown_tempdata_path(tempdata_path)
+    for tempdata_path in tempdata_paths:
+        teardown_tempdata_path(tempdata_path)
 
 
 @pytest.fixture
@@ -258,19 +260,19 @@ def project(function_data) -> Generator[Callable[[Path], Project], None, None]:
     a prototypes python file or a directory thereof. The name of the file or directory
     is used as the project name, and the project is created under tempdata/projects.
     """
-    project_path = Path()  # This is a placeholder
+    project_paths = []
 
     def _project(path: Path | str) -> Project:
         path = TESTDATA / "prototypes" / path
         project_name = path.stem
         project = Project.create(project_name, parent_directory=TEMP_PROJECTS, prototypes=path)
-        nonlocal project_path
-        project_path = project.path
+        project_paths.append(project.path)
         return project
 
     yield _project
 
-    teardown_tempdata_path(project_path)
+    for project_path in project_paths:
+        teardown_tempdata_path(project_path)
 
 
 @pytest.fixture
