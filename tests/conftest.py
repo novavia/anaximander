@@ -207,6 +207,10 @@ def make_tempdata_path(path: Path | str) -> Path:
 def teardown_tempdata_path(path: Path | str):
     """Teardown for tempdata fixtures."""
     path = Path(path)
+    if not path.is_absolute():
+        return
+    if not path.is_relative_to(TEMPDATA):
+        return
     try:
         if path.is_dir():
             shutil.rmtree(path)
@@ -228,7 +232,7 @@ def function_data() -> Generator[Callable[[Path], Path], None, None]:
 
     yield _path
 
-    # teardown_tempdata_path(tempdata_path)
+    teardown_tempdata_path(tempdata_path)
 
 
 @pytest.fixture(scope="module")
@@ -243,7 +247,7 @@ def module_data() -> Generator[Callable[[Path], Path], None, None]:
 
     yield _path
 
-    # teardown_tempdata_path(tempdata_path)
+    teardown_tempdata_path(tempdata_path)
 
 
 @pytest.fixture
@@ -266,7 +270,7 @@ def project(function_data) -> Generator[Callable[[Path], Project], None, None]:
 
     yield _project
 
-    # teardown_tempdata_path(project_path)
+    teardown_tempdata_path(project_path)
 
 
 @pytest.fixture
