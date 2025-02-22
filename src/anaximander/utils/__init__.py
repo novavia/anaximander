@@ -1,7 +1,14 @@
+import functools
 import inspect
 from collections import UserDict
 from collections.abc import Mapping, Sequence
-from typing import Any, Callable
+from pathlib import Path
+from typing import Any, Callable, dataclass_transform
+
+import attrs
+from omegaconf import OmegaConf, DictConfig
+
+from .meta import AutoDecoratedType
 
 
 class KwargMap(UserDict[str, Any]):
@@ -156,3 +163,32 @@ class KwargMap(UserDict[str, Any]):
 
     def __str__(self):
         return ", ".join(f"{k}={v}" for k, v in self.items())
+
+
+_config_decorator = functools.partial(attrs.define, auto_attribs=True)
+
+
+class ConfigType(AutoDecoratedType, decorator=_config_decorator):
+    pass
+
+
+@dataclass_transform()
+class Config(metaclass=ConfigType):
+    """A structured configuration class."""
+
+    @property
+    def omegaconf(self) -> DictConfig:
+        return OmegaConf.structured(self)
+
+    @classmethod
+    def load[C](cls: type[C], path: Path | str) -> C:
+        path = Path(path)
+        return cls(**OmegaConf.load(path))  # type: ignore
+
+    def save(self, path: Path | str):
+        path = Path(path)
+        with open(path, "w") as f:
+            OmegaConf.save(config=self, f=f)
+
+    def __str__(self):
+        return OmegaConf.to_yaml(self)

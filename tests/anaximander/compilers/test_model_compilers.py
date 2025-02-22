@@ -7,7 +7,6 @@ import pytest
 import anaximander as nx
 from anaximander.aml.meta import set_type_annotations
 from anaximander.compilers.model_compilers import SQLAlchemyCompiler
-from tests.utils import engine as engine
 
 
 class Color(Enum):

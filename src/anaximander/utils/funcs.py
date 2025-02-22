@@ -1,7 +1,10 @@
+import contextlib
 import itertools
 import os
 import re
 import socket
+from pathlib import Path
+from typing import Generator
 
 import inflect
 from inflect import Word
@@ -148,3 +151,20 @@ def type_name_to_collection_name(name: str) -> str:
     if isinstance(last_word, Word):
         last_word = pluralize(last_word)
     return "_".join(prefixes + [last_word])
+
+
+@contextlib.contextmanager
+def workdir(path: Path | str, *, mkdir: bool = True) -> Generator[Path, None, None]:
+    """A context manager that temporarily changes the working directory, optionally setting it."""
+    path = Path(path)
+    cwd = Path.cwd()
+    if mkdir:
+        if not path.exists():
+            path.mkdir(parents=True)
+    if not path.is_dir():
+        raise ValueError(f"{path} is not a directory.")
+    os.chdir(path)
+    try:
+        yield path
+    finally:
+        os.chdir(cwd)

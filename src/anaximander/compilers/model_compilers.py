@@ -7,7 +7,20 @@ from .bases import ModuleCompiler
 
 
 class DataclassCompiler(ModuleCompiler, handle="dataclasses"):
-    pass
+    @singledispatchmethod
+    def descriptor(self, metadescriptor: Metadescriptor) -> str:
+        return super().descriptor(metadescriptor)
+
+    @descriptor.register
+    def field_descriptor(self, field: Field) -> str:
+        name = field.name
+        hint = field.hint
+        if isinstance(hint, type):
+            field_type = hint
+        else:
+            field_type = get_origin(hint)
+        annotation = field_type.__name__
+        return self._print_descriptor(name, annotation)
 
 
 class PydanticCompiler(ModuleCompiler, handle="pydantic"):

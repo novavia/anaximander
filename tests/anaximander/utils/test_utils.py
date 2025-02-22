@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 
+import omegaconf
 import pytest
-from anaximander.utils import KwargMap
+
+from anaximander.utils import Config, KwargMap
 
 
 def test_kwarg_map():
@@ -58,3 +60,14 @@ def test_kwarg_map():
     # test calling
     km_4 = km_3("x")
     assert str(km_4) == "x=1"
+
+
+@pytest.mark.bugger
+def test_config():
+    class MyConfig(Config):
+        x: int
+        y: int = 0
+
+    mc = MyConfig(x=1)
+    conf = mc.omegaconf
+    assert isinstance(conf, omegaconf.DictConfig)

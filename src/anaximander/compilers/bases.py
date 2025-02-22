@@ -62,7 +62,9 @@ class ModuleCompiler(ABC):
         return rval
 
     @classmethod
-    def _print_descriptor(cls, name: str, annotation: str | None, assignment: str | None) -> str:
+    def _print_descriptor(
+        cls, name: str, annotation: str | None = None, assignment: str | None = None
+    ) -> str:
         left_stmt = f"{name}{f': {annotation}' if annotation else ''}"
         right_stmt = f" = {assignment}" if assignment else ""
         return left_stmt + right_stmt
@@ -92,15 +94,15 @@ class ProjectCompiler:
 
     def __call__(self, **kwargs):
         # Copies model files into the application code
-        self.project.copy_nxmodels_modules()
+        self.project.copy_prototypes()
         # Perform imports
-        modules = self.project.import_nxmodels_modules()
+        modules = self.project.import_prototypes()
         # Resolve and assign type annotations
         for module in modules:
             set_type_annotations(module)
         # Compile modules
-        models_path = self.project.app_models_path
-        compile_path = self.project.compile_path
+        models_path = self.project.api_prototypes_path
+        compile_path = self.project.application_path
         for handle in self.compilations:
             compiler_class = ModuleCompiler[handle]
             for module in modules:
@@ -110,7 +112,7 @@ class ProjectCompiler:
                     raise RuntimeError(f"Module {module} has no origin.")
                 module_path = Path(origin)
                 relative_path = module_path.relative_to(models_path)
-                destination = (compile_path / f"{handle}_" / relative_path).as_posix()
+                destination = compile_path / f"{handle}_" / relative_path
                 module_compiler = compiler_class(module, destination=destination)
                 module_compiler(**kwargs)
 
