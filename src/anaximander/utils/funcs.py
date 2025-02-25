@@ -4,7 +4,9 @@ import os
 import re
 import socket
 from pathlib import Path
+from types import ModuleType
 from typing import Generator
+
 
 import inflect
 from inflect import Word
@@ -168,3 +170,10 @@ def workdir(path: Path | str, *, mkdir: bool = True) -> Generator[Path, None, No
         yield path
     finally:
         os.chdir(cwd)
+
+
+def is_package_init(module: ModuleType):
+    if not (file_path := getattr(module, '__file__', None)):
+        return False
+    path = Path(file_path)
+    return path.stem == "__init__"

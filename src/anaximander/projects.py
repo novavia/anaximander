@@ -108,8 +108,12 @@ class Project:
         return self.path / f"src/{self.name}"
 
     @property
+    def compilation_path(self) -> Path:
+        return self.application_path / "api"
+
+    @property
     def api_prototypes_path(self) -> Path:
-        return self.application_path / "api/prototypes_"
+        return self.compilation_path / "prototypes_"
 
     @classmethod
     def is_project_directory(cls, path: Path | str) -> bool:
@@ -199,13 +203,22 @@ class Project:
 
     def copy_prototypes(self):
         """Copies modules from the src/prototypes directory to the application directory."""
-        models_path = self.prototypes_source_path
+        source_path = self.prototypes_source_path
         copy_path = self.api_prototypes_path
         for module_path in self.collect_prototypes():
-            relative_path = module_path.relative_to(models_path)
+            relative_path = module_path.relative_to(source_path)
             destination = copy_path / relative_path
             destination.parent.mkdir(parents=True, exist_ok=True)
             module_path.copy(destination)
+        # Next we fill in missing __init__.py files for consistency
+        directories = copy_path.parent.rglob("*/")
+        for directory in directories:
+            if directory.name == "__pycache__":
+                continue
+            if (modules := list(directory.glob("*.py"))):
+                # directory is destined to be a package
+                if (init := directory / "__init__.py") not in modules:
+                    init.touch()
 
     def compile(self, *compilations: str, **kwargs):
         """Compiles the project using the specified compilers."""

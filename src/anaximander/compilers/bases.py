@@ -8,7 +8,7 @@ from jinja2 import Environment, PackageLoader, Template
 from .. import Project
 from ..aml.meta import Metadescriptor, set_type_annotations
 from ..aml.model import Model
-from ..utils.funcs import subclasses
+from ..utils.funcs import is_package_init, subclasses
 
 J2ENV = Environment(
     loader=PackageLoader("anaximander.compilers"), trim_blocks=True, lstrip_blocks=True
@@ -45,6 +45,10 @@ class ModuleCompiler(ABC):
     def __init__(self, module: ModuleType, destination: Path | str | None = None):
         self.module = module
         self.destination = Path(destination) if destination else None
+
+    @property
+    def package_init(self) -> str:
+        return is_package_init(self.module)
 
     @property
     def template(self) -> Template:
@@ -101,8 +105,8 @@ class ProjectCompiler:
         for module in modules:
             set_type_annotations(module)
         # Compile modules
-        models_path = self.project.api_prototypes_path
-        compile_path = self.project.application_path
+        prototypes_path = self.project.api_prototypes_path
+        compilation_path = self.project.compilation_path
         for handle in self.compilations:
             compiler_class = ModuleCompiler[handle]
             for module in modules:
@@ -111,8 +115,8 @@ class ProjectCompiler:
                 if not (origin := spec.origin):
                     raise RuntimeError(f"Module {module} has no origin.")
                 module_path = Path(origin)
-                relative_path = module_path.relative_to(models_path)
-                destination = compile_path / f"{handle}_" / relative_path
+                relative_path = module_path.relative_to(prototypes_path)
+                destination = compilation_path / f"{handle}_" / relative_path
                 module_compiler = compiler_class(module, destination=destination)
                 module_compiler(**kwargs)
 

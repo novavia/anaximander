@@ -1,5 +1,9 @@
+import sys
+
+import anaximander as nx
 from anaximander.utils.funcs import (
     camel_to_snake,
+    is_package_init,
     pluralize,
     subclasses,
     type_name_to_collection_name,
@@ -49,3 +53,9 @@ def test_type_name_to_collection_name():
     assert type_name_to_collection_name("CamelCase") == "camel_cases"
     assert type_name_to_collection_name("HTTPResponseCode") == "http_response_codes"
     assert type_name_to_collection_name("CamelCaseThing") == "camel_case_things"
+
+
+def test_is_package_init():
+    this_module = sys.modules[__name__]
+    assert not is_package_init(this_module)
+    assert is_package_init(nx)
