@@ -29,6 +29,9 @@ class Project:
 
     path: Path = attrs.field(converter=Path)
 
+    def __attrs_post_init__(self):
+        self.set_import_path()
+
     @classmethod
     def create(
         cls,
@@ -100,6 +103,10 @@ class Project:
         return ProjectConfig.load(self.config_path)
 
     @property
+    def code_path(self) -> Path:
+        return self.path / "src"
+
+    @property
     def prototypes_source_path(self) -> Path:
         return self.path / "src/prototypes"
 
@@ -114,6 +121,12 @@ class Project:
     @property
     def api_prototypes_path(self) -> Path:
         return self.compilation_path / "prototypes_"
+
+    def set_import_path(self):
+        """Sets the project's code path on the interpreter's import path."""
+        if (code_path := self.code_path).exists():
+            if code_path not in sys.path:
+                sys.path.insert(0, code_path.as_posix())
 
     @classmethod
     def is_project_directory(cls, path: Path | str) -> bool:
@@ -181,10 +194,8 @@ class Project:
             relative_path = self.api_prototypes_path.relative_to(self.path)
             msg = f"Project {self.name} does not contain the requisite {relative_path} directory."
             raise FileNotFoundError(msg)
-        # TODO: this should be unnecessary -only self.path/src needs to be added
-        if self.api_prototypes_path not in sys.path:
-            sys.path.insert(0, self.api_prototypes_path.as_posix())
-        modules = self._import_from_directory(self.api_prototypes_path)
+        package = f"{self.name}.api.prototypes_"
+        modules = self._import_from_directory(self.api_prototypes_path, package=package)
         # Next we validate that no import targets the original modules in the source prototypes
         # directory, which could be the case if absolute imports are used
         for name, module in sys.modules.items():

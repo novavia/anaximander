@@ -36,14 +36,15 @@ def test_import_prototypes(project):
 
     simple_project.copy_prototypes()
     modules = simple_project.import_prototypes()
-    assert len(modules) == 1
-    assert modules[0].__name__ == "models"
+    assert len(modules) == 2
+    assert set(m.__name__ for m in modules) == {"simple_project.api.prototypes_.models", 
+                                                "simple_project.api.prototypes_.__init__"}
 
     complex_project.copy_prototypes()
     modules = complex_project.import_prototypes()
-    assert len(modules) == 10
-    assert modules[0].__name__ == "package.subpackage.__init__"
-    assert modules[-1].__name__ == "top_level_module"
+    assert len(modules) == 13
+    assert modules[0].__name__ == "complex_project.api.prototypes_.package.subpackage.__init__"
+    assert modules[-1].__name__ == "complex_project.api.prototypes_.top_level_module"
 
     bad_imports_project.copy_prototypes()
     with pytest.raises(ImportError):
