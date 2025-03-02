@@ -115,12 +115,13 @@ class ProjectCompiler:
         return list(self._modules)
 
     def module_compiler(self, module: ModuleType | str, compilation: str):
+        modules = self.modules
         if isinstance(module, str):
             module_name = module
             module = sys.modules.get(module)
         else:
             module_name = module.__name__
-        if module not in self.modules:
+        if module not in modules:
             raise ValueError(f"Module {module_name} not in project.")
         prototypes_path = self.project.api_prototypes_path
         compilation_path = self.project.compilation_path

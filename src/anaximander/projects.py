@@ -7,7 +7,7 @@ from types import ModuleType
 import attrs
 from cookiecutter.main import cookiecutter
 
-from .utils import Config
+from .utils import Config, private_field
 from .utils.funcs import workdir
 
 NXPATH = Path(__file__).parent
@@ -17,9 +17,14 @@ PROJECT_TEMPLATE = NXPATH / "config/projects/project_template"
 class ProjectConfig(Config):
     name: str
 
+    @property
+    def slug(self) -> str:
+        return self.name.lower().replace(' ', '_').replace('-', '_')
+
     def cookiecutter_context(self):
         return {
             "project_name": self.name,
+            "project_slug": self.slug,
         }
 
 
@@ -28,6 +33,7 @@ class Project:
     """A class that represents an Anaximander project."""
 
     path: Path = attrs.field(converter=Path)
+    _config: ProjectConfig | None = private_field(default=None)
 
     def __attrs_post_init__(self):
         self.set_import_path()
@@ -93,6 +99,10 @@ class Project:
     @property
     def name(self):
         return self.path.name
+    
+    @property
+    def slug(self):
+        return self.config.slug
 
     @property
     def config_path(self) -> Path:
@@ -100,7 +110,9 @@ class Project:
 
     @property
     def config(self) -> ProjectConfig:
-        return ProjectConfig.load(self.config_path)
+        if not self._config:
+            self._config = ProjectConfig.load(self.config_path)
+        return self._config
 
     @property
     def code_path(self) -> Path:
@@ -112,7 +124,7 @@ class Project:
 
     @property
     def application_path(self) -> Path:
-        return self.path / f"src/{self.name}"
+        return self.path / f"src/{self.slug}"
 
     @property
     def compilation_path(self) -> Path:

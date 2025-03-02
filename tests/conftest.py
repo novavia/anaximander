@@ -258,14 +258,14 @@ def modpath() -> Generator[Callable[[Path], Path], None, None]:
 def project() -> Generator[Callable[[Path], Project], None, None]:
     """Creates a temporary project in tempdata for use in tests.
 
-    The path argument is a path in the testdata/prototypes directory pointing to either
+    The path argument is a relative path in the testdata/prototypes directory pointing to either
     a prototypes python file or a directory thereof. The name of the file or directory
     is used as the project name, and the project is created under tempdata/projects.
     """
     project_paths = []
 
     def _project(path: Path | str) -> Project:
-        path = TESTDATA / "prototypes" / path
+        path = TESTDATA / "prototypes" / Path(path)
         project_name = path.stem
         project = Project.create(project_name, parent_directory=TEMP_PROJECTS, prototypes=path)
         project_paths.append(project.path)
@@ -285,7 +285,7 @@ class PathToProjectCompiler(Protocol):
 def project_compiler(project) -> Generator[PathToProjectCompiler, None, None]:
     """Returns a project compiler, optionally limited to specified handles.
 
-    The path argument is a path in the testdata/prototypes directory pointing to either
+    The path argument is a relative path in the testdata/prototypes directory pointing to either
     a prototypes python file or a directory thereof. The name of the file or directory
     is used as the project name, and the project is created under tempdata/projects.
     """
@@ -305,12 +305,14 @@ class PathToModuleCompiler(Protocol):
 def module_compiler(project_compiler) -> Generator[PathToModuleCompiler, None, None]:
     """Returns a module compiler.
     
-    The path argument is a path in the testdata/prototypes directory pointing to
+    The path argument is relative a path in the testdata/prototypes directory pointing to
     a python module file.
     """
     def _compiler(path: Path | str, compilation: str) -> ModuleCompiler:
         test_project_compiler: ProjectCompiler = project_compiler(path, compilation)
-        module_compiler = test_project_compiler.module_compiler(path, compilation)
+        project = test_project_compiler.project
+        module_name = f"{project.slug}.api.prototypes_.__init__"
+        module_compiler = test_project_compiler.module_compiler(module_name, compilation)
         return module_compiler
 
     yield _compiler
@@ -320,12 +322,12 @@ def module_compiler(project_compiler) -> Generator[PathToModuleCompiler, None, N
 def compilation_success(module_compiler) -> Generator[Callable[[Path, str], bool], None, None]:
     """Returns an assertion of compilation success for a given module path and compilation handle."""
     def _success(path: Path | str, compilation: str) -> bool:
+        path = Path(path)
         test_module_compiler: ModuleCompiler = module_compiler(path, compilation)
-        test_module_compiler()
+        test_module_compiler.run()
         compilation_path = test_module_compiler.destination
-        relative_path = path.relative_to(TESTDATA / "prototypes")
-        target_path = TESTDATA / "compilation_targets" / compilation + "_" / relative_path
-        if relative_path.exists():
+        target_path = TESTDATA / "compilation_targets" / (compilation + "_") / path
+        if target_path.exists():
             return filecmp.cmp(compilation_path, target_path)
         else:
             return True

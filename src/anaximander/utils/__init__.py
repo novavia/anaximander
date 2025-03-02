@@ -192,3 +192,7 @@ class Config(metaclass=ConfigType):
 
     def __str__(self):
         return OmegaConf.to_yaml(self)
+
+
+private_field = functools.partial(attrs.field, init=False, repr=False, eq=False, order=False)
+ 

@@ -40,6 +40,6 @@ def test_sqlalchemy_field_descriptor(sqla_comp: SQLAlchemyCompiler):
     assert sqla_comp.descriptor(TestModel.c) == "c: Mapped[Color] = mapped_column()"
 
 
-@pytest.mark.parametrize("path", ["simple_project"])
+@pytest.mark.parametrize("path", ["blank.py"])
 def test_sqlalchemy_compilation(compilation_success, path):
     assert compilation_success(path, compilation="sqlalchemy")
