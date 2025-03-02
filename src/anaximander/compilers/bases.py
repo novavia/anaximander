@@ -1,3 +1,4 @@
+import sys
 from abc import ABC
 from functools import singledispatchmethod
 from pathlib import Path
@@ -80,7 +81,7 @@ class ModuleCompiler(ABC):
         assignment = None
         return self._print_descriptor(name, type, assignment)
 
-    def __call__(self, **kwargs):
+    def run(self, **kwargs):
         code = self.template.render(compiler=self, **kwargs)
         if write_path := self.destination:
             write_path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,8 +96,9 @@ class ProjectCompiler:
     def __init__(self, project: Project, *compilations: str):
         self.project = project
         self.compilations = list(compilations) or list(ModuleCompiler.__types__)
+        self._modules = []
 
-    def __call__(self, **kwargs):
+    def _prepare_modules(self):
         # Copies model files into the application code
         self.project.copy_prototypes()
         # Perform imports
@@ -104,20 +106,38 @@ class ProjectCompiler:
         # Resolve and assign type annotations
         for module in modules:
             set_type_annotations(module)
-        # Compile modules
+        return modules
+
+    @property
+    def modules(self) -> list[ModuleType]:
+        if not self._modules:
+            self._modules = self._prepare_modules()
+        return list(self._modules)
+
+    def module_compiler(self, module: ModuleType | str, compilation: str):
+        if isinstance(module, str):
+            module_name = module
+            module = sys.modules.get(module)
+        else:
+            module_name = module.__name__
+        if module not in self.modules:
+            raise ValueError(f"Module {module_name} not in project.")
         prototypes_path = self.project.api_prototypes_path
         compilation_path = self.project.compilation_path
-        for handle in self.compilations:
-            compiler_class = ModuleCompiler[handle]
-            for module in modules:
-                if not (spec := module.__spec__):
-                    raise RuntimeError(f"Module {module} has no spec.")
-                if not (origin := spec.origin):
-                    raise RuntimeError(f"Module {module} has no origin.")
-                module_path = Path(origin)
-                relative_path = module_path.relative_to(prototypes_path)
-                destination = compilation_path / f"{handle}_" / relative_path
-                module_compiler = compiler_class(module, destination=destination)
+        if not (spec := module.__spec__):
+            raise RuntimeError(f"Module {module} has no spec.")
+        if not (origin := spec.origin):
+            raise RuntimeError(f"Module {module} has no origin.")
+        module_path = Path(origin)
+        relative_path = module_path.relative_to(prototypes_path)
+        destination = compilation_path / f"{compilation}_" / relative_path
+        return ModuleCompiler[compilation](module, destination=destination)
+
+    def run(self, **kwargs):
+        # Compile modules
+        for compilation in self.compilations:
+            for module in self.modules:
+                module_compiler = self.module_compiler(module, compilation)
                 module_compiler(**kwargs)
 
 
