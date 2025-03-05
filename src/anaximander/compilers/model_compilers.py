@@ -20,7 +20,8 @@ class DataclassCompiler(ModuleCompiler, handle="dataclasses"):
         else:
             field_type = get_origin(hint)
         annotation = field_type.__name__
-        return self._print_descriptor(name, annotation)
+        assignment = "field()"
+        return self._print_descriptor(name, annotation, assignment)
 
 
 class PydanticCompiler(ModuleCompiler, handle="pydantic"):

@@ -43,3 +43,8 @@ def test_sqlalchemy_field_descriptor(sqla_comp: SQLAlchemyCompiler):
 @pytest.mark.parametrize("path", ["blank.py"])
 def test_sqlalchemy_compilation(compilation_success, path):
     assert compilation_success(path, compilation="sqlalchemy")
+
+
+@pytest.mark.parametrize("path", ["basic.py"])
+def test_dataclass_compilation(compilation_success, path):
+    assert compilation_success(path, compilation="dataclasses")
