@@ -1,18 +1,10 @@
 import pytest
 
-from anaximander import REPO, Project
-
-TESTDIR = REPO / "tests"
-TESTDATA = TESTDIR / "testdata"
-TEMPDATA = TESTDIR / "tempdata"
-
-SIMPLE_PROJECT_PATH = TESTDATA / "projects/simple_project"
-COMPLEX_PROJECT_PATH = TESTDATA / "projects/complex_project"
-BAD_IMPORTS_PROJECT_PATH = TESTDATA / "projects/bad_imports"
+from anaximander import Project
 
 
 def test_create_project(project):
-    simple_project: Project = project("simple_project")
+    simple_project: Project = project("projects/simple_project")
     assert simple_project.name == "simple_project"
     assert simple_project.config_path.exists()
     assert simple_project.prototypes_source_path.exists()
@@ -20,8 +12,8 @@ def test_create_project(project):
 
 
 def test_copy_prototypes(project):
-    simple_project: Project = project("simple_project")
-    complex_project: Project = project("complex_project")
+    simple_project: Project = project("projects/simple_project")
+    complex_project: Project = project("projects/complex_project")
     simple_project.copy_prototypes()
     assert (simple_project.api_prototypes_path / "models.py").exists()
     complex_project.copy_prototypes()
@@ -30,9 +22,9 @@ def test_copy_prototypes(project):
 
 
 def test_import_prototypes(project):
-    simple_project: Project = project("simple_project")
-    complex_project: Project = project("complex_project")
-    bad_imports_project: Project = project("bad_imports")
+    simple_project: Project = project("projects/simple_project")
+    complex_project: Project = project("projects/complex_project")
+    bad_imports_project: Project = project("projects/bad_imports")
 
     simple_project.copy_prototypes()
     modules = simple_project.import_prototypes()

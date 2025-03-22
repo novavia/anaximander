@@ -30,14 +30,14 @@ from . import Base
 
 {% for modeltype in compiler.modeltypes %}
 
-class {{modeltype.__name__}}(Base):
+class {{modeltype.__name__}}{{compiler.modelbases(modeltype)}}:
 {% if modeltype.__doc__ %}
     """{{modeltype.__doc__}}"""
 
 {% endif %}
     __tablename__ = "{{modeltype.collection_name}}"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-{% for md in modeltype.metadescriptors(Field, Parent, Query).values() %}
+{% for md in modeltype.metadescriptors(Field, Parent, Query, inherited=False).values() %}
     {{compiler.descriptor(md)}}
 {% endfor %}
 

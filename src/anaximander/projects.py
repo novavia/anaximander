@@ -63,7 +63,7 @@ class Project:
                 working directory.
                 Note that the name of the file or directory is ignored:
                 - If the path points to a python file, it is turned to 'src/prototypes/__init__.py'
-                - If the path points to a directored, its content is copied to 'src/prototoypes'
+                - If the path points to a directory, its content is copied to 'src/prototoypes'
                 Hence if the prototypes are defined in a module my_prototypes.py and the name
                 needs to be preserved, one can place the module in a folder by itself and point
                 to that folder.

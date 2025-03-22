@@ -106,8 +106,12 @@ def pytest_configure(config):
     global INTERACTIVE
     INTERACTIVE = boolean(os.environ.setdefault("INTERACTIVE", "False"))
 
-    config.addinivalue_line("markers", "online: test is skipped if machine is not online")
-    config.addinivalue_line("markers", "integration: test is skipped if only unit tests are run")
+    config.addinivalue_line(
+        "markers", "online: test is skipped if machine is not online"
+    )
+    config.addinivalue_line(
+        "markers", "integration: test is skipped if only unit tests are run"
+    )
     config.addinivalue_line(
         "markers",
         "local_deployment: test is only run if the local_deployment flag is passed",
@@ -152,22 +156,6 @@ def pytest_runtest_setup(item):  # noqa: C901
 
 
 # =============================================================================
-# Debug configuration
-# =============================================================================
-
-
-if os.getenv("_PYTEST_RAISE", "0") != "0":
-
-    @pytest.hookimpl(tryfirst=True)
-    def pytest_exception_interact(call):
-        raise call.excinfo.value
-
-    @pytest.hookimpl(tryfirst=True)
-    def pytest_internalerror(excinfo):
-        raise excinfo.value
-
-
-# =============================================================================
 # Custom fixtures
 # =============================================================================
 
@@ -191,7 +179,9 @@ def make_tempdata_path(path: Path | str) -> Path:
     path = Path(path)
     if path.is_absolute():
         if not path.is_relative_to(TESTDATA):
-            msg = "Only files and directories in the testdata folder can be fixtureized."
+            msg = (
+                "Only files and directories in the testdata folder can be fixtureized."
+            )
             raise ValueError(msg)
         relative_path = path.relative_to(TESTDATA)
     else:
@@ -267,7 +257,9 @@ def project() -> Generator[Callable[[Path], Project], None, None]:
     def _project(path: Path | str) -> Project:
         path = TESTDATA / "prototypes" / Path(path)
         project_name = path.stem
-        project = Project.create(project_name, parent_directory=TEMP_PROJECTS, prototypes=path)
+        project = Project.create(
+            project_name, parent_directory=TEMP_PROJECTS, prototypes=path
+        )
         project_paths.append(project.path)
         return project
 
@@ -289,6 +281,7 @@ def project_compiler(project) -> Generator[PathToProjectCompiler, None, None]:
     a prototypes python file or a directory thereof. The name of the file or directory
     is used as the project name, and the project is created under tempdata/projects.
     """
+
     def _compiler(path: Path | str, *compilations: str) -> ProjectCompiler:
         test_project = project(path)
         compiler = ProjectCompiler(test_project, *compilations)
@@ -304,23 +297,29 @@ class PathToModuleCompiler(Protocol):
 @pytest.fixture
 def module_compiler(project_compiler) -> Generator[PathToModuleCompiler, None, None]:
     """Returns a module compiler.
-    
+
     The path argument is relative a path in the testdata/prototypes directory pointing to
     a python module file.
     """
+
     def _compiler(path: Path | str, compilation: str) -> ModuleCompiler:
         test_project_compiler: ProjectCompiler = project_compiler(path, compilation)
         project = test_project_compiler.project
         module_name = f"{project.slug}.api.prototypes_.__init__"
-        module_compiler = test_project_compiler.module_compiler(module_name, compilation)
+        module_compiler = test_project_compiler.module_compiler(
+            module_name, compilation
+        )
         return module_compiler
 
     yield _compiler
 
 
 @pytest.fixture
-def compilation_success(module_compiler) -> Generator[Callable[[Path, str], bool], None, None]:
+def compilation_success(
+    module_compiler,
+) -> Generator[Callable[[Path, str], bool], None, None]:
     """Returns an assertion of compilation success for a given module path and compilation handle."""
+
     def _success(path: Path | str, compilation: str) -> bool:
         path = Path(path)
         test_module_compiler: ModuleCompiler = module_compiler(path, compilation)

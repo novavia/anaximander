@@ -2,7 +2,7 @@ from typing import Any, Callable
 
 import attrs
 
-from .meta import DataABC, DataObjectABC, DataObjectMetadescriptor, Prototype, dataobject
+from .meta import DataObjectMetadescriptor
 
 
 @attrs.define
@@ -17,9 +17,6 @@ class Field(DataObjectMetadescriptor):
     index: bool | str | list[str] | None = attrs.field(default=None)
     unique: bool = attrs.field(default=False)
     repr: bool | Callable | None = attrs.field(default=None)
-
-    def __validate_hint__(self, owner: Prototype, hint: type[dataobject]) -> bool:
-        return DataObjectABC.__is_subtype__(hint, DataABC)
 
 
 def field(

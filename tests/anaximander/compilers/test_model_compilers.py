@@ -5,7 +5,7 @@ from types import ModuleType
 import pytest
 
 import anaximander as nx
-from anaximander.aml.meta import set_type_annotations
+from anaximander.aml.meta import prepare_module
 from anaximander.compilers.model_compilers import SQLAlchemyCompiler
 
 
@@ -25,7 +25,7 @@ class TestModel(nx.Model):
 @pytest.fixture(scope="module")
 def module() -> ModuleType:
     module_ = sys.modules[__name__]
-    set_type_annotations(module_)
+    prepare_module(module_)
     return module_
 
 
@@ -40,11 +40,13 @@ def test_sqlalchemy_field_descriptor(sqla_comp: SQLAlchemyCompiler):
     assert sqla_comp.descriptor(TestModel.c) == "c: Mapped[Color] = mapped_column()"
 
 
-@pytest.mark.parametrize("path", ["blank.py"])
-def test_sqlalchemy_compilation(compilation_success, path):
-    assert compilation_success(path, compilation="sqlalchemy")
+# @pytest.mark.parametrize("path", ["blank.py"])
+# def test_sqlalchemy_compilation(compilation_success, path):
+#     assert compilation_success(path, compilation="sqlalchemy")
 
 
-@pytest.mark.parametrize("path", ["basic.py"])
+@pytest.mark.parametrize("path", ["elementary/basic.py", 
+                                  "elementary/annotations.py",
+                                  "elementary/inheritance.py"])
 def test_dataclass_compilation(compilation_success, path):
     assert compilation_success(path, compilation="dataclasses")

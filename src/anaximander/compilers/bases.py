@@ -7,7 +7,7 @@ from types import ModuleType
 from jinja2 import Environment, PackageLoader, Template
 
 from .. import Project
-from ..aml.meta import Metadescriptor, set_type_annotations
+from ..aml.meta import Metadescriptor, prepare_module
 from ..aml.model import Model
 from ..utils.funcs import is_package_init, subclasses
 
@@ -33,6 +33,8 @@ class ModuleCompiler(ABC):
     """Encapsulates the steps to compile a module."""
 
     __types__ = {}
+    
+    base_model_type_name: str | None = None
 
     def __init_subclass__(cls, handle: str):
         assert isinstance(handle, str)
@@ -81,6 +83,23 @@ class ModuleCompiler(ABC):
         assignment = None
         return self._print_descriptor(name, type, assignment)
 
+    def modelbases(self, modeltype: type[Model]) -> str:
+        modeltype_bases = modeltype.__bases__
+        modeltype_base = modeltype_bases[0]
+        modeltype_mixins = modeltype_bases[1:]
+        bases = []
+        if modeltype_base is Model:
+            if self.base_model_type_name:
+                bases.append(self.base_model_type_name)
+        else:
+            bases.append(modeltype_base.__name__)
+        if modeltype_mixins:
+            bases.extend(b.__name__ for b in modeltype_mixins)
+        if bases:
+            return f"({', '.join(bases)})"
+        else:
+            return ""
+
     def run(self, **kwargs):
         code = self.template.render(compiler=self, **kwargs)
         if write_path := self.destination:
@@ -103,9 +122,11 @@ class ProjectCompiler:
         self.project.copy_prototypes()
         # Perform imports
         modules = self.project.import_prototypes()
+        # Prepare module:
+        # Validate prototype inheritance
         # Resolve and assign type annotations
         for module in modules:
-            set_type_annotations(module)
+            prepare_module(module)
         return modules
 
     @property

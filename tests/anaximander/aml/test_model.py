@@ -39,15 +39,15 @@ class TestModel(Model):
     c: Color = field()
     d: list[Color] = field()
     e: RainbowDict = field()
+    f: C = field()
 
 
 class InvalidFieldsModel(Model):
-    a: TestModel = field()
-    b: dict = field()
-    c: Optional[float] = field()
-    d: Literal["f", 0] = field()
-    e: float | str = field()
-    f: str | None = field()
+    a: dict = field()
+    b: Optional[float] = field()
+    c: Literal["f", 0] = field()
+    d: float | str = field()
+    e: str | None = field()
 
 
 def test_compile():
@@ -62,7 +62,7 @@ def test_set_annotation():
     TestModel.__set_type_annotations__()
     annotations = get_annotations(InvalidFieldsModel, format=Format.STRING)
     superhints = get_type_hints(InvalidFieldsModel)
-    for name in ("a", "b", "c", "d", "e", "f"):
+    for name in ("a", "b", "c", "d", "e"):
         metadescriptor = getattr(InvalidFieldsModel, name)
         annotation = annotations[name]
         hint = superhints[name]

@@ -14,21 +14,18 @@ class DataclassCompiler(ModuleCompiler, handle="dataclasses"):
     @descriptor.register
     def field_descriptor(self, field: Field) -> str:
         name = field.name
-        hint = field.hint
-        if isinstance(hint, type):
-            field_type = hint
-        else:
-            field_type = get_origin(hint)
-        annotation = field_type.__name__
+        annotation = field.annotation
         assignment = "field()"
         return self._print_descriptor(name, annotation, assignment)
 
 
 class PydanticCompiler(ModuleCompiler, handle="pydantic"):
-    pass
+    base_model_type_name = "BaseModel"
 
 
 class SQLAlchemyCompiler(ModuleCompiler, handle="sqlalchemy"):
+    base_model_type_name = "Base"
+
     @singledispatchmethod
     def descriptor(self, metadescriptor: Metadescriptor) -> str:
         return super().descriptor(metadescriptor)

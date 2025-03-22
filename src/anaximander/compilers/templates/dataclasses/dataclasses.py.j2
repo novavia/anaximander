@@ -3,12 +3,12 @@ from dataclasses import dataclass, field
 {% for modeltype in compiler.modeltypes %}
 
 @dataclass
-class {{modeltype.__name__}}:
+class {{modeltype.__name__}}{{compiler.modelbases(modeltype)}}:
 {% if modeltype.__doc__ %}
     """{{modeltype.__doc__}}"""
 
 {% endif %}
-{% for md in modeltype.metadescriptors(Field).values() %}
+{% for md in modeltype.metadescriptors(Field, inherited=False).values() %}
     {{compiler.descriptor(md)}}
 {% endfor %}
 {% endfor %}

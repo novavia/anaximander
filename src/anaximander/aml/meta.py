@@ -85,13 +85,30 @@ class Prototype(ABCMeta):
             metadescriptors = cls_metadescriptors
         return metadescriptors
 
+    def __validate_bases__(cls):
+        """The first base must be a Prototype and there can be only one."""
+        bases = cls.__bases__
+        if not isinstance(bases[0], Prototype):
+            msg = "Prototypes cannot be used as mixin classes."
+            raise TypeError(msg)
+        extra_parent_prototypes = [b for b in bases[1:] if isinstance(b, Prototype)]
+        if extra_parent_prototypes:
+            msg = "Prototypes do not support multiple inheritance."
+            raise TypeError(msg)
+
     def __set_type_annotations__(cls):
         """Sets type annotations on typed metadescriptors."""
-        annotations = get_annotations(cls, format=Format.STRING)
+        annotation_values = get_annotations(cls, format=Format.VALUE)
+        annotation_strings = get_annotations(cls, format=Format.STRING)
         superhints = get_type_hints(cls)  # This includes super classes
         metadescriptors = cls.metadescriptors(TypedMetadescriptor, inherited=False)
         for name, metadescriptor in metadescriptors.items():
-            annotation = annotations.get(name, "")
+            annotation_value = annotation_values.get(name, "")
+            annotation_string = annotation_strings.get(name, "")
+            if isinstance(annotation_value, str):
+                annotation = f'"{annotation_value}"'
+            else:
+                annotation = annotation_string
             hint = superhints.get(name, None)
             metadescriptor.__set_type__(cls, annotation, hint)
 
@@ -104,10 +121,11 @@ class Prototype(ABCMeta):
         return type_name_to_collection_name(cls.__name__)
 
 
-def set_type_annotations(module: ModuleType):
+def prepare_module(module: ModuleType):
     """Sets type annotations on typed metadescriptors."""
     for cls in module.__dict__.values():
         if isinstance(cls, Prototype):
+            cls.__validate_bases__()
             cls.__set_type_annotations__()
 
 
