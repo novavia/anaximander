@@ -1,5 +1,5 @@
 # user directories
-**/user/
+**/user/**
 !**/user/.gitkeep
 
 # Files that might appear on external disks
