@@ -1,5 +1,7 @@
+import ast
 import sys
 from enum import Enum
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -23,14 +25,16 @@ class TestModel(nx.Model):
 
 
 @pytest.fixture(scope="module")
-def module() -> ModuleType:
-    module_ = sys.modules[__name__]
+def module() -> nx.NxModuleType:
+    module_: nx.NxModuleType = sys.modules[__name__]
+    module_code = Path(module_.__file__).read_text()
+    module_.__ast__ = ast.parse(module_code)
     prepare_module(module_)
     return module_
 
 
 @pytest.fixture(scope="module")
-def sqla_comp(module: ModuleType) -> SQLAlchemyCompiler:
+def sqla_comp(module: nx.NxModuleType) -> SQLAlchemyCompiler:
     return SQLAlchemyCompiler(module)
 
 

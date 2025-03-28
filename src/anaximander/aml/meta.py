@@ -5,7 +5,6 @@ from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Collection
 from decimal import Decimal
 from enum import Enum
-from types import ModuleType
 from typing import (
     Any,
     Callable,
@@ -20,6 +19,7 @@ from uuid import UUID
 import attrs
 from annotationlib import Format, get_annotations
 
+from .. import NxModuleType
 from ..utils.funcs import type_name_to_collection_name
 
 # from pydantic import BaseModel   # pydantic not yet compatible with python 3.14
@@ -121,7 +121,7 @@ class Prototype(ABCMeta):
         return type_name_to_collection_name(cls.__name__)
 
 
-def prepare_module(module: ModuleType):
+def prepare_module(module: NxModuleType):
     """Sets type annotations on typed metadescriptors."""
     for cls in module.__dict__.values():
         if isinstance(cls, Prototype):

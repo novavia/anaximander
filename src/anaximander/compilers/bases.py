@@ -2,11 +2,10 @@ import sys
 from abc import ABC
 from functools import singledispatchmethod
 from pathlib import Path
-from types import ModuleType
 
 from jinja2 import Environment, PackageLoader, Template
 
-from .. import Project
+from .. import NxModuleType, Project
 from ..aml.meta import Metadescriptor, prepare_module
 from ..aml.model import Model
 from ..utils.funcs import is_package_init, subclasses
@@ -45,7 +44,7 @@ class ModuleCompiler(ABC):
     def __class_getitem__(cls, key):
         return cls.__types__[key]
 
-    def __init__(self, module: ModuleType, destination: Path | str | None = None):
+    def __init__(self, module: NxModuleType, destination: Path | str | None = None):
         self.module = module
         self.destination = Path(destination) if destination else None
 
@@ -130,12 +129,12 @@ class ProjectCompiler:
         return modules
 
     @property
-    def modules(self) -> list[ModuleType]:
+    def modules(self) -> list[NxModuleType]:
         if not self._modules:
             self._modules = self._prepare_modules()
         return list(self._modules)
 
-    def module_compiler(self, module: ModuleType | str, compilation: str):
+    def module_compiler(self, module: NxModuleType | str, compilation: str):
         modules = self.modules
         if isinstance(module, str):
             module_name = module

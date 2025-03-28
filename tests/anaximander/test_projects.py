@@ -1,3 +1,5 @@
+import ast
+
 import pytest
 
 from anaximander import Project
@@ -29,12 +31,14 @@ def test_import_prototypes(project):
     simple_project.copy_prototypes()
     modules = simple_project.import_prototypes()
     assert len(modules) == 2
+    assert all(isinstance(m.__ast__, ast.Module) for m in modules)
     assert set(m.__name__ for m in modules) == {"simple_project.api.prototypes_.models", 
                                                 "simple_project.api.prototypes_.__init__"}
 
     complex_project.copy_prototypes()
     modules = complex_project.import_prototypes()
     assert len(modules) == 13
+    assert all(isinstance(m.__ast__, ast.Module) for m in modules)
     assert modules[0].__name__ == "complex_project.api.prototypes_.package.subpackage.__init__"
     assert modules[-1].__name__ == "complex_project.api.prototypes_.top_level_module"
 

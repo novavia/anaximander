@@ -1,3 +1,4 @@
+import ast
 import shutil
 import sys
 from importlib import import_module
@@ -12,6 +13,11 @@ from .utils.funcs import workdir
 
 NXPATH = Path(__file__).parent
 PROJECT_TEMPLATE = NXPATH / "config/projects/project_template"
+
+
+class NxModuleType(ModuleType):
+    """A type hint for Anaximander prototype modules."""
+    __ast__: ast.Module
 
 
 class ProjectConfig(Config):
@@ -174,7 +180,7 @@ class Project:
     @classmethod
     def _import_from_directory(
         cls, directory: Path, package: str | None = None
-    ) -> list[ModuleType]:
+    ) -> list[NxModuleType]:
         """Primitive function for import_models.
 
         Args:
@@ -183,7 +189,7 @@ class Project:
                 Defaults to None.
 
         Returns:
-            list[ModuleType]: A list of imported modules.
+            list[NxModuleType]: A list of imported modules.
         """
         modules = []
         subdirectories = directory.glob("*/")
@@ -194,13 +200,17 @@ class Project:
             modules.extend(cls._import_from_directory(sub, package=subpackage))
         module_paths = directory.glob("*.py")
         for module_path in module_paths:
+            module_code = module_path.read_text()
+            module_ast = ast.parse(module_code)
             module_name = module_path.stem
             if package is not None:
                 module_name = "." + module_name
-            modules.append(import_module(module_name, package=package))
+            module: NxModuleType = import_module(module_name, package=package)
+            module.__ast__ = module_ast
+            modules.append(module)
         return modules
 
-    def import_prototypes(self) -> list[ModuleType]:
+    def import_prototypes(self) -> list[NxModuleType]:
         """Imports the modules in the project's src/<project>/api/prototypes_ directory."""
         if not self.api_prototypes_path.exists():
             relative_path = self.api_prototypes_path.relative_to(self.path)
