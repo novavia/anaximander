@@ -1,4 +1,3 @@
-from .projects import NxModuleType, Project, NXPATH
 from .aml import (
     Data,
     Metadescriptor,
@@ -13,12 +12,12 @@ from .aml import (
     prototype,
     query,
 )
+from .projects import Project, NXPATH
 from .compilers import ProjectCompiler
 
 REPO = NXPATH.parent.parent
 
 __all__ = [
-    "NxModuleType",
     "Project",
     "NXPATH",
     "REPO",

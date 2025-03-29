@@ -1,3 +1,4 @@
+import ast
 import sys
 from abc import ABC
 from functools import singledispatchmethod
@@ -5,8 +6,8 @@ from pathlib import Path
 
 from jinja2 import Environment, PackageLoader, Template
 
-from .. import NxModuleType, Project
-from ..aml.meta import Metadescriptor, prepare_module
+from ..projects import NxModuleType, Project
+from ..aml.meta import Assignment, Metadescriptor, Prototype
 from ..aml.model import Model
 from ..utils.funcs import is_package_init, subclasses
 
@@ -26,6 +27,53 @@ J2ENV.globals["get_macro"] = get_macro
 
 for meatadescriptor_type in subclasses(Metadescriptor, strict=False):
     J2ENV.globals[meatadescriptor_type.__name__] = meatadescriptor_type
+
+
+class BodiedAST(ABC, ast.AST):
+    """A protocol for AST nodes that have a body attribute."""
+    body: list[ast.AST]
+
+
+def name_assignments(node: BodiedAST) -> dict[str, Assignment]:
+    """Yields first-level simple name or annotated name assignments in the node's body."""
+    assignments = {}
+    for subnode in node.body:
+        match subnode:
+            case ast.Assign():
+                if len(subnode.targets) == 1:
+                    target = subnode.targets[0]
+                else:
+                    continue
+            case ast.AnnAssign():
+                target = subnode.target
+            case _:
+                continue
+        if isinstance(target, ast.Name):
+            assignments[target.id] = subnode
+        else:
+            pass
+    return assignments
+
+
+def prepare_module(module: NxModuleType):
+    """Resolve code, interpretation and annotations."""
+    # First we establish the list of prototype declarations
+    # They are prototype instances in the module's namespace, and
+    # have their class definitiion in the module itself
+    class_defs = {n.name: n for n in module.__ast__.body if isinstance(n, ast.ClassDef)}
+    namespace_prototypes = {k: v for k, v in module.__dict__.items() if isinstance(v, Prototype)}
+    prototype_names = set(namespace_prototypes) & set(class_defs)
+    module.__prototoypes__ = [v for k, v in namespace_prototypes.items() if k in prototype_names]
+    # Validate base classes and set type annotations on metadescriptors
+    for cls in module.__prototoypes__:
+        cls.__ast__ = class_defs[cls.__name__]
+        cls.__validate_bases__()
+        cls.__set_type_annotations__()
+        assignments = name_assignments(cls.__ast__)
+        metadescriptors = cls.metadescriptors(Metadescriptor, inherited=False)
+        for name, metadescripor in metadescriptors.items():
+            assignment = assignments[name]
+            metadescripor.__ast__ = assignment
 
 
 class ModuleCompiler(ABC):

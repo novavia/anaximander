@@ -2,12 +2,12 @@ import ast
 import sys
 from enum import Enum
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
 import anaximander as nx
-from anaximander.aml.meta import prepare_module
+from anaximander.projects import NxModuleType
+from anaximander.compilers.bases import prepare_module
 from anaximander.compilers.model_compilers import SQLAlchemyCompiler
 
 
@@ -25,8 +25,8 @@ class TestModel(nx.Model):
 
 
 @pytest.fixture(scope="module")
-def module() -> nx.NxModuleType:
-    module_: nx.NxModuleType = sys.modules[__name__]
+def module() -> NxModuleType:
+    module_: NxModuleType = sys.modules[__name__]
     module_code = Path(module_.__file__).read_text()
     module_.__ast__ = ast.parse(module_code)
     prepare_module(module_)
@@ -34,7 +34,7 @@ def module() -> nx.NxModuleType:
 
 
 @pytest.fixture(scope="module")
-def sqla_comp(module: nx.NxModuleType) -> SQLAlchemyCompiler:
+def sqla_comp(module: NxModuleType) -> SQLAlchemyCompiler:
     return SQLAlchemyCompiler(module)
 
 

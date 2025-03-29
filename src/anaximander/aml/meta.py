@@ -1,5 +1,6 @@
 """This module defines base types and metaclasses for the Anaximander Modeling Language (AML)."""
 
+import ast
 import datetime
 from abc import ABC, ABCMeta, abstractmethod
 from collections.abc import Collection
@@ -19,8 +20,9 @@ from uuid import UUID
 import attrs
 from annotationlib import Format, get_annotations
 
-from .. import NxModuleType
 from ..utils.funcs import type_name_to_collection_name
+
+type Assignment = ast.Assign | ast.AnnAssign
 
 # from pydantic import BaseModel   # pydantic not yet compatible with python 3.14
 
@@ -36,6 +38,7 @@ class Metadescriptor(ABC):
 
     __reserved_names__: ClassVar[Collection[str]] = set()
     name: str = attrs.field(init=False)
+    __ast__: Assignment = attrs.field(init=False)
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -59,6 +62,8 @@ M = TypeVar("M", bound=Metadescriptor)
 
 class Prototype(ABCMeta):
     """Metaclass for model and data declarative types."""
+    __compilations__: dict[str, dict]  # Holds compilation target handles and parameters
+    __ast__: ast.ClassDef  # Holds the model's parsed abstract syntax tree
 
     def __init__(cls, name, bases, attrs):
         super().__init__(name, bases, attrs)
@@ -71,7 +76,7 @@ class Prototype(ABCMeta):
         Otherwise, only the metadescriptors directly declared by cls are returned.
         """
         if not types:
-            types = (Metadescriptor,)  # type: ignore
+            types = (Metadescriptor,)  
         cls_metadescriptors = {k: v for k, v in cls.__dict__.items() if isinstance(v, types)}
         if inherited:
             parent = cls.mro()[1]
@@ -119,14 +124,6 @@ class Prototype(ABCMeta):
         This can be customized by passing metadata (#TODO).
         """
         return type_name_to_collection_name(cls.__name__)
-
-
-def prepare_module(module: NxModuleType):
-    """Sets type annotations on typed metadescriptors."""
-    for cls in module.__dict__.values():
-        if isinstance(cls, Prototype):
-            cls.__validate_bases__()
-            cls.__set_type_annotations__()
 
 
 class DataABC(ABC):
@@ -257,6 +254,7 @@ def compile(*compilers: str, **kwargs) -> Callable[[P], P]:
 class TypedMetadescriptor(Metadescriptor):
     annotation: str = attrs.field(init=False)  # Literal type annotation as a string
     hint: Any = attrs.field(init=False)  # Evaluated type annotation
+    __ast__: ast.AnnAssign = attrs.field(init=False)
 
     @abstractmethod
     def __validate_hint__(self, owner: Prototype, hint: Any) -> bool:
