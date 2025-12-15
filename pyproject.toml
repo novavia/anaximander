@@ -32,6 +32,10 @@ runtype = "^0.5.2"
 inflect = "^7.5.0"
 omegaconf = "^2.3.0"
 astpretty = "^3.0.0"
+pendulum = "^3.1.0"
+ibis = "^3.3.0"
+pydantic = "^2.12.4"
+pandera = "^0.27.0"
 
 [tool.poetry.dev-dependencies]
 black = "*"
