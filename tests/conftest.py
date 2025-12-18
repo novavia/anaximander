@@ -20,8 +20,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from anaximander.api.sqlalchemy_ import connections
-from anaximander.compilers import ProjectCompiler, ModuleCompiler
-from anaximander.projects import Project
+# from anaximander.compilers import ProjectCompiler, ModuleCompiler
+# from anaximander.projects import Project
 from anaximander.utils import KwargMap
 from anaximander.utils.funcs import boolean, offline  # noqa
 
@@ -244,94 +244,94 @@ def modpath() -> Generator[Callable[[Path], Path], None, None]:
         teardown_tempdata_path(tempdata_path)
 
 
-@pytest.fixture
-def project() -> Generator[Callable[[Path], Project], None, None]:
-    """Creates a temporary project in tempdata for use in tests.
+# @pytest.fixture
+# def project() -> Generator[Callable[[Path], Project], None, None]:
+#     """Creates a temporary project in tempdata for use in tests.
 
-    The path argument is a relative path in the testdata/prototypes directory pointing to either
-    a prototypes python file or a directory thereof. The name of the file or directory
-    is used as the project name, and the project is created under tempdata/projects.
-    """
-    project_paths = []
+#     The path argument is a relative path in the testdata/prototypes directory pointing to either
+#     a prototypes python file or a directory thereof. The name of the file or directory
+#     is used as the project name, and the project is created under tempdata/projects.
+#     """
+#     project_paths = []
 
-    def _project(path: Path | str) -> Project:
-        path = TESTDATA / "prototypes" / Path(path)
-        project_name = path.stem
-        project = Project.create(
-            project_name, parent_directory=TEMP_PROJECTS, prototypes=path
-        )
-        project_paths.append(project.path)
-        return project
+#     def _project(path: Path | str) -> Project:
+#         path = TESTDATA / "prototypes" / Path(path)
+#         project_name = path.stem
+#         project = Project.create(
+#             project_name, parent_directory=TEMP_PROJECTS, prototypes=path
+#         )
+#         project_paths.append(project.path)
+#         return project
 
-    yield _project
+#     yield _project
 
-    for project_path in project_paths:
-        teardown_tempdata_path(project_path)
-
-
-class PathToProjectCompiler(Protocol):
-    def __call__(self, path: Path, *compilations: str) -> ProjectCompiler: ...
+#     for project_path in project_paths:
+#         teardown_tempdata_path(project_path)
 
 
-@pytest.fixture
-def project_compiler(project) -> Generator[PathToProjectCompiler, None, None]:
-    """Returns a project compiler, optionally limited to specified handles.
-
-    The path argument is a relative path in the testdata/prototypes directory pointing to either
-    a prototypes python file or a directory thereof. The name of the file or directory
-    is used as the project name, and the project is created under tempdata/projects.
-    """
-
-    def _compiler(path: Path | str, *compilations: str) -> ProjectCompiler:
-        test_project = project(path)
-        compiler = ProjectCompiler(test_project, *compilations)
-        return compiler
-
-    yield _compiler
+# class PathToProjectCompiler(Protocol):
+#     def __call__(self, path: Path, *compilations: str) -> ProjectCompiler: ...
 
 
-class PathToModuleCompiler(Protocol):
-    def __call__(self, path: Path, compilation: str) -> ProjectCompiler: ...
+# @pytest.fixture
+# def project_compiler(project) -> Generator[PathToProjectCompiler, None, None]:
+#     """Returns a project compiler, optionally limited to specified handles.
+
+#     The path argument is a relative path in the testdata/prototypes directory pointing to either
+#     a prototypes python file or a directory thereof. The name of the file or directory
+#     is used as the project name, and the project is created under tempdata/projects.
+#     """
+
+#     def _compiler(path: Path | str, *compilations: str) -> ProjectCompiler:
+#         test_project = project(path)
+#         compiler = ProjectCompiler(test_project, *compilations)
+#         return compiler
+
+#     yield _compiler
 
 
-@pytest.fixture
-def module_compiler(project_compiler) -> Generator[PathToModuleCompiler, None, None]:
-    """Returns a module compiler.
-
-    The path argument is relative a path in the testdata/prototypes directory pointing to
-    a python module file.
-    """
-
-    def _compiler(path: Path | str, compilation: str) -> ModuleCompiler:
-        test_project_compiler: ProjectCompiler = project_compiler(path, compilation)
-        project = test_project_compiler.project
-        module_name = f"{project.slug}.api.prototypes_.__init__"
-        module_compiler = test_project_compiler.module_compiler(
-            module_name, compilation
-        )
-        return module_compiler
-
-    yield _compiler
+# class PathToModuleCompiler(Protocol):
+#     def __call__(self, path: Path, compilation: str) -> ProjectCompiler: ...
 
 
-@pytest.fixture
-def compilation_success(
-    module_compiler,
-) -> Generator[Callable[[Path, str], bool], None, None]:
-    """Returns an assertion of compilation success for a given module path and compilation handle."""
+# @pytest.fixture
+# def module_compiler(project_compiler) -> Generator[PathToModuleCompiler, None, None]:
+#     """Returns a module compiler.
 
-    def _success(path: Path | str, compilation: str) -> bool:
-        path = Path(path)
-        test_module_compiler: ModuleCompiler = module_compiler(path, compilation)
-        test_module_compiler.run()
-        compilation_path = test_module_compiler.destination
-        target_path = TESTDATA / "compilation_targets" / (compilation + "_") / path
-        if target_path.exists():
-            return filecmp.cmp(compilation_path, target_path)
-        else:
-            return True
+#     The path argument is relative a path in the testdata/prototypes directory pointing to
+#     a python module file.
+#     """
 
-    yield _success
+#     def _compiler(path: Path | str, compilation: str) -> ModuleCompiler:
+#         test_project_compiler: ProjectCompiler = project_compiler(path, compilation)
+#         project = test_project_compiler.project
+#         module_name = f"{project.slug}.api.prototypes_.__init__"
+#         module_compiler = test_project_compiler.module_compiler(
+#             module_name, compilation
+#         )
+#         return module_compiler
+
+#     yield _compiler
+
+
+# @pytest.fixture
+# def compilation_success(
+#     module_compiler,
+# ) -> Generator[Callable[[Path, str], bool], None, None]:
+#     """Returns an assertion of compilation success for a given module path and compilation handle."""
+
+#     def _success(path: Path | str, compilation: str) -> bool:
+#         path = Path(path)
+#         test_module_compiler: ModuleCompiler = module_compiler(path, compilation)
+#         test_module_compiler.run()
+#         compilation_path = test_module_compiler.destination
+#         target_path = TESTDATA / "compilation_targets" / (compilation + "_") / path
+#         if target_path.exists():
+#             return filecmp.cmp(compilation_path, target_path)
+#         else:
+#             return True
+
+#     yield _success
 
 
 @pytest.fixture

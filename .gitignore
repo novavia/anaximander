@@ -1,6 +1,7 @@
 # user directories
 **/user/**
 !**/user/.gitkeep
+.archive
 
 # Files that might appear on external disks
 .vscode
