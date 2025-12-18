@@ -1,3 +1,5 @@
+"""Tests for utility helpers: subclasses discovery, case conversion, pluralization,
+collection-name derivation, and package __init__ detection."""
 import sys
 
 import anaximander as nx
@@ -27,6 +29,7 @@ class D2(D1):
 
 
 def test_subclasses():
+    """Verify subclasses() respects strict inclusion and depth limits."""
     assert subclasses(C0) == [C1, D1, D2]
     assert subclasses(C0, strict=False) == [C0, C1, D1, D2]
     assert subclasses(C0, depth=0) == []
@@ -36,6 +39,7 @@ def test_subclasses():
 
 
 def test_camel_to_snake():
+    """Check camel_to_snake() handles mixed, leading-cap, and idempotent cases."""
     assert camel_to_snake("camelCase") == "camel_case"
     assert camel_to_snake("CamelCase") == "camel_case"
     assert camel_to_snake("camel_case") == "camel_case"
@@ -44,18 +48,21 @@ def test_camel_to_snake():
 
 
 def test_pluralize():
+    """Ensure pluralize() pluralizes simple words and leaves others unchanged."""
     assert pluralize("word") == "words"
     assert pluralize("Words") == "Words"
     assert pluralize("index") == "indexes"
 
 
 def test_type_name_to_collection_name():
+    """Validate conversion from CamelCase to snake_case plural collection names."""
     assert type_name_to_collection_name("CamelCase") == "camel_cases"
     assert type_name_to_collection_name("HTTPResponseCode") == "http_response_codes"
     assert type_name_to_collection_name("CamelCaseThing") == "camel_case_things"
 
 
 def test_is_package_init():
+    """Confirm is_package_init distinguishes regular modules from package __init__."""
     this_module = sys.modules[__name__]
     assert not is_package_init(this_module)
     assert is_package_init(nx)

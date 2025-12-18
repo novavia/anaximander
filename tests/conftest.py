@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Test configuration.
+Pytest configuration, command-line options, markers, and shared fixtures.
+
+Defines CLI flags to control test selection (offline, units, local/cloud deployment,
+buggers), configures markers, and provides tempdata utilities and DB-related fixtures.
 """
 
 # =============================================================================
@@ -37,6 +40,11 @@ TEMP_PROJECTS = TEMPDATA / "projects"
 
 
 def pytest_addoption(parser):
+    """Register custom command-line options.
+
+    Args:
+        parser (pytest.Parser): Pytest option parser to which flags are added.
+    """
     parser.addoption(
         "--offline",
         action="store_true",
@@ -68,7 +76,11 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
-    """Sets configuration variables as environment variables."""
+    """Initialize environment flags and register markers.
+
+    Args:
+        config (pytest.Config): Pytest configuration object.
+    """
     global OFFLINE
     global UNITS
     global LOCAL_DEPLOYMENT
@@ -132,6 +144,11 @@ def pytest_configure(config):
 
 
 def pytest_runtest_setup(item):  # noqa: C901
+    """Apply selection logic based on flags and markers before each test.
+
+    Args:
+        item (pytest.Item): The collected test item.
+    """
     if LOCAL_DEPLOYMENT:
         if "local_deployment" not in item.keywords:
             pytest.skip("Only local deployment tests are running.")
@@ -161,6 +178,7 @@ def pytest_runtest_setup(item):  # noqa: C901
 
 
 def reset_tempdata():
+    """Reset the tempdata directory to a clean state and write a .gitignore."""
     shutil.rmtree(TEMPDATA, ignore_errors=True)
     TEMPDATA.mkdir(parents=True, exist_ok=True)
     gitignore = "\n".join(["*", "!.gitignore"])
@@ -169,13 +187,30 @@ def reset_tempdata():
 
 @pytest.fixture(scope="session", autouse=True)
 def tempdata() -> Generator[Path, None, None]:
+    """Provide a session-scoped tempdata directory.
+
+    Yields:
+        Path: The tempdata path, cleaned before and after the test session.
+    """
     reset_tempdata()
     yield TEMPDATA
     reset_tempdata()
 
 
 def make_tempdata_path(path: Path | str) -> Path:
-    """Creates a path in tempdata for use in tests."""
+    """Create a copy of a test resource under tempdata.
+
+    If path is absolute, it must reside within the testdata directory.
+
+    Args:
+        path (Path | str): Relative path within testdata or an absolute path under testdata.
+
+    Returns:
+        Path: The corresponding path within tempdata.
+
+    Raises:
+        ValueError: If an absolute path is not within testdata.
+    """
     path = Path(path)
     if path.is_absolute():
         if not path.is_relative_to(TESTDATA):
@@ -197,7 +232,11 @@ def make_tempdata_path(path: Path | str) -> Path:
 
 
 def teardown_tempdata_path(path: Path | str):
-    """Teardown for tempdata fixtures."""
+    """Remove a path from tempdata if it exists.
+
+    Args:
+        path (Path | str): Path to a file or directory under tempdata.
+    """
     path = Path(path)
     if not path.is_absolute():
         return
@@ -214,7 +253,14 @@ def teardown_tempdata_path(path: Path | str):
 
 @pytest.fixture(scope="function")
 def funcpath() -> Generator[Callable[[Path], Path], None, None]:
-    """Creates a function-scoped copy of a file or directory into tempdata for use in tests."""
+    """Create function-scoped copies of resources into tempdata.
+
+    Returns a callable that, when given a testdata path, produces a per-test copy
+    under tempdata and tracks it for teardown.
+
+    Yields:
+        Callable[[Path | str], Path]: Copier function returning the tempdata path.
+    """
     tempdata_paths = []
 
     def _path(path: Path | str) -> Path:
@@ -230,7 +276,14 @@ def funcpath() -> Generator[Callable[[Path], Path], None, None]:
 
 @pytest.fixture(scope="module")
 def modpath() -> Generator[Callable[[Path], Path], None, None]:
-    """Creates a module-scoped copy of a file or directory into tempdata for use in tests."""
+    """Create module-scoped copies of resources into tempdata.
+
+    Returns a callable that, when given a testdata path, produces a per-module copy
+    under tempdata and tracks it for teardown.
+
+    Yields:
+        Callable[[Path | str], Path]: Copier function returning the tempdata path.
+    """
     tempdata_paths = []
 
     def _path(path: Path | str) -> Path:
@@ -336,7 +389,14 @@ def modpath() -> Generator[Callable[[Path], Path], None, None]:
 
 @pytest.fixture
 def engine(postgresql) -> Generator[Engine, None, None]:
-    """A SQLAlchemy engine fixture."""
+    """Provide a SQLAlchemy Engine configured from the postgresql fixture.
+
+    Args:
+        postgresql: Fixture exposing connection parameters via .info.
+
+    Yields:
+        Engine: An engine connected to the test PostgreSQL instance.
+    """
     params = KwargMap(postgresql.info, _=["host", "port", "dbname", "user", "password"])
     engine: Engine = connections.postgresql_engine(**params)
     yield engine
@@ -345,7 +405,14 @@ def engine(postgresql) -> Generator[Engine, None, None]:
 
 @pytest.fixture
 def session(engine: Engine) -> Generator[Session, None, None]:
-    """A SQLAlchemy session fixture."""
+    """Provide a SQLAlchemy ORM Session bound to the engine fixture.
+
+    Args:
+        engine (Engine): SQLAlchemy engine fixture.
+
+    Yields:
+        Session: A managed session bound to the provided engine.
+    """
     with Session(engine) as session:
         yield session
     session.close()

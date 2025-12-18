@@ -1,3 +1,4 @@
+"""General-purpose utilities for environment detection, string manipulation, and iteration helpers."""
 import contextlib
 import itertools
 import os
@@ -15,7 +16,17 @@ IE = inflect.engine()
 
 
 def boolean(string):
-    """Converts a string to a boolean."""
+    """Convert a string literal to a boolean.
+
+    Args:
+        string (str): The string "True" or "False".
+
+    Returns:
+        bool: The corresponding boolean value.
+
+    Raises:
+        ValueError: If the input is not "True" or "False".
+    """
     if string == "True":
         return True
     elif string == "False":
@@ -25,7 +36,11 @@ def boolean(string):
 
 
 def is_online():
-    """Function that determines if the tester is online."""
+    """Check if outbound network connectivity is available.
+
+    Returns:
+        bool: True if a connection to a well-known host can be made, False otherwise.
+    """
     connection = None
     try:
         host = socket.gethostbyname("www.google.com")
@@ -40,10 +55,16 @@ def is_online():
 
 
 def offline(assertion=None):
-    """Returns application status, or sets it if assertion is passed.
+    """Get or set the offline status.
 
-    Asserting offline is False is subject to verifying that the application
-    truly is online.
+    If assertion is provided, the offline status is set accordingly. When setting
+    to False, an online connectivity check is performed before updating the status.
+
+    Args:
+        assertion (bool | None): Desired offline status. If None, the current status is returned.
+
+    Returns:
+        bool: Current offline status.
     """
     if assertion is not None:
         if assertion is False:
@@ -65,16 +86,41 @@ def offline(assertion=None):
 
 
 def local_runtime() -> bool:
-    """Returns True if an app runtime executes locally, False in the cloud environment."""
+    """Indicate whether the application is running locally.
+
+    Returns:
+        bool: True if a local runtime is detected, False otherwise.
+    """
     return bool(os.getenv("IS_RUNNING_LOCALLY"))
 
 
 def is_close(a, b, tolerance=1e-9):
-    """Near-equality test function."""
+    """Test near-equality of two numbers within a tolerance.
+
+    Args:
+        a (float): First value.
+        b (float): Second value.
+        tolerance (float, optional): Maximum allowed absolute difference. Defaults to 1e-9.
+
+    Returns:
+        bool: True if the absolute difference is less than tolerance.
+    """
     return abs(a - b) < tolerance
 
 
 def batched(iterable, n: int):
+    """Yield fixed-size batches from an iterable.
+
+    Args:
+        iterable (Iterable): Source of items.
+        n (int): Batch size. Must be at least 1.
+
+    Yields:
+        tuple: Tuples of up to n items from the iterable.
+
+    Raises:
+        ValueError: If n is less than 1.
+    """
     # batched('ABCDEFG', 3) → ABC DEF G
     if n < 1:
         raise ValueError("n must be at least one")
@@ -84,15 +130,15 @@ def batched(iterable, n: int):
 
 
 def subclasses(cls, depth: int = -1, strict: bool = True) -> list[type]:
-    """Recursively get all subclasses of a class, to a given inheritance depth.
+    """Recursively get all subclasses of a class up to a given inheritance depth.
 
     Args:
-        depth (int, optional): Sets the inheritance depth. Defaults to -1,
-            which means all subclasses.
-        strict (bool, optional): If True, cls itself is excluded from the results.
+        cls (type): The base class.
+        depth (int, optional): Maximum depth to traverse. Defaults to -1 for no limit.
+        strict (bool, optional): If True, exclude cls itself from the results. Defaults to True.
 
     Returns:
-        list[type]: An list of subclasses.
+        list[type]: All discovered subclasses.
     """
     all = []
     if not strict:
@@ -107,7 +153,6 @@ def subclasses(cls, depth: int = -1, strict: bool = True) -> list[type]:
 
 def camel_to_snake(s: str) -> str:
     """Converts a camel case string to a snake case string.
-
 
     Args:
         s (str): string to convert.
@@ -144,7 +189,6 @@ def type_name_to_collection_name(name: str) -> str:
     Args:
         name (str): A class name presumed to be CamelCase.
 
-
     Returns:
         str: A collection name using snake_case and plural form.
     """
@@ -157,7 +201,20 @@ def type_name_to_collection_name(name: str) -> str:
 
 @contextlib.contextmanager
 def workdir(path: Path | str, *, mkdir: bool = True) -> Generator[Path, None, None]:
-    """A context manager that temporarily changes the working directory, optionally setting it."""
+    """Temporarily change the working directory.
+
+    Optionally creates the directory before entering.
+
+    Args:
+        path (Path | str): Target directory.
+        mkdir (bool, optional): Whether to create the directory if it does not exist. Defaults to True.
+
+    Yields:
+        Path: The path of the active working directory.
+
+    Raises:
+        ValueError: If the path exists but is not a directory.
+    """
     path = Path(path)
     cwd = Path.cwd()
     if mkdir:
@@ -173,6 +230,14 @@ def workdir(path: Path | str, *, mkdir: bool = True) -> Generator[Path, None, No
 
 
 def is_package_init(module: ModuleType):
+    """Return whether the module corresponds to a package __init__ file.
+
+    Args:
+        module (ModuleType): Module to inspect.
+
+    Returns:
+        bool: True if the module file name is '__init__.py', False otherwise.
+    """
     if not (file_path := getattr(module, '__file__', None)):
         return False
     path = Path(file_path)

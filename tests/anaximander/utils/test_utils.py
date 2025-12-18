@@ -1,3 +1,4 @@
+"""Tests for KwargMap behavior and Config integration with OmegaConf."""
 from dataclasses import dataclass
 
 import omegaconf
@@ -7,6 +8,17 @@ from anaximander.utils import Config, KwargMap
 
 
 def test_kwarg_map():
+    """Validate KwargMap contextual lookup, '_' shorthand, ordering, sorting, and subselection.
+
+    Asserts:
+        - Mapping semantics and string rendering.
+        - Type enforcement on keys.
+        - Context resolution from mapping and locals().
+        - '_' shorthand for attribute lookup.
+        - Deletion behavior and error on missing keys.
+        - Sorting behavior and KeyError on unknown keys.
+        - __call__ subselection returns ordered subset.
+    """
     km_0 = KwargMap(a=1, b=2)
     assert dict(km_0) == {"a": 1, "b": 2}
     assert str(km_0) == "a=1, b=2"
@@ -64,6 +76,11 @@ def test_kwarg_map():
 
 @pytest.mark.bugger
 def test_config():
+    """Ensure Config subclasses integrate with OmegaConf via the omegaconf property.
+
+    Asserts:
+        - Property returns an OmegaConf DictConfig for a Config subclass instance.
+    """
     class MyConfig(Config):
         x: int
         y: int = 0

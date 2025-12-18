@@ -1,4 +1,4 @@
-"""Provides connection strings and SQL Alchemy connection engines."""
+"""Provides connection strings and SQLAlchemy connection engines."""
 
 import os
 from typing import NotRequired, TypedDict, cast
@@ -129,20 +129,20 @@ def postgresql_engine(
     os_environ_prefix: str | None = None,
     **kwargs,
 ) -> Engine:
-    """Returns a SQLAlchemy Engine object from keyword arguments.
+    """Return a SQLAlchemy Engine from keyword arguments or environment variables.
 
     Args:
-        host (str | None, optional): the database host. Defaults to None.
-        port (str | int | None, optional): the database port. Defaults to None.
-        dbname (str | None, optional): the database name. Defaults to None.
-        user (str | None, optional): the database user. Defaults to None.
-        password (str | None, optional): optional user password. Defaults to None.
-        sslmode (str | None, optional): connection ssl mode. Defaults to None.
-        os_environ_prefix (str | None, optional): if supplied, looks for parameters in
+        host (str | None, optional): The database host. Defaults to None.
+        port (str | int | None, optional): The database port. Defaults to None.
+        dbname (str | None, optional): The database name. Defaults to None.
+        user (str | None, optional): The database user. Defaults to None.
+        password (str | None, optional): Optional user password. Defaults to None.
+        sslmode (str | None, optional): Connection SSL mode. Defaults to None.
+        os_environ_prefix (str | None, optional): If supplied, looks for parameters in
             environment variables with this prefix.
 
     Returns:
-        str: a SQLAlchemy Engine object.
+        Engine: A SQLAlchemy Engine object.
     """
     params = postgresql_connection_parameters(
         host=host,
@@ -172,7 +172,14 @@ def postgresql_engine(
 
 
 def postgresql_engine_to_psycopg2_connection_string(engine: Engine):
-    """Utility to convert a SQLAlchemy engine to a psycopg2 connection string."""
+    """Convert a SQLAlchemy Engine to a psycopg2 connection string.
+
+    Args:
+        engine (Engine): SQLAlchemy Engine configured for a PostgreSQL database.
+
+    Returns:
+        str: A psycopg2-style connection string derived from the engine.
+    """
     host = engine.url.host
     port = engine.url.port
     dbname = engine.url.database

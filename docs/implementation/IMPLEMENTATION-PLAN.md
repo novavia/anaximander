@@ -18,6 +18,125 @@ The repository is hosted on GitHub.
 
 The initial development will be conducted in VS Code, using GitHub Copilot for AI-assisted development.
 
+### Docstring Conventions and Workflow
+
+This project uses **Google-style Python docstrings** for all public APIs.
+Docstrings are treated as part of the public contract and are used to
+generate reference documentation.
+
+---
+
+#### 1. Scope
+
+Docstrings are **required** for:
+- Public modules
+- Public classes
+- Public functions and methods
+- Decorators and metaprogramming constructs
+- User-facing DSL / compiler / runtime interfaces
+
+Docstrings are **optional** for:
+- Private helpers (`_leading_underscore`)
+- Trivial glue code
+- Pure implementation details
+
+---
+
+#### 2. Style: Google Docstrings
+
+##### General Rules
+- Use triple double quotes (`"""`)
+- First line: short, imperative summary
+- Blank line after summary
+- Describe **semantics and contract**, not implementation
+- Type information belongs in type hints, not in the docstring
+
+---
+
+##### Function / Method Template
+
+```python
+def example(arg1: Type, arg2: Type | None = None) -> ReturnType:
+    """
+    One-line summary of what the function does.
+
+    Optional longer explanation clarifying semantics, constraints,
+    or important invariants.
+
+    Args:
+        arg1: Description of the argument.
+        arg2: Description of the argument.
+
+    Returns:
+        Description of the return value.
+
+    Raises:
+        SomeError: Conditions under which this error is raised.
+    """
+```
+
+##### Class Template
+
+```python
+class Example:
+    """
+    One-line summary of the class responsibility.
+
+    Longer description explaining the role of the class in the system,
+    its lifecycle, and any important invariants.
+    """
+```
+
+##### Decorator Template
+
+```python
+def example_decorator(obj: T) -> T:
+    """
+    Modify a class or function to enable a specific behavior.
+
+    Describes what is altered semantically, when the modification
+    takes effect, and what guarantees (or lack thereof) are provided.
+
+    Args:
+        obj: The object being decorated.
+
+    Returns:
+        The modified object.
+    """
+```
+
+---
+
+#### 3. Content Guidelines
+
+Docstrings SHOULD:
+* Explain what the API guarantees
+* Clarify semantic intent
+* State important constraints or expectations
+* Mention backend- or compiler-dependent behavior explicitly if relevant
+
+Docstrings SHOULD NOT:
+
+* Repeat the function name
+* Describe line-by-line implementation
+* Promise behavior not enforced by the code
+* Encode internal algorithms
+
+---
+
+#### 4. Consistency
+
+* Use the same terminology as the design documents
+* Prefer project vocabulary over generic terms
+* Avoid mixing docstring styles (NumPy / reST)
+
+#### 5. Documentation Generation (Future)
+This convention is compatible with:
+* MkDocs
+* mkdocstrings
+* mkdocstrings-python
+* Sphinx (via napoleon)
+
 ## Project Milestones
 
 The initial project milestones are as follows:
