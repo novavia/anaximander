@@ -128,8 +128,8 @@ Archetypes must be declared in the `prototype` hierarchy by decorating them with
 
 # Defines the Data archetype
 @archetype
-class Data[T](Representation):
-    class nx(Representation.nx):
+class Data[T](Object):
+    class nx(Object.nx):
         fspec: str = option(default="")  # This is a runtime option
         
         def print(self) -> str: ...  # Methods declared in archetype.nx only hint at the interface
@@ -138,7 +138,7 @@ class Data[T](Representation):
 from .aml import Data
 
 # Generic Data archetype
-class DataNx[T](RepresentationNx, implements=Data):
+class DataNx[T](ObjectNx, implements=Data):
     fspec: str = Data.nx.fspec.NX
 	_data: T | None  # _data is a private attribute held for optional caching
     
@@ -167,7 +167,7 @@ As a result of these statements, the compiled Float type in the DTI behaves as e
 
 Let us now dissect this example:
 
-* `Data[T]` is declared as a generic prototype with type parameter `T`, inheriting from the base prototype for all digital twin representations, which is `Representation`.
+* `Data[T]` is declared as a generic prototype with type parameter `T`, inheriting from the base prototype for all digital twin representations, which is `Object`.
 * Because archetypes and traits encode attributes and behaviors that are accessible from the digital twin interface through the `.nx` attribute, their declarations are nested in an inner class `nx`. The main reason for this is to provide consistency across coding constructs -for instance, the `print` method is referenced as `Float.nx.print` whether `Float` is the AML prototype or the digital twin interface. Note that the inner class `nx` may create a namespace conflict when importing `anaximander` as `nx`. However this is unlikely in practice because a) there is typically little reason for archetypes to declare anything in their class body that is outside of the `nx` inner class[^1], b) conversely, prototypes that are not decorated as archetypes have no use for an `nx` inner class.
 * The inner class `nx` declares so-called nxdescriptors, which are applicable to archetypes and traits behind the `.nx` accessor, as well as the methods that interfaces should expose. This last point deserves a bit of an explanation. At runtime in the DTI, `float.nx` evaluates to an `nxobject` instance of the class `FloatNx`, which is compiled from the AML `Float` declaration. Hence the available methods and attributes are driven by the `FloatNx` implementation. However, the Anaximander compiler also creates a stub file for the `Float` interface. This stub file effectively picks the attributes that are made visible to type checkers and IDEs, which serves to eliminate undesirable items such as dunder methods or implementation details. The  mechanics for this is that the compiler will select the attributes and methods that are explicitly declared in the archetype's `nx` inner class. These do not require an implementation -the implementation comes from the matching `nxtype` class.
 * `Data.nx` declares two attributes: an nxdescriptor `fspec` and a method `print`. The nxdescriptor is an option. Options are runtime parameters that are declared in archetypes and traits. Concrete prototypes may set their own default value or even freeze the value for all their instances. At runtime, instances may set their own value by passing it to their init method -unless of course the value is frozen by their prototype. 
@@ -231,8 +231,8 @@ Finally, it is also possible to set metacharacters as type properties. For this 
 from typing import get_args
 
 @archetype
-class Data[T](Representation):
-    class nx(Representation.nx):
+class Data[T](Object):
+    class nx(Object.nx):
         ...
         # Fills the dtype metacharacter by looking up type parameter
         dtype = meta(factory=lambda cls: get_args(cls.prototype)[0])  

@@ -325,8 +325,8 @@ Additionally, there is a class of descriptors that are reserved to archetypes an
 
 Besides, there are mixin classes that control protodescriptors behavior:
 
-* `AnnotatedDescriptor` instances are declared with a type assignment.
-* `IdentifiableDescriptor` inherits from `AnnotatedDescriptor` and adds the `unique` flag to indicate unicity
+* `AnnotatableDescriptor` instances are declared with a type assignment.
+* `IdentifiableDescriptor` inherits from `AnnotatableDescriptor` and adds the `unique` flag to indicate unicity
 * `AssignableDescriptor` inherits from `IdentifiableDescriptor` and presumes that the descriptor may be assigned a value. As a result it adds the `default` and `factory` attributes that govern default assignments.
 * Callable descriptors wrap a method. They can be declared either in-line or by using a decorator.
 * `FieldListDescriptor` references a list of model fields.
@@ -812,7 +812,7 @@ Here is the fully expanded protodescriptor hierarchy, indicating for each class:
 
 ```yaml
 Protodescriptor
-├── AnnotatedDescriptor				(mixin)
+├── AnnotatableDescriptor				(mixin)
 │   └── IdentifiableDescriptor      (mixin)
 │       └── AssignableDescriptor    (mixin)
 ├── CallableDescriptor              (mixin)
@@ -852,7 +852,7 @@ Protodescriptor
 Following is a short description for each subclass:
 
 - **Protodescriptor**: the abstract base for all declarative model descriptors in AML, defining the common interface and shared metadata for attributes declared in class bodies.
-- **AnnotatedDescriptor (mixin)**: adds annotation awareness, allowing descriptors to interpret type hints in field declarations.
+- **AnnotatableDescriptor (mixin)**: adds annotation awareness, allowing descriptors to interpret type hints in field declarations.
   - **IdentifiableDescriptor (mixin)**: adds the unique flag for descriptors that point to identifiable objects or metadata.
     - **AssignableDescriptor (mixin)**: provides assignment semantics, including support for defaults and factories, as well as validation.
 - **CallableDescriptor (mixin)**: wraps callable objects or functions, enabling function-like descriptors such as computed views or expressions.
@@ -927,8 +927,8 @@ Mixin descriptors are abstract base classes that contribute cross-cutting semant
 
 | Class                        | Parent                   | Attributes (name: type)                                      |
 | ---------------------------- | ------------------------ | ------------------------------------------------------------ |
-| **`AnnotatedDescriptor`**    | `Protodescriptor`        | `annotation: str`, `type: prototype | metatype`, `nullable: bool` |
-| **`IdentifiableDescriptor`** | `AnnotatedDescriptor`    | `unique: bool | None = None`                                 |
+| **`AnnotatableDescriptor`**    | `Protodescriptor`        | `annotation: str`, `type: prototype | metatype`, `nullable: bool` |
+| **`IdentifiableDescriptor`** | `AnnotatableDescriptor`    | `unique: bool | None = None`                                 |
 | **`AssignableDescriptor`**   | `IdentifiableDescriptor` | `default: Any = MISSING` , <br />`factory: Callable[[], Any] | Missing = MISSING`, <br />`parser: Callable | Iterable[Callable] | None = None`, <br />`validator: Callable | Iterable[Callable] |None = None`, <br />`gt, ge, lt, le, min_length, max_length, pattern` |
 | **`CallableDescriptor`**     | `Protodescriptor`        | `callable: Callable[..., Any]`                               |
 | **`FieldListDescriptor`**    | `Protodescriptor`        | `fields: tuple[FieldDescriptor, ...]`                        |
@@ -1098,7 +1098,7 @@ The `data` function takes the following keyword-only arguments:
 
 #### LinkDescriptor(RelationDescriptor)  ← mixin: IdentifiableDescriptor (AML: `link`)
 
-`LinkDescriptor` declares a single-reference relationship from a Model to an Entity (i.e., it materializes a foreign key from the owner model to a target entity). As with other annotated descriptors, nullability derives from the type hint (`T | None` ⇒ FK nullable). Indexing of foreign-key columns is implied; backends may add composite indexes consistent with best practices. Polymorphic links are allowed if the type hint resolves to an entity supertype; compilers enforce that actual targets are compatible at runtime and may add discriminator/typekey support where required.
+`LinkDescriptor` declares a single-reference relationship from a Model to an Entity (i.e., it materializes a foreign key from the owner model to a target entity). As with other annotatatable descriptors, nullability derives from the type hint (`T | None` ⇒ FK nullable). Indexing of foreign-key columns is implied; backends may add composite indexes consistent with best practices. Polymorphic links are allowed if the type hint resolves to an entity supertype; compilers enforce that actual targets are compatible at runtime and may add discriminator/typekey support where required.
 
 **Admissible owner:** `Model`
 **Admissible assigned types:** `EntityType`
@@ -1599,7 +1599,7 @@ In all cases, `nx.fieldgroup(...)` is called at class definition time with one o
   - adding or removing fields,
   - changing `doc`, while preserving the general tightening semantics of the model.
 
-#### FieldBlockDescriptor(FieldDescriptor)  ← mixin: AnnotatedDescriptor (AML: `fieldblock`)
+#### FieldBlockDescriptor(FieldDescriptor)  ← mixin: AnnotatableDescriptor (AML: `fieldblock`)
 
 `FieldBlockDescriptor` declares that the fields of another model are **inserted into** the declaring model. It is a structural shortcut: the target model’s fields are exposed directly on the owner, and a field group named after the block is created to reference those fields. For instance:
 
