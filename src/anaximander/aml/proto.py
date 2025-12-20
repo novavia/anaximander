@@ -1,6 +1,7 @@
 """This module defines the Protodescriptor class for the Anaximander Modeling Language (AML)."""
 
 import ast
+import datetime
 import re
 from abc import ABC, ABCMeta, abstractmethod
 from numbers import Real
@@ -9,6 +10,7 @@ from typing import (
     Callable,
     ClassVar,
     Iterable,
+    Literal,
     Protocol,
     Mapping,
     Any,
@@ -30,6 +32,26 @@ class _MissingSentinel:
         return "MISSING"
 
 MISSING: _MissingSentinel = _MissingSentinel()
+
+
+def _is_time_like(type_: Any) -> bool:
+    """Return True when a type behaves like a timestamp or date."""
+    if not isinstance(type_, type):
+        return False
+    if issubclass(type_, (datetime.datetime, datetime.date, datetime.time)):
+        return True
+    return bool(getattr(type_, "__time_like__", False) or getattr(type_, "__temporal__", False))
+
+
+def _is_geometry_like(type_: Any) -> bool:
+    """Return True when a type represents a geometry/location value."""
+    if not isinstance(type_, type):
+        return False
+    return bool(
+        getattr(type_, "__geometry__", False)
+        or getattr(type_, "__geo__", False)
+        or getattr(type_, "__geom__", False)
+    )
 
 type Assignment = ast.Assign | ast.AnnAssign
 
@@ -255,6 +277,7 @@ class CallableDescriptor(Protodescriptor):
 class FieldListDescriptor(Protodescriptor):
     """A mixin class for descriptors that reference a list of fields."""
     fields: tuple["FieldDescriptor", ...] = attrs.field(factory=tuple)
+    admissible_field_types: ClassVar[tuple[type["FieldDescriptor"], ...]] = ()
 
 
 @attrs.define(frozen=True)
@@ -265,7 +288,8 @@ class MetaDescriptor(AssignableDescriptor):
 @attrs.define(frozen=True)
 class FieldDescriptor(AnnotatableDescriptor):
     """Base class for descriptors that represent individual fields."""
-    pass
+    load: str | None = attrs.field(default=None)
+    repr: bool | Callable | str | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class RelationDescriptor(FieldDescriptor):
@@ -310,6 +334,17 @@ class NxFieldDescriptor(MetaDescriptor):
 @attrs.define(frozen=True)
 class DataDescriptor(AssignableDescriptor, FieldDescriptor):
     """The descriptor for data fields."""
+    index: bool | None = attrs.field(default=None)
+    required: bool | None = attrs.field(default=None)
+    typekey: bool | None = attrs.field(default=None)
+    key: bool | None = attrs.field(default=None)
+    sequence: bool | None = attrs.field(default=None)
+    timestamp: bool | None = attrs.field(default=None)
+    start_time: bool | None = attrs.field(default=None)
+    end_time: bool | None = attrs.field(default=None)
+    period: bool | None = attrs.field(default=None)
+    location: bool | None = attrs.field(default=None)
+    geom: bool | None = attrs.field(default=None)
     gt: Real | None = attrs.field(default=None)
     ge: Real | None = attrs.field(default=None)
     lt: Real | None = attrs.field(default=None)
@@ -318,33 +353,96 @@ class DataDescriptor(AssignableDescriptor, FieldDescriptor):
     max_length: int | None = attrs.field(default=None)
     pattern: str | None = attrs.field(default=None)
 
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        temporal_flags = {
+            "timestamp": self.timestamp is True,
+            "start_time": self.start_time is True,
+            "end_time": self.end_time is True,
+            "period": self.period is True,
+        }
+        if sum(temporal_flags.values()) > 1:
+            msg = "Temporal flags are mutually exclusive on data descriptors."
+            raise ValueError(msg)
+        if self.sequence is True and any(temporal_flags.values()):
+            msg = "Sequence cannot be combined with temporal flags."
+            raise ValueError(msg)
+        if (self.start_time is True) != (self.end_time is True):
+            msg = "start_time and end_time must be set together."
+            raise ValueError(msg)
+
+    def __set_type__(self, annotation: str, type: Any, nullable: bool):
+        super().__set_type__(annotation, type, nullable)
+        if (self.key is True or self.sequence is True) and nullable:
+            msg = "Key and sequence fields must be non-nullable."
+            raise TypeError(msg)
+        if type is None:
+            return
+        if any(
+            flag is True for flag in (self.timestamp, self.start_time, self.end_time, self.period)
+        ) and not _is_time_like(type):
+            msg = "Temporal flags require a time-like field type."
+            raise TypeError(msg)
+        if (self.location is True or self.geom is True) and not _is_geometry_like(type):
+            msg = "Location/geom flags require a geometry-like field type."
+            raise TypeError(msg)
+
 @attrs.define(frozen=True)
 class LinkDescriptor(AssignableDescriptor, RelationDescriptor):
-    pass
+    on_delete: Literal["restrict", "set_null", "cascade"] = attrs.field(default="restrict")
+    key: bool | None = attrs.field(default=None)
+
+    def __attrs_post_init__(self) -> None:
+        super().__attrs_post_init__()
+        if self.on_delete not in {"restrict", "set_null", "cascade"}:
+            msg = f"Invalid on_delete value {self.on_delete!r}."
+            raise ValueError(msg)
+
+    def __set_type__(self, annotation: str, type: Any, nullable: bool):
+        super().__set_type__(annotation, type, nullable)
+        if self.key is True and nullable:
+            msg = "Key links must be non-nullable."
+            raise TypeError(msg)
 
 @attrs.define(frozen=True)
 class BackLinkDescriptor(IdentifiableDescriptor, RelationDescriptor):
-    pass
+    via: type | None = attrs.field(default=None)
+    limit: int | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class SelectionDescriptor(RelationDescriptor, CallableDescriptor):
-    pass
+    kind: str | None = attrs.field(default=None)
+    sql: Callable | None = attrs.field(default=None)
+    ibis: Callable | None = attrs.field(default=None)
+    fx: Callable | str | None = attrs.field(default=None)
+    source: Any | None = attrs.field(default=None)
+    key: Any | list[Any] | None = attrs.field(default=None)
+    time: Any | None = attrs.field(default=None)
+    space: Any | None = attrs.field(default=None)
+    filter: Callable | Any | None = attrs.field(default=None)
+    sort: str | list[str] | None = attrs.field(default=None)
+    limit: int | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class DocumentDescriptor(AssignableDescriptor, RelationDescriptor):
-    pass
+    path: str | Any | None = attrs.field(default=None)
+    format: str | None = attrs.field(default=None)
+    compression: str | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class FolderDescriptor(AssignableDescriptor, RelationDescriptor):
-    pass
+    path: str | Any | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class StateDescriptor(RelationDescriptor, CallableDescriptor):
-    pass
+    source: Any | None = attrs.field(default=None)
+    reducer: str | Callable | None = attrs.field(default=None)
+    max_lag: str | Any | None = attrs.field(default=None)
+    min_observations: int | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class FieldExpressionDescriptor(FieldDescriptor, CallableDescriptor):
-    pass
+    expr: Callable | str | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class FieldGroupDescriptor(FieldDescriptor, FieldListDescriptor):
@@ -352,44 +450,61 @@ class FieldGroupDescriptor(FieldDescriptor, FieldListDescriptor):
 
 @attrs.define(frozen=True)
 class FieldBlockDescriptor(FieldDescriptor):
-    pass
+    fields: tuple[str, ...] | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class MetricDescriptor(FieldDescriptor, CallableDescriptor):
-    pass
+    expr: Callable | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class ParserDescriptor(ConstructionDescriptor):
-    pass
+    fields: tuple[str, ...] | None = attrs.field(default=None)
+    element_wise: bool = attrs.field(default=False)
 
 @attrs.define(frozen=True)
 class ValidatorDescriptor(ConstructionDescriptor):
-    pass
+    fields: tuple[str, ...] | None = attrs.field(default=None)
+    element_wise: bool = attrs.field(default=False)
 
 @attrs.define(frozen=True)
 class KeyDescriptor(SchemaDescriptor, FieldListDescriptor):
-    pass
+    admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
+        DataDescriptor,
+        LinkDescriptor,
+    )
 
 @attrs.define(frozen=True)
 class SequenceDescriptor(SchemaDescriptor, FieldListDescriptor):
-    pass
+    admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
+        DataDescriptor,
+        LinkDescriptor,
+    )
 
 @attrs.define(frozen=True)
 class UnicityDescriptor(SchemaDescriptor, FieldListDescriptor):
-    pass
+    admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
+        DataDescriptor,
+        LinkDescriptor,
+    )
 
 @attrs.define(frozen=True)
 class IndexDescriptor(SchemaDescriptor, FieldListDescriptor):
-    pass
+    kind: str | None = attrs.field(default=None)
+    admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
+        DataDescriptor,
+        LinkDescriptor,
+    )
 
 @attrs.define(frozen=True)
 class PartitioningDescriptor(SchemaDescriptor):
-    pass
+    key: Any | None = attrs.field(default=None)
+    scheme: str | None = attrs.field(default=None)
+    buckets: Any | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class PathDescriptor(SchemaDescriptor):
-    pass
+    template: str | None = attrs.field(default=None)
 
 @attrs.define(frozen=True)
 class SortDescriptor(SchemaDescriptor):
-    pass
+    sortkeys: str | tuple[str, ...] | None = attrs.field(default=None)
