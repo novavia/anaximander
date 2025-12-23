@@ -53,7 +53,7 @@ class Project:
         project_name: str,
         parent_directory: str | Path | None = None,
         *,
-        prototypes: str | Path | None = None,
+        domain: str | Path | None = None,
         **kwargs,
     ) -> "Project":
         """Creates a new Anaximander project into the specified directory.
@@ -65,15 +65,13 @@ class Project:
             parent_directory (str | Path | None, optional): The directory in which to create
                 the project. It can be absolute or relative to the current working directory.
                 If None (the default), then it is set to the current working directory.
-            prototypes (str | Path | None, optional): An optional path to either a python file
-                or directory containing prototoype declarations. The content is then copied to
-                'src/prototypes' in the project folder to form the basis of the project.
-                Like parent_directory it can be either absolute or relative to the current
-                working directory.
+            domain (str | Path | None, optional): An optional path to either a python file
+                or directory containing domain model declarations. Like parent_directory it can be
+                either absolute or relative to the current working directory.
                 Note that the name of the file or directory is ignored:
-                - If the path points to a python file, it is turned to 'src/prototypes/__init__.py'
-                - If the path points to a directory, its content is copied to 'src/prototoypes'
-                Hence if the prototypes are defined in a module my_prototypes.py and the name
+                - If the path points to a python file, it is turned to 'src/domain/__init__.py'
+                - If the path points to a directory, its content is copied to 'src/domain'
+                Hence if the domain models are defined in a module my_domain.py and the name
                 needs to be preserved, one can place the module in a folder by itself and point
                 to that folder.
                 Defaults to None.
@@ -93,22 +91,22 @@ class Project:
             )
         project = cls(path=parent_directory / project_name)
         config.save(project.config_path)
-        if prototypes is not None:
-            prototypes = Path(prototypes)
-            if not prototypes.exists():
-                raise FileNotFoundError(f"Prototypes path {prototypes} does not exist.")
-            if prototypes.is_dir():
-                destination = project.prototypes_source_path
-                shutil.copytree(prototypes, destination, dirs_exist_ok=True)
+        if domain is not None:
+            domain = Path(domain)
+            if not domain.exists():
+                raise FileNotFoundError(f"Domain path {domain} does not exist.")
+            if domain.is_dir():
+                destination = project.domain_source_path
+                shutil.copytree(domain, destination, dirs_exist_ok=True)
             else:
-                destination = project.prototypes_source_path / "__init__.py"
-                shutil.copy(prototypes, destination)
+                destination = project.domain_source_path / "__init__.py"
+                shutil.copy(domain, destination)
         return project
 
     @property
     def name(self):
         return self.path.name
-    
+
     @property
     def slug(self):
         return self.config.slug
@@ -128,8 +126,8 @@ class Project:
         return self.path / "src"
 
     @property
-    def prototypes_source_path(self) -> Path:
-        return self.path / "src/prototypes"
+    def domain_source_path(self) -> Path:
+        return self.path / "src/domain"
 
     @property
     def application_path(self) -> Path:
@@ -138,10 +136,6 @@ class Project:
     @property
     def compilation_path(self) -> Path:
         return self.application_path / "api"
-
-    @property
-    def api_prototypes_path(self) -> Path:
-        return self.compilation_path / "prototypes_"
 
     def set_import_path(self):
         """Sets the project's code path on the interpreter's import path."""
@@ -155,7 +149,7 @@ class Project:
 
     @classmethod
     def _collect_from_directory(cls, directory: Path) -> list[Path]:
-        """Primitive method for collect_prototypes.
+        """Primitive method for collect_domain.
 
         Args:
             directory (Path): The directory containing python files to import.
@@ -172,19 +166,19 @@ class Project:
         module_paths.extend(directory.glob("*.py"))
         return module_paths
 
-    def collect_prototypes(self) -> list[Path]:
-        """Collects modules from the source prototypes directory."""
-        if not self.prototypes_source_path.exists():
-            relative_path = self.prototypes_source_path.relative_to(self.path)
+    def collect_domain(self) -> list[Path]:
+        """Collects modules from the source domain directory."""
+        if not self.domain_source_path.exists():
+            relative_path = self.domain_source_path.relative_to(self.path)
             msg = f"Project {self.name} does not contain the requisite {relative_path} directory."
             raise FileNotFoundError(msg)
-        return self._collect_from_directory(self.prototypes_source_path)
+        return self._collect_from_directory(self.domain_source_path)
 
     @classmethod
     def _import_from_directory(
         cls, directory: Path, package: str | None = None
     ) -> list[NxModuleType]:
-        """Primitive function for import_models.
+        """Primitive function for import_domain.
 
         Args:
             directory (Path): The directory containing python files to import.
@@ -213,48 +207,15 @@ class Project:
             modules.append(module)
         return modules
 
-    def import_prototypes(self) -> list[NxModuleType]:
-        """Imports the modules in the project's src/<project>/api/prototypes_ directory."""
-        if not self.api_prototypes_path.exists():
-            relative_path = self.api_prototypes_path.relative_to(self.path)
+    def import_domain(self) -> list[NxModuleType]:
+        """Imports the modules in the project's src/domain directory."""
+        if not self.domain_source_path.exists():
+            relative_path = self.domain_source_path.relative_to(self.path)
             msg = f"Project {self.name} does not contain the requisite {relative_path} directory."
             raise FileNotFoundError(msg)
-        package = f"{self.name}.api.prototypes_"
-        modules = self._import_from_directory(self.api_prototypes_path, package=package)
-        # Next we validate that no import targets the original modules in the source prototypes
-        # directory, which could be the case if absolute imports are used
-        for name, module in sys.modules.items():
-            try:
-                module_path = Path(module.__file__)  # type: ignore
-            except (AttributeError, TypeError, ValueError):
-                continue
-            if module_path.is_relative_to(self.prototypes_source_path):
-                msg = (
-                    "Modules in the prototypes directory that import other modules in that "
-                    f"directory must use relative syntax. {name} in module "
-                    f"{module.__name__} does not."
-                )
-                raise ImportError(msg)
+        package = "domain"
+        modules = self._import_from_directory(self.domain_source_path, package=package)
         return modules
-
-    def copy_prototypes(self):
-        """Copies modules from the src/prototypes directory to the application directory."""
-        source_path = self.prototypes_source_path
-        copy_path = self.api_prototypes_path
-        for module_path in self.collect_prototypes():
-            relative_path = module_path.relative_to(source_path)
-            destination = copy_path / relative_path
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            module_path.copy(destination)
-        # Next we fill in missing __init__.py files for consistency
-        directories = copy_path.parent.rglob("*/")
-        for directory in directories:
-            if directory.name == "__pycache__":
-                continue
-            if (modules := list(directory.glob("*.py"))):
-                # directory is destined to be a package
-                if (init := directory / "__init__.py") not in modules:
-                    init.touch()
 
     def compile(self, *compilations: str, **kwargs):
         """Compiles the project using the specified compilers."""
