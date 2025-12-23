@@ -1,11 +1,11 @@
-"""This module defines the Protodescriptor class for the Anaximander Modeling Language (AML)."""
+"""This module defines the Protodescriptor classes for the Anaximander Modeling Language (AML)."""
 
 import ast
 import datetime
 import re
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 from numbers import Real
-from types import MappingProxyType, NoneType
+from types import MappingProxyType
 from typing import (
     Callable,
     ClassVar,
@@ -14,16 +14,10 @@ from typing import (
     Protocol,
     Mapping,
     Any,
-    TypeVar,
-    get_args,
-    get_type_hints,
-    overload,
 )
 
 import attrs
-from annotationlib import Format, get_annotations
 
-from anaximander.utils.funcs import type_name_to_collection_name
 
 # Sentinel value for unspecified defaults
 class _MissingSentinel:
@@ -83,7 +77,7 @@ class Protodescriptor(ABC):
 
     # Post-init wired fields (logically immutable; set via internal backdoor).
     name: str = attrs.field(init=False, default=None)
-    owner: "Prototype" = attrs.field(init=False, default=None)
+    owner: type = attrs.field(init=False, default=None)
     __ast__: ast.AST = attrs.field(init=False, default=None)
 
     # Init-time fields (immutable)
@@ -114,7 +108,7 @@ class Protodescriptor(ABC):
             raise RuntimeError(f"{self.__class__.__name__}.{attr} is already set.")
         object.__setattr__(self, attr, value)
 
-    def __set_name__(self, owner: "Prototype", name: str):
+    def __set_name__(self, owner: type, name: str):
         if any(pattern.fullmatch(name) for pattern in self.__reserved_patterns__):
             mdtype = self.__class__.__name__
             msg = f"Cannot use reserved name {name} for Protodescriptor or type {mdtype}."
@@ -126,101 +120,6 @@ class Protodescriptor(ABC):
         """Attach the AST node that declared this protodescriptor (if any)."""
         self._set_once("__ast__", node)
 
-
-P = TypeVar("P", bound=Protodescriptor)
-
-
-class Prototype(ABCMeta):
-    """Metaclass for model and data declarative types."""
-    __compilations__: dict[str, dict]  # Holds compilation target handles and parameters
-    __ast__: ast.ClassDef  # Holds the model's parsed abstract syntax tree
-
-    def __init__(cls, name, bases, attrs):
-        super().__init__(name, bases, attrs)
-        cls.__compilations__: dict[str, dict] = {}
-
-    @overload
-    def protodescriptors(cls, *, inherited: bool = True) -> Mapping[str, Protodescriptor]: ...
-    @overload
-    def protodescriptors(cls, *types: type[P], inherited: bool = True) -> Mapping[str, P]: ...
-
-    def protodescriptors(
-        cls,
-        *types: type[Protodescriptor],
-        inherited: bool = True,
-    ) -> Mapping[str, Protodescriptor]:
-        """Returns a dictionary of protodescriptors of the supplied types.
-
-        If inherited is set to True, protodescriptors declared in parent models are included.
-        Otherwise, only the protodescriptors directly declared by cls are returned.
-        """
-        selected_types: tuple[type[Protodescriptor], ...] = types or (Protodescriptor,)
-        cls_protodescriptors = {
-            k: v for k, v in cls.__dict__.items() if isinstance(v, selected_types)
-        }
-        if inherited:
-            parent = cls.mro()[1]
-            if isinstance(parent, Prototype):
-                parent_protodescriptors = dict(parent.protodescriptors(*selected_types, inherited=True))
-                protodescriptors = parent_protodescriptors | cls_protodescriptors
-            else:
-                protodescriptors = cls_protodescriptors
-        else:
-            protodescriptors = cls_protodescriptors
-        return protodescriptors
-
-    def __validate_bases__(cls):
-        """The first base must be a Prototype and there can be only one."""
-        bases = cls.__bases__
-        if not isinstance(bases[0], Prototype):
-            msg = "Prototypes cannot be used as mixin classes."
-            raise TypeError(msg)
-        extra_parent_prototypes = [b for b in bases[1:] if isinstance(b, Prototype)]
-        if extra_parent_prototypes:
-            msg = "Prototypes do not support multiple inheritance."
-            raise TypeError(msg)
-
-    @staticmethod
-    def __unwrap_optional_type__(type_hint: Any) -> tuple[Any, bool]:
-        """Detect optional annotations and return base type with a nullable flag."""
-        if type_hint is None:
-            return None, False
-        if type_hint is NoneType:
-            return None, True
-        args = get_args(type_hint)
-        if args and any(arg is NoneType for arg in args):
-            non_none_args = [arg for arg in args if arg is not NoneType]
-            base_type = non_none_args[0] if non_none_args else None
-            return base_type, True
-        return type_hint, False
-
-    def __set_type_annotations__(cls):
-        """Sets type annotations on typed protodescriptors."""
-        annotation_values = get_annotations(cls, format=Format.VALUE)
-        annotation_strings = get_annotations(cls, format=Format.STRING)
-        superhints = get_type_hints(cls)  # This includes super classes
-        protodescriptors = cls.protodescriptors(AnnotatableDescriptor, inherited=False)
-        for name, protodescriptor in protodescriptors.items():
-            annotation_value = annotation_values.get(name, "")
-            annotation_string = annotation_strings.get(name, "")
-            if isinstance(annotation_value, str):
-                annotation = f'"{annotation_value}"'
-            else:
-                annotation = annotation_string
-            # TODO: normalize to a prototype in case of model attributes
-            # TODO: normalize to a metadata type in case of option / metacharacter
-            hint = superhints.get(name, None)
-            hint, nullable = cls.__unwrap_optional_type__(hint)
-            protodescriptor.__set_type__(annotation, hint, nullable)
-
-    @property
-    def collection_name(cls):
-        """A collection name using camel case and pluralization.
-
-        This can be customized by passing metadata (#TODO).
-        """
-        return type_name_to_collection_name(cls.__name__)
-    
 
 @attrs.define(frozen=True)
 class AnnotatableDescriptor(Protodescriptor):

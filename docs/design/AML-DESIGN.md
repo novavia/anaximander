@@ -2071,7 +2071,119 @@ AML uses template strings (`t"..."`) instead of raw strings or Python expression
   - prepending or appending additional sort keys,
   - or tightening sort directions (e.g. replacing an implicit ascending with an explicit descending when compatible with usage).
 
-## **Implementation notes**
+## Implementation notes
+
+### Executable References and Import Safety
+
+#### Scope
+
+This section defines the constraints on **executable code** that may appear in Anaximander Modeling Language (AML) modules, and the conditions under which AML modules are considered **import-safe**.
+
+These constraints exist to ensure that:
+
+- AML modules are evaluated **only at compile time**
+- Generated artifacts are **self-sufficient at runtime**
+- Compilation is **deterministic and reproducible**
+- Regeneration and patching workflows remain tractable
+
+#### Import Safety
+
+AML modules are **executed by the compiler at import time** in order to declare prototypes, archetypes, traits, and associated descriptors.
+
+Therefore, AML modules **MUST** satisfy the following import-safety requirements:
+
+1. **No external side effects**  
+   Importing an AML module MUST NOT:
+   - perform I/O (filesystem, network, environment access)
+   - read configuration or environment variables
+   - depend on system time, randomness, or external state
+   - mutate global state outside NX-controlled registries
+
+2. **Deterministic declarations**  
+   Given the same AML source and compiler version, importing the module MUST produce the same declarations every time.
+
+3. **No runtime dependency on AML modules**  
+   AML modules are compile-time artifacts only. Runtime systems MUST NOT import AML modules to obtain executable objects.
+
+Violations of these rules render the AML module invalid.
+
+#### Executable References in Declarations
+
+AML declarations may reference executable objects (e.g. callables used as defaults, validators, reducers, selectors).  
+Such references are permitted **only** if they fall into one of the categories defined below.
+
+Every executable reference captured during compilation MUST be classifiable into exactly one category.
+
+#### Category A — Expression-Representable References
+
+An executable reference is **expression-representable** if it can be captured as syntax (e.g. AST) and recompiled or translated by the compiler.
+
+Examples include:
+- pure expressions
+- arithmetic or logical predicates
+- simple lambdas without free variables
+- structural transformations
+
+Expression-representable references:
+- MUST be side-effect free
+- MUST NOT capture external state
+- MAY be re-targeted to multiple compilation backends
+
+These references are preferred.
+
+#### Category B — Runtime Dotted-Path References
+
+An executable reference may be provided as, or resolved to, a **dotted-path reference** identifying a stable runtime symbol.
+
+Examples:
+- `"project.runtime.validators:is_valid_foo"`
+- a function object resolvable to `(module, qualname)`
+
+For such references:
+- The compiler records only the dotted path, not the callable itself
+- The referenced symbol MUST be importable at runtime
+- The referenced module MUST NOT be an AML module
+- The callable MUST NOT depend on AML-specific state
+
+These references allow integration with conventional runtime Python code without coupling runtime execution to AML modules.
+
+#### Category C — Runtime-Only References
+
+Some executable references may be explicitly declared as **runtime-only**.
+
+Runtime-only references:
+- MAY appear in AML syntax
+- ARE NOT guaranteed to be supported by all compilation targets
+- MUST be explicitly marked as runtime-only
+
+Compilation targets that do not support runtime-only references MUST either:
+- ignore them, or
+- raise a target-specific compilation error
+
+Runtime-only references are intended for Python-specific behaviors such as debugging hooks, plotting helpers, or interactive affordances.
+
+#### Disallowed References
+
+Executable references that do not fall into Category A, B, or C are invalid.
+
+In particular, AML declarations MUST NOT rely on:
+- anonymous or non-resolvable callables
+- closures capturing external or mutable state
+- executable objects whose identity matters at runtime but cannot be relocated
+- functions defined inline whose semantics depend on import context
+
+Such references require importing AML modules at runtime and are therefore prohibited.
+
+#### Validation
+
+Conformance to the rules in this section is validated at **compile time**.
+
+A compiler MAY:
+- reject invalid references
+- issue warnings for discouraged but detectable patterns
+- offer a strict validation mode for CI or release workflows
+
+Failure to comply with these rules results in undefined compilation behavior.
 
 ### Built-in functions
 
