@@ -374,10 +374,9 @@ Below is the canonical structure of an Anaximander project:
 │   ├── apps/           # Application logic (e.g. API endpoints, dashboards)
 │   ├── <project>/      # Project-specific package (the digital twin interface)
 │   │   └── api/        # Compiled system code
-│   │       ├── prototypes_/     # Snapshot of prototypes at last compilation
-│   │       ├── sqlalchemy_/     # Generated SQLAlchemy code (underscore avoids naming conflicts)
+│   │       ├── sqlalchemy/     # Generated SQLAlchemy code
 │   │       └── ...              # Additional compilation targets
-│   ├── prototypes/     # AML model declarations (types, models, metadata)
+│   ├── domain/         # AML model declarations (types, models, metadata)
 │   └── scripts/        # Executable scripts not part of libraries
 ├── tests/              # Unit and integration tests
 └── user/               # Untracked space for user experiments or local code
@@ -395,7 +394,7 @@ Key features include:
 
 - **Compiled system code**: Each compiler target (e.g. SQLAlchemy, Marshmallow) generates code under the `api` subpackage. These modules may be used directly if low-level access or performance optimizations are needed.
 
-- **Prototypes vs. compiled artifacts**: The `prototypes` directory contains the canonical AML declarations. During compilation, these declarations are copied into the `prototypes_` subpackage, which is the version actually used at runtime. This separation ensures that developers can evolve their models without immediately affecting the running system — changes only take effect after explicit recompilation.
+- **Prototypes vs. compiled artifacts**: The `domain` directory contains the canonical AML declarations. These are the source of truth for model definitions. The compiled code in `api` is generated from these declaration.
 
 ### Development Workflow
 
@@ -408,19 +407,19 @@ The Anaximander development workflow revolves around a clear separation between 
 The typical workflow unfolds as follows:
 
 1. **Model Development**
-    The developer creates or modifies data models using AML in the `prototypes` directory. These are abstract declarations, intended to capture the structure, semantics, and transformations of domain-specific data.
+    The developer creates or modifies data models using AML in the `domain` directory. These are abstract declarations, intended to capture the structure, semantics, and transformations of domain-specific data.
 
 2. **Compilation**
     When the project is compiled, the framework:
 
-   - Parses the `prototypes` directory,
+   - Parses the `domain` directory,
    - Validates declarations for internal consistency,
    - Generates both system code and a runtime digital twin interface.
 
    The results are placed into the `api` subdirectory within the project package:
 
-   - `prototypes_`: A frozen snapshot of prototypes, tied to the last compilation.
-   - Compiler targets (e.g., `sqlalchemy_`, `marshmallow_`): System code for persistence, serialization, etc.
+    - Digital Twin Interface (e.g., `Machine`, `Sample`): High-level, user-friendly classes for interactive use.
+   - Compiler targets (e.g., `sqlalchemy`, `marshmallow`): System code for persistence, serialization, etc.
 
 3. **Interface Usage**
     Developers primarily interact with the digital twin via the compiled interface — e.g., importing domain objects like `Machine` or `Sample` and calling methods defined by their archetypes. This interface abstracts away system implementation details, enabling rapid, expressive development.
