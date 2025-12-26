@@ -6,6 +6,7 @@ from enum import Enum
 from types import NoneType
 from typing import (
     ClassVar,
+    Generic,
     Literal,
     Mapping,
     Any,
@@ -72,7 +73,7 @@ class Type(ABCMeta):
 
     def __new__(mcls, name, bases, namespace, **metacharacters):
         base = bases[0]
-        traits = bases[1:]
+        traits = [b for b in bases[1:] if b not in (object, Generic, int)]
         try:
             base_role: TypeRole = getattr(base, "__role__")  # noqa: F841
             archetype: Archetype = getattr(base, "__archetype__")
@@ -100,10 +101,30 @@ class Type(ABCMeta):
                 normalized.append(t)
         return tuple(normalized)
     
+    @property
+    def archetype(cls) -> Archetype:
+        """The archetype of this type."""
+        return cls.__archetype__
+
+    @property
+    def basetype(cls) -> "Type":
+        """The base class of this type."""
+        return cls.__bases__[0]
+
+    @property
+    def traits(cls) -> tuple[Trait, ...]:
+        """The traits of this type."""
+        return cls.__traits__
+    
+    @property
+    def metacharacters(cls) -> dict[str, Any]:
+        """The metacharacters of this type."""
+        return cls.__metacharacters__
+
     def __init__(cls, name, bases, namespace, **metacharacters):
         super().__init__(name, bases, namespace)
         base = bases[0]
-        traits = bases[1:]
+        traits = [b for b in bases[1:] if b not in (object, Generic, int)]
         base_archetype: Archetype = getattr(base, "__archetype__")
         base_traits: tuple[Trait, ...] = getattr(base, "__traits__", tuple())
         base_metacharacters: dict[str, Any] = getattr(base, "__metacharacters__", {})

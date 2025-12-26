@@ -61,7 +61,7 @@ type ConfigValue = Any | DescriptorConfig | Mapping[str, ConfigValue]
 type Config = DescriptorConfig | Mapping[str, ConfigValue]
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class Protodescriptor(ABC):
     """Base class for all protodescriptors.
 
@@ -121,11 +121,11 @@ class Protodescriptor(ABC):
         self._set_once("__ast__", node)
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class AnnotatableDescriptor(Protodescriptor):
     """Base class for descriptors that can be annotated with type information."""
     annotation: str | None = attrs.field(init=False, default=None)  # Literal type annotation as a string
-    type: type | None = attrs.field(init=False, default=None)  # Evaluated type annotation
+    type: "type | None" = attrs.field(init=False, default=None)  # Evaluated type annotation
     nullable: bool = attrs.field(init=False, default=None)
     __types__: ClassVar[tuple[type, ...]] = ()
 
@@ -148,7 +148,7 @@ class AnnotatableDescriptor(Protodescriptor):
         self._set_once("nullable", nullable)
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class IdentifiableDescriptor(AnnotatableDescriptor):
     """Base class for descriptors of attributes that can uniquely identify an instance."""
     unique: bool = attrs.field(init=False, default=False)
@@ -157,7 +157,7 @@ class IdentifiableDescriptor(AnnotatableDescriptor):
         self._set_once("unique", unique)
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class AssignableDescriptor(IdentifiableDescriptor):
     """Base class for descriptors of attributes that receive their value through assignment."""
     default: Any = attrs.field(default=MISSING)
@@ -166,46 +166,46 @@ class AssignableDescriptor(IdentifiableDescriptor):
     validator: Callable | Iterable[Callable] | None = attrs.field(default=None)
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class CallableDescriptor(Protodescriptor):
     """A mixin class for descriptors that wrap callables."""
     callable: Callable | None = attrs.field(default=None)
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class FieldListDescriptor(Protodescriptor):
     """A mixin class for descriptors that reference a list of fields."""
     fields: tuple["FieldDescriptor", ...] = attrs.field(factory=tuple)
     admissible_field_types: ClassVar[tuple[type["FieldDescriptor"], ...]] = ()
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class MetaDescriptor(AssignableDescriptor):
     """Base class for descriptors that target the nx inner class of archetypes and traits."""
     pass
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class FieldDescriptor(AnnotatableDescriptor):
     """Base class for descriptors that represent individual fields."""
     load: str | None = attrs.field(default=None)
     repr: bool | Callable | str | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class RelationDescriptor(FieldDescriptor):
     """Base descriptor for relation fields."""
     pass
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class MethodDescriptor(CallableDescriptor):
     """Base class for method descriptors."""
     pass
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class ConstructionDescriptor(MethodDescriptor):
     """Base class for construction method descriptors."""
     pass
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class SchemaDescriptor(Protodescriptor):
     """Base class for descriptors that characterize schema features."""
     pass
@@ -215,22 +215,22 @@ class SchemaDescriptor(Protodescriptor):
 # =============================================================================
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class MetaCharacter(MetaDescriptor):
     pass
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class OptionDescriptor(MetaDescriptor):
     pass
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class NxFieldDescriptor(MetaDescriptor):
     pass
 
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class DataDescriptor(AssignableDescriptor, FieldDescriptor):
     """The descriptor for data fields."""
     index: bool | None = attrs.field(default=None)
@@ -286,7 +286,7 @@ class DataDescriptor(AssignableDescriptor, FieldDescriptor):
             msg = "Location/geom flags require a geometry-like field type."
             raise TypeError(msg)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class LinkDescriptor(AssignableDescriptor, RelationDescriptor):
     on_delete: Literal["restrict", "set_null", "cascade"] = attrs.field(default="restrict")
     key: bool | None = attrs.field(default=None)
@@ -303,12 +303,12 @@ class LinkDescriptor(AssignableDescriptor, RelationDescriptor):
             msg = "Key links must be non-nullable."
             raise TypeError(msg)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class BackLinkDescriptor(IdentifiableDescriptor, RelationDescriptor):
     via: type | None = attrs.field(default=None)
     limit: int | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class SelectionDescriptor(RelationDescriptor, CallableDescriptor):
     kind: str | None = attrs.field(default=None)
     sql: Callable | None = attrs.field(default=None)
@@ -322,71 +322,71 @@ class SelectionDescriptor(RelationDescriptor, CallableDescriptor):
     sort: str | list[str] | None = attrs.field(default=None)
     limit: int | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class DocumentDescriptor(AssignableDescriptor, RelationDescriptor):
     path: str | Any | None = attrs.field(default=None)
     format: str | None = attrs.field(default=None)
     compression: str | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class FolderDescriptor(AssignableDescriptor, RelationDescriptor):
     path: str | Any | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class StateDescriptor(RelationDescriptor, CallableDescriptor):
     source: Any | None = attrs.field(default=None)
     reducer: str | Callable | None = attrs.field(default=None)
     max_lag: str | Any | None = attrs.field(default=None)
     min_observations: int | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class FieldExpressionDescriptor(FieldDescriptor, CallableDescriptor):
     expr: Callable | str | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class FieldGroupDescriptor(FieldDescriptor, FieldListDescriptor):
     pass
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class FieldBlockDescriptor(FieldDescriptor):
     fields: tuple[str, ...] | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class MetricDescriptor(FieldDescriptor, CallableDescriptor):
     expr: Callable | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class ParserDescriptor(ConstructionDescriptor):
     fields: tuple[str, ...] | None = attrs.field(default=None)
     element_wise: bool = attrs.field(default=False)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class ValidatorDescriptor(ConstructionDescriptor):
     fields: tuple[str, ...] | None = attrs.field(default=None)
     element_wise: bool = attrs.field(default=False)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class KeyDescriptor(SchemaDescriptor, FieldListDescriptor):
     admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
         DataDescriptor,
         LinkDescriptor,
     )
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class SequenceDescriptor(SchemaDescriptor, FieldListDescriptor):
     admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
         DataDescriptor,
         LinkDescriptor,
     )
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class UnicityDescriptor(SchemaDescriptor, FieldListDescriptor):
     admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
         DataDescriptor,
         LinkDescriptor,
     )
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class IndexDescriptor(SchemaDescriptor, FieldListDescriptor):
     kind: str | None = attrs.field(default=None)
     admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
@@ -394,16 +394,16 @@ class IndexDescriptor(SchemaDescriptor, FieldListDescriptor):
         LinkDescriptor,
     )
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class PartitioningDescriptor(SchemaDescriptor):
     key: Any | None = attrs.field(default=None)
     scheme: str | None = attrs.field(default=None)
     buckets: Any | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class PathDescriptor(SchemaDescriptor):
     template: str | None = attrs.field(default=None)
 
-@attrs.define(frozen=True)
+# @attrs.define(frozen=True)
 class SortDescriptor(SchemaDescriptor):
     sortkeys: str | tuple[str, ...] | None = attrs.field(default=None)
