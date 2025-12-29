@@ -2073,6 +2073,43 @@ AML uses template strings (`t"..."`) instead of raw strings or Python expression
 
 ## Implementation notes
 
+### Language Implementation
+
+#### Core Package
+
+The core package contains the fundamental building blocks of the Anaximander Modeling Language (AML). It is designed to be functionally independent from the definition of the language itself. Instead, the core package provides infrastructure aimed at writing a domain-specific language that makes the following assumptions:
+
+- The language is declarative in nature. Its declaration units are Python classes called prototypes. Prototypes can never be instantiated directly, but they serve as models for runtime classes that are created through either compilation or metaprogramming.
+
+- Prototypes are organized in a type hierarchy. That hierarchy is comprised of archetypes, traits, and genuine prototypes. Archetypes define the structure and behavior of the prototypes that inherit from them, while traits provide additional modular functionality that can be mixed into prototypes. Genuine prototypes are the concrete models that can be compiled or transformed into runtime classes. A prototype must inherit from exactly one archetype as its first base, either directly or through inheritance from a parent prototype, along with zero or more traits. The traits themselves must be compatible with the base archetype, i.e., they must inherit from the same archetype or one of its bases. Archetypes can also define metacharacters, which then become class keyword arguments for all prototypes that inherit from them (i.e., similar to setting kwargs on `__init_subclass__`).
+
+- Prototypes, archetypes, and traits are all defined as Python classes, and share a common metaclass called `prototype`. The body of prototype, archetype or trait classes is made up of declarative statements — in effect attributes, properties and methods — using a special set of declarative objects called declarators. Declarators define many features, spanning how they are declared in a class body, how they are validated, whether and how they can be overridden in derived prototypes, whether and how they can be bound to a set value, etc. They can be organized in a class hierarchy that reflects their semantic meaning in the language definition, which in turn conditions how they are interpreted and compiled into runtime and system code. The declarators are split into two categories: protodescriptors and metadescriptors. Protodescriptors are used to declare attributes and methods in prototypes — in particular, protodescriptors belong to the semantic domain of the application that is being modeled with prototypes. Metadescriptors span all other aspects, including class-level metadata described in archetypes and traits, system attributes (for instance schema indexes or runtime options), and any other non-domain-specific construct.
+
+- The body of prototypes consists of protodescriptor statements. Protodescriptors declare attributes much like Python descriptors, but they do not implement the descriptor protocol since prototypes are not instantiated directly. Instead, protodescriptors serve to collect metadata about the attributes they declare, which gets compiled into attribute definitions in system code libraries.
+
+- Archetypes and traits are declared using decorators. These decorators relax inheritance constraints in order to allow injection of built-in or library classes in the inheritance hierarchy. The purpose of doing so is to instruct type checkers to treat derived prototypes as instances of those built-in or library classes, which greatly facilitates domain model development by providing the benefits of static type checking and IDE auto-completion. The core package provides the `archetype` and `trait` decorators for that purpose. The body of archetypes and traits is populated with metadescriptors. Like protodescriptors, these are declarator classes that do not implement the descriptor protocol, but instead collect metadata about the attributes they declare.
+
+- Declarators can optionally be organized into hierarchical namespaces. Namespaces serve to group related declarators together and isolate subdomains to avoid naming conflicts. In the Anaximander framework, the key namespace is `nx`, which serves as the interface between the application domain and the system domain. To establish consistency with Python syntax, namespace declarators must be defined and collected in an inner class. Further, if these declarators are to be bound in prototype declarations (as is the case for class-level metadata), the value assignments must also be nested. However, in some instances one may use a collection attribute as a class variable to serve as the declarative container, or, as with metacharacters, set values in the class header. The core package provides basic namespace management functionality to facilitate the definition and usage of namespaces.
+
+- The core package also provides compilation infrastructure that allows prototypes to be transformed into runtime classes. This includes collection of declarators by the `prototype` metaclass, as well as filtered and structured AST representations of prototype bodies. However, the actual compilation process is left to the specific language implementation, since it is highly domain-specific.
+
+- Finally, the core package provides basic error handling and reporting mechanisms to facilitate debugging and development of domain models.
+
+#### The Declarator Class
+
+The `Declarator` class is the abstract base class for protodescriptors and metadescriptors. It defines a set of interface options and behaviors for making declarations in class bodies. This includes:
+- setting name, owner, assignability, annotated type, namespace, etc.;
+- adding parsing and/or validation methods for binding values to a declarator;
+- specifying override rules, both for the declarators themselves and their bound values.
+
+#### The `prototype` Metaclass
+
+The `prototype` metaclass provides the following facilities:
+- collects declarators from class headers and bodies — including collection attributes and inner classes, as well as assignments binding values to declarators;
+- enforces assignability, validation, and override rules on declarators, including rules that are specified by archetypes and traits, starting with which declarators can appear in which context;
+- stores the declarators in class-level collections, and provides a query interface for filtering by type, namespace, and a flag for merging declarations across the inheritance chain;
+- stores bound values in class-level collections.
+
 ### Executable References and Import Safety
 
 #### Scope
