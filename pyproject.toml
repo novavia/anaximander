@@ -52,5 +52,10 @@ pipx = "^1.7.1"
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
+
 [tool.ruff]
+line-length = 99
 per-file-ignores = { "**/__init__.py" = ["F401", "I001"] }
+
+[tool.ruff.lint]
+extend-select = ["E501"]  # line too long
