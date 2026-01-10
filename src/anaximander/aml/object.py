@@ -1,10 +1,10 @@
 """This module defines the base object class for the Anaximander Modeling Language (AML)."""
 
-from .meta import Arche, Type
+from .prototype import Arche, prototype
 from .archetype import archetype
 
 
 @archetype
-class Object[T](Arche, metaclass=Type):
+class Object(Arche, metaclass=prototype):
     """The base class for AML representation objects."""
     pass

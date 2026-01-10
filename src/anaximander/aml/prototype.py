@@ -1,15 +1,19 @@
 """This module defines the Prototype metaclass for the Anaximander Modeling Language (AML)."""
 
-import ast
-from abc import ABCMeta
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
+
+
 from enum import Enum
 from types import NoneType
 from typing import (
+    Any,
     ClassVar,
     Generic,
     Literal,
     Mapping,
-    Any,
     Protocol,
     TypeVar,
     cast,
@@ -20,9 +24,17 @@ from typing import (
 
 from annotationlib import Format, get_annotations
 
-from .protodescriptors import Protodescriptor, AnnotatableDescriptor
-
 from anaximander.utils.funcs import type_name_to_collection_name
+
+from .declarative import declarative
+from .protodescriptors import AnnotatableDescriptor, Protodescriptor
+
+# endregion
+
+# =============================================================================
+# Prototype Metaclass
+# =============================================================================
+# region Prototype Metaclass
 
 
 P = TypeVar("P", bound=Protodescriptor)
@@ -54,7 +66,7 @@ class PrototypeProtocol(Protocol):
 Prototype = type[PrototypeProtocol]
 
 
-class Arche[T]:
+class Arche(metaclass=declarative):
     """The base class for all AML declartive types."""
     __role__: ClassVar[TypeRole] = TypeRole.ARCHETYPE
     __archetype__: ClassVar[Archetype]  # The prototype's archetype
@@ -62,16 +74,16 @@ class Arche[T]:
 Arche.__archetype__ = cast(Archetype, Arche)
 
 
-class Type(ABCMeta):
+class prototype(declarative):
     """Metaclass for declarative types -archetypes, traits and prototypes."""
     __role__: TypeRole
     __archetype__: Archetype  # The prototype's archetype
     __traits__: tuple[Trait, ...]  # The prototype's traits
+    __metadescriptors__: dict[str, Protodescriptor]  # The prototype's metadescriptors
     __metacharacters__: dict[str, Any]  # The prototype's metacharacters
     __compilations__: dict[str, dict]  # Holds compilation target handles and parameters
-    __ast__: ast.ClassDef | None # Holds the prototype's parsed abstract syntax tree
 
-    def __new__(mcls, name, bases, namespace, **metacharacters):
+    def __new__(mcls, name, bases, namespace, traits=(), **metadata):
         base = bases[0]
         traits = [b for b in bases[1:] if b not in (object, Generic, int)]
         try:
@@ -100,14 +112,14 @@ class Type(ABCMeta):
             if not any(t is not u and issubclass(u, t) for u in traits):
                 normalized.append(t)
         return tuple(normalized)
-    
+
     @property
     def archetype(cls) -> Archetype:
         """The archetype of this type."""
         return cls.__archetype__
 
     @property
-    def basetype(cls) -> "Type":
+    def basetype(cls) -> "prototype":
         """The base class of this type."""
         return cls.__bases__[0]
 
@@ -115,7 +127,7 @@ class Type(ABCMeta):
     def traits(cls) -> tuple[Trait, ...]:
         """The traits of this type."""
         return cls.__traits__
-    
+
     @property
     def metacharacters(cls) -> dict[str, Any]:
         """The metacharacters of this type."""
@@ -131,7 +143,7 @@ class Type(ABCMeta):
         # Set archetype
         cls.__archetype__ = base_archetype
         # Set traits
-        cls.__traits__ = Type._normalize_traits(*traits, *base_traits)
+        cls.__traits__ = prototype._normalize_traits(*traits, *base_traits)
         # Set metacharacters
         # TODO: validate metacharacters against archetype definition
         # TODO: validate metacharacter tightening rules
@@ -164,7 +176,7 @@ class Type(ABCMeta):
         }
         if inherited:
             parent = cls.mro()[1]
-            if isinstance(parent, Type):
+            if isinstance(parent, prototype):
                 parent_protodescriptors = dict(parent.protodescriptors(*selected_types, inherited=True))
                 protodescriptors = parent_protodescriptors | cls_protodescriptors
             else:
@@ -213,5 +225,5 @@ class Type(ABCMeta):
         This can be customized by passing metadata (#TODO).
         """
         return type_name_to_collection_name(cls.__name__)
-    
+
 

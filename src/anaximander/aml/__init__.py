@@ -1,13 +1,13 @@
 """Anaximander AML package initialization."""
 
-from .meta import Type, Archetype, Trait, Prototype
+from .prototype import prototype, Archetype, Trait, Prototype
 from .archetype import archetype
 from .trait import trait
 from .object import Object
 
 
 __all__ = [
-    "Type",
+    "prototype",
     "Archetype",
     "Trait",
     "Prototype",

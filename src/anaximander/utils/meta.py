@@ -1,6 +1,6 @@
 """This module provides metaprogramming utilities."""
 
-from typing import Callable
+from typing import Any, Callable
 
 
 class AutoDecoratedType(type):
@@ -12,11 +12,11 @@ class AutoDecoratedType(type):
 
     __decorator__: Callable
 
-    def __new__(mcl, name, bases, namespace):  # type: ignore
+    def __new__(mcls, name, bases, namespace) -> type:
         """Create a class and apply the configured decorator if not marked decorated.
 
         Args:
-            mcl (type): The metaclass.
+            mcls (type): The metaclass.
             name (str): Name of the class being created.
             bases (tuple[type, ...]): Base classes.
             namespace (dict): Class namespace.
@@ -24,16 +24,13 @@ class AutoDecoratedType(type):
         Returns:
             type: The resulting class, possibly decorated.
         """
-        new_class = super().__new__(mcl, name, bases, namespace)
+        new_class = super().__new__(mcls, name, bases, namespace)
         if "__decorated__" in namespace:
             delattr(new_class, "__decorated__")
             return new_class
         setattr(new_class, "__decorated__", True)
-        decorated = mcl.__decorator__(new_class, auto_attribs=True)
+        decorated = mcls.__decorator__(new_class, auto_attribs=True)
         return decorated
-
-    # def __init__(cls, name, bases, namespace, decorator: Callable):  # type: ignore
-    #     super().__init__(name, bases, namespace)
 
     def __init_subclass__(cls, /, decorator: Callable, **kwargs) -> None:
         """Configure the decorator used to auto-decorate subclasses.
@@ -44,3 +41,22 @@ class AutoDecoratedType(type):
         """
         super().__init_subclass__(**kwargs)
         setattr(cls, "__decorator__", decorator)
+
+
+class classproperty[T]:
+    """A descriptor that behaves like a property for both classes and instances.
+
+    Unlike standard properties or classmethods, this descriptor ensures the getter 
+    receives the class (owner) as its first argument regardless of whether it is 
+    accessed via the class itself or one of its instances.
+    """
+
+    # Use a permissive callable type so methods annotated with a concrete
+    # class (e.g. def x(cls) -> int) are accepted by type checkers.
+    def __init__(self, fget: Callable[..., T]) -> None:
+        self.fget: Callable[..., T] = fget
+
+    def __get__(self, instance: Any, owner: type) -> T:
+        # owner is the class (e.g., DataDescriptor)
+        # instance is the instance if accessed via instance, or None if via class
+        return self.fget(owner)

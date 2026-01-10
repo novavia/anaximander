@@ -1,9 +1,9 @@
 """This module defines the trait decorator."""
 
-from anaximander.aml.meta import Type, TypeRole
+from anaximander.aml.prototype import prototype, TypeRole
 
 
-def trait(type: Type) -> Type:
+def trait(type: prototype) -> prototype:
     """Declares a type as a trait.
 
     Only types that directly inherit from an archetype can be declared as traits.
@@ -14,7 +14,7 @@ def trait(type: Type) -> Type:
     Returns:
         Type: The declared trait class.
     """
-    if not issubclass(type, Type):
+    if not issubclass(type, prototype):
         raise TypeError(f"Expected a Type subclass, got {type.__name__}.")
     base_archetype = type.__bases__[0]
     if base_archetype.__role__ not in (TypeRole.ARCHETYPE, TypeRole.TRAIT):

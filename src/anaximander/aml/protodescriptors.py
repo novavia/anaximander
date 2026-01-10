@@ -1,22 +1,35 @@
 """This module defines the Protodescriptor classes for the Anaximander Modeling Language (AML)."""
 
-import ast
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
+
+
 import datetime
 import re
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+from collections.abc import Mapping
 from numbers import Real
-from types import MappingProxyType
 from typing import (
+    Any,
     Callable,
     ClassVar,
     Iterable,
     Literal,
-    Protocol,
-    Mapping,
-    Any,
 )
 
-import attrs
+import yaml
+from attrs import field
+
+from .declarative import Declarator, DeclaratorRegistry, declarator
+
+# endregion
+
+# =============================================================================
+# Constants and Utilities
+# =============================================================================
+# region Constants and Utilities
 
 
 # Sentinel value for unspecified defaults
@@ -47,22 +60,16 @@ def _is_geometry_like(type_: Any) -> bool:
         or getattr(type_, "__geom__", False)
     )
 
-type Assignment = ast.Assign | ast.AnnAssign
+# endregion
 
-# from pydantic import BaseModel   # pydantic not yet compatible with python 3.14
-
-
-class DescriptorConfig(Protocol):
-    """A protocol for descriptor configuration."""
-    def resolve(self, **context) -> Mapping[str, Any]: ...
+# =============================================================================
+# Base Protodescriptor classes
+# =============================================================================
+# region Base Protodescriptor classes
 
 
-type ConfigValue = Any | DescriptorConfig | Mapping[str, ConfigValue]
-type Config = DescriptorConfig | Mapping[str, ConfigValue]
-
-
-# @attrs.define(frozen=True)
-class Protodescriptor(ABC):
+@declarator
+class Protodescriptor(Declarator):
     """Base class for all protodescriptors.
 
     Protodescriptors define attributes of primitive data types and models.
@@ -70,63 +77,15 @@ class Protodescriptor(ABC):
     declarations that are used to generate descriptors in compiled types.
     """
 
-    __reserved_patterns__: ClassVar[set[re.Pattern[str]]] = {
-        re.compile(r"^nx.*"),
-        re.compile(r"^__.*"),
-    }
-
-    # Post-init wired fields (logically immutable; set via internal backdoor).
-    name: str = attrs.field(init=False, default=None)
-    owner: type = attrs.field(init=False, default=None)
-    __ast__: ast.AST = attrs.field(init=False, default=None)
-
-    # Init-time fields (immutable)
-    doc: str | None = attrs.field(default=None)
-    config: Mapping[str, ConfigValue] = attrs.field(factory=dict)
-
-    def __attrs_post_init__(self) -> None:
-        # Freeze config to prevent accidental mutation.
-        object.__setattr__(self, "config", MappingProxyType(dict(self.config)))
-
-    def __init_subclass__(cls):
-        super().__init_subclass__()
-        parent = cls.mro()[1]
-        reserved_patterns: set[re.Pattern[str]] = getattr(parent, "__reserved_patterns__", set())
-        if "__reserved_patterns__" in vars(cls):
-            try:
-                assert all(isinstance(pattern, re.Pattern) for pattern in cls.__reserved_patterns__)
-            except AssertionError:
-                raise TypeError("All elements of __reserved_patterns__ must be instances of re.Pattern")
-            cls.__reserved_patterns__ = reserved_patterns | set(cls.__reserved_patterns__)
-        else:
-            cls.__reserved_patterns__ = reserved_patterns
-
-    def _set_once(self, attr: str, value: Any) -> None:
-        """Internal backdoor: set a frozen attribute once (or idempotently)."""
-        current = getattr(self, attr)
-        if current is not None and current != value:
-            raise RuntimeError(f"{self.__class__.__name__}.{attr} is already set.")
-        object.__setattr__(self, attr, value)
-
-    def __set_name__(self, owner: type, name: str):
-        if any(pattern.fullmatch(name) for pattern in self.__reserved_patterns__):
-            mdtype = self.__class__.__name__
-            msg = f"Cannot use reserved name {name} for Protodescriptor or type {mdtype}."
-            raise ValueError(msg)
-        self._set_once("name", name)
-        self._set_once("owner", owner)
-
-    def __set_ast__(self, node: ast.AST | None) -> None:
-        """Attach the AST node that declared this protodescriptor (if any)."""
-        self._set_once("__ast__", node)
+    __reserved_patterns__ = {re.compile(r"^nx.*")}
 
 
-# @attrs.define(frozen=True)
+@declarator
 class AnnotatableDescriptor(Protodescriptor):
     """Base class for descriptors that can be annotated with type information."""
-    annotation: str | None = attrs.field(init=False, default=None)  # Literal type annotation as a string
-    type: "type | None" = attrs.field(init=False, default=None)  # Evaluated type annotation
-    nullable: bool = attrs.field(init=False, default=None)
+    annotation: str | None = field(init=False, default=None)  # Literal type annotation as a string
+    type: "type | None" = field(init=False, default=None)  # Evaluated type annotation
+    nullable: bool = field(init=False, default=None)
     __types__: ClassVar[tuple[type, ...]] = ()
 
     @abstractmethod
@@ -148,109 +107,190 @@ class AnnotatableDescriptor(Protodescriptor):
         self._set_once("nullable", nullable)
 
 
-# @attrs.define(frozen=True)
+@declarator
 class IdentifiableDescriptor(AnnotatableDescriptor):
     """Base class for descriptors of attributes that can uniquely identify an instance."""
-    unique: bool = attrs.field(init=False, default=False)
+    unique: bool = field(init=False, default=False)
 
     def __set_unique__(self, unique: bool):
         self._set_once("unique", unique)
 
 
-# @attrs.define(frozen=True)
+@declarator
 class AssignableDescriptor(IdentifiableDescriptor):
     """Base class for descriptors of attributes that receive their value through assignment."""
-    default: Any = attrs.field(default=MISSING)
-    factory: Callable[[], Any] | _MissingSentinel = attrs.field(default=MISSING)
-    parser: Callable | Iterable[Callable] | None = attrs.field(default=None)
-    validator: Callable | Iterable[Callable] | None = attrs.field(default=None)
+    default: Any = field(default=MISSING)
+    factory: Callable[[], Any] | _MissingSentinel = field(default=MISSING)
+    parser: Callable | Iterable[Callable] | None = field(default=None)
+    validator: Callable | Iterable[Callable] | None = field(default=None)
 
 
-# @attrs.define(frozen=True)
+@declarator
 class CallableDescriptor(Protodescriptor):
     """A mixin class for descriptors that wrap callables."""
-    callable: Callable | None = attrs.field(default=None)
+    callable: Callable | None = field(default=None)
 
 
-# @attrs.define(frozen=True)
+@declarator
 class FieldListDescriptor(Protodescriptor):
     """A mixin class for descriptors that reference a list of fields."""
-    fields: tuple["FieldDescriptor", ...] = attrs.field(factory=tuple)
+    fields: tuple["FieldDescriptor", ...] = field(factory=tuple)
     admissible_field_types: ClassVar[tuple[type["FieldDescriptor"], ...]] = ()
 
 
-# @attrs.define(frozen=True)
-class MetaDescriptor(AssignableDescriptor):
-    """Base class for descriptors that target the nx inner class of archetypes and traits."""
-    pass
+@declarator
+class MetaDescriptor(Protodescriptor):
+    """Base class for prototype-level descriptors declared in archetypes and traits."""
+    __handle__ = "meta"
 
-# @attrs.define(frozen=True)
+
+@declarator
 class FieldDescriptor(AnnotatableDescriptor):
     """Base class for descriptors that represent individual fields."""
-    load: str | None = attrs.field(default=None)
-    repr: bool | Callable | str | None = attrs.field(default=None)
+    __handle__ = "field"
+    load: str | None = field(default=None)
+    repr: bool | Callable | str | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class RelationDescriptor(FieldDescriptor):
     """Base descriptor for relation fields."""
-    pass
+    __handle__ = "relation"
 
-# @attrs.define(frozen=True)
+
+@declarator
 class MethodDescriptor(CallableDescriptor):
     """Base class for method descriptors."""
-    pass
+    __handle__ = "method"
 
-# @attrs.define(frozen=True)
+
+@declarator
 class ConstructionDescriptor(MethodDescriptor):
     """Base class for construction method descriptors."""
-    pass
+    __handle__ = "construction"
 
-# @attrs.define(frozen=True)
+
+@declarator
 class SchemaDescriptor(Protodescriptor):
     """Base class for descriptors that characterize schema features."""
+    __handle__ = "schema"
+
+# endregion
+
+# =============================================================================
+# Registry classes
+# =============================================================================
+# region Registry classes
+
+
+class ProtodescriptorRegistry(DeclaratorRegistry[Protodescriptor]):
+    """Base registry for protodescriptors."""
     pass
+
+
+class RubrickedRegistry(Mapping):
+    """A base class for registries organized by rubric."""
+    __rubrics__: ClassVar[tuple[str, ...]] = ()  # Allowed rubrics in this registry
+
+    def __init__(self):
+        self._data: dict[str, dict[str, Any]] = {r: {} for r in self.__rubrics__}
+
+    def __getitem__(self, rubric: str) -> dict[str, Any]:
+        return self._data[rubric]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __register__(self, rubric: str, name: str, value: Any, overwrite: bool = False) -> None:
+        """Registration primitive for an item under a given rubric and name."""
+        if rubric not in self.__rubrics__:
+            raise KeyError(f"Unknown rubric '{rubric}'")
+        destination = self._data[rubric]
+        if not overwrite and name in destination:
+            raise KeyError(f"Duplicate entry '{name}' in rubric '{rubric}'")
+        destination[name] = value
+
+    @abstractmethod
+    def register(self, item: Any, *, rubric: str, name: str, overwrite: bool = False) -> None:
+        """Registers an item under a given rubric and name."""
+        pass
+
+    def rubrics(self, *, populated: bool = True) -> list[str]:
+        """Returns the list of rubrics in the registry.
+
+        If populated is set to True, only rubrics with at least one entry are returned.
+        """
+        if populated:
+            return [r for r, bucket in self._data.items() if bucket]
+        return list(self._data.keys())
+
+    def flatten(self) -> Iterable[tuple[str, str, Any]]:
+        for rubric, bucket in self._data.items():
+            for name, value in bucket.items():
+                yield rubric, name, value
+
+    def to_dict(self) -> dict[str, dict[str, Any]]:
+        """Convert to a plain nested dict suitable for serialization."""
+        return {rubric: dict(bucket) for rubric, bucket in self._data.items() if bucket}
+
+    def to_yaml(self) -> str:
+        """YAML-style pretty print."""
+        return yaml.safe_dump(self.to_dict(), sort_keys=False, default_flow_style=False)
+
+    def __str__(self) -> str:
+        return self.to_yaml()
+# endregion
+
 
 # =============================================================================
 # Concrete Protodescriptor classes
 # =============================================================================
+# region Concrete Protodescriptor classes
 
 
-# @attrs.define(frozen=True)
-class MetaCharacter(MetaDescriptor):
-    pass
+@declarator
+class MetadataDescriptor(AssignableDescriptor, MetaDescriptor):
+    """The descriptor for metadata fields."""
+    __handle__ = "metadata"
 
 
-# @attrs.define(frozen=True)
-class OptionDescriptor(MetaDescriptor):
-    pass
+@declarator
+class OptionDescriptor(AssignableDescriptor, MetaDescriptor):
+    """The descriptor for option fields."""
+    __handle__ = "option"
 
 
-# @attrs.define(frozen=True)
-class NxFieldDescriptor(MetaDescriptor):
-    pass
+@declarator
+class NxFieldDescriptor(AssignableDescriptor, MetaDescriptor):
+    """The descriptor for nxfield, i.e. abstract semantic fields."""
+    __handle__ = "nxfield"
 
 
-# @attrs.define(frozen=True)
+@declarator
 class DataDescriptor(AssignableDescriptor, FieldDescriptor):
     """The descriptor for data fields."""
-    index: bool | None = attrs.field(default=None)
-    required: bool | None = attrs.field(default=None)
-    typekey: bool | None = attrs.field(default=None)
-    key: bool | None = attrs.field(default=None)
-    sequence: bool | None = attrs.field(default=None)
-    timestamp: bool | None = attrs.field(default=None)
-    start_time: bool | None = attrs.field(default=None)
-    end_time: bool | None = attrs.field(default=None)
-    period: bool | None = attrs.field(default=None)
-    location: bool | None = attrs.field(default=None)
-    geom: bool | None = attrs.field(default=None)
-    gt: Real | None = attrs.field(default=None)
-    ge: Real | None = attrs.field(default=None)
-    lt: Real | None = attrs.field(default=None)
-    le: Real | None = attrs.field(default=None)
-    min_length: int | None = attrs.field(default=None)
-    max_length: int | None = attrs.field(default=None)
-    pattern: str | None = attrs.field(default=None)
+    __handle__ = "data"
+    index: bool | None = field(default=None)
+    required: bool | None = field(default=None)
+    typekey: bool | None = field(default=None)
+    key: bool | None = field(default=None)
+    sequence: bool | None = field(default=None)
+    timestamp: bool | None = field(default=None)
+    start_time: bool | None = field(default=None)
+    end_time: bool | None = field(default=None)
+    period: bool | None = field(default=None)
+    location: bool | None = field(default=None)
+    geom: bool | None = field(default=None)
+    gt: Real | None = field(default=None)
+    ge: Real | None = field(default=None)
+    lt: Real | None = field(default=None)
+    le: Real | None = field(default=None)
+    min_length: int | None = field(default=None)
+    max_length: int | None = field(default=None)
+    pattern: str | None = field(default=None)
 
     def __attrs_post_init__(self) -> None:
         super().__attrs_post_init__()
@@ -286,11 +326,12 @@ class DataDescriptor(AssignableDescriptor, FieldDescriptor):
             msg = "Location/geom flags require a geometry-like field type."
             raise TypeError(msg)
 
-# @attrs.define(frozen=True)
-class LinkDescriptor(AssignableDescriptor, RelationDescriptor):
-    on_delete: Literal["restrict", "set_null", "cascade"] = attrs.field(default="restrict")
-    key: bool | None = attrs.field(default=None)
 
+@declarator
+class LinkDescriptor(AssignableDescriptor, RelationDescriptor):
+    on_delete: Literal["restrict", "set_null", "cascade"] = field(default="restrict")
+    key: bool | None = field(default=None)
+    __handle__ = "link"
     def __attrs_post_init__(self) -> None:
         super().__attrs_post_init__()
         if self.on_delete not in {"restrict", "set_null", "cascade"}:
@@ -303,107 +344,143 @@ class LinkDescriptor(AssignableDescriptor, RelationDescriptor):
             msg = "Key links must be non-nullable."
             raise TypeError(msg)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class BackLinkDescriptor(IdentifiableDescriptor, RelationDescriptor):
-    via: type | None = attrs.field(default=None)
-    limit: int | None = attrs.field(default=None)
+    __handle__ = "backlink"
+    via: type | None = field(default=None)
+    limit: int | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class SelectionDescriptor(RelationDescriptor, CallableDescriptor):
-    kind: str | None = attrs.field(default=None)
-    sql: Callable | None = attrs.field(default=None)
-    ibis: Callable | None = attrs.field(default=None)
-    fx: Callable | str | None = attrs.field(default=None)
-    source: Any | None = attrs.field(default=None)
-    key: Any | list[Any] | None = attrs.field(default=None)
-    time: Any | None = attrs.field(default=None)
-    space: Any | None = attrs.field(default=None)
-    filter: Callable | Any | None = attrs.field(default=None)
-    sort: str | list[str] | None = attrs.field(default=None)
-    limit: int | None = attrs.field(default=None)
+    __handle__ = "selection"
+    kind: str | None = field(default=None)
+    sql: Callable | None = field(default=None)
+    ibis: Callable | None = field(default=None)
+    fx: Callable | str | None = field(default=None)
+    source: Any | None = field(default=None)
+    key: Any | list[Any] | None = field(default=None)
+    time: Any | None = field(default=None)
+    space: Any | None = field(default=None)
+    filter: Callable | Any | None = field(default=None)
+    sort: str | list[str] | None = field(default=None)
+    limit: int | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class DocumentDescriptor(AssignableDescriptor, RelationDescriptor):
-    path: str | Any | None = attrs.field(default=None)
-    format: str | None = attrs.field(default=None)
-    compression: str | None = attrs.field(default=None)
+    __handle__ = "document"
+    path: str | Any | None = field(default=None)
+    format: str | None = field(default=None)
+    compression: str | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class FolderDescriptor(AssignableDescriptor, RelationDescriptor):
-    path: str | Any | None = attrs.field(default=None)
+    __handle__ = "folder"
+    path: str | Any | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class StateDescriptor(RelationDescriptor, CallableDescriptor):
-    source: Any | None = attrs.field(default=None)
-    reducer: str | Callable | None = attrs.field(default=None)
-    max_lag: str | Any | None = attrs.field(default=None)
-    min_observations: int | None = attrs.field(default=None)
+    __handle__ = "state"
+    source: Any | None = field(default=None)
+    reducer: str | Callable | None = field(default=None)
+    max_lag: str | Any | None = field(default=None)
+    min_observations: int | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class FieldExpressionDescriptor(FieldDescriptor, CallableDescriptor):
-    expr: Callable | str | None = attrs.field(default=None)
+    __handle__ = "fx"
+    expr: Callable | str | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class FieldGroupDescriptor(FieldDescriptor, FieldListDescriptor):
-    pass
+    __handle__ = "fieldgroup"
 
-# @attrs.define(frozen=True)
+
+@declarator
 class FieldBlockDescriptor(FieldDescriptor):
-    fields: tuple[str, ...] | None = attrs.field(default=None)
+    __handle__ = "fieldblock"
+    fields: tuple[str, ...] | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class MetricDescriptor(FieldDescriptor, CallableDescriptor):
-    expr: Callable | None = attrs.field(default=None)
+    __handle__ = "metric"
+    expr: Callable | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class ParserDescriptor(ConstructionDescriptor):
-    fields: tuple[str, ...] | None = attrs.field(default=None)
-    element_wise: bool = attrs.field(default=False)
+    __handle__ = "parser"
+    fields: tuple[str, ...] | None = field(default=None)
+    element_wise: bool = field(default=False)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class ValidatorDescriptor(ConstructionDescriptor):
-    fields: tuple[str, ...] | None = attrs.field(default=None)
-    element_wise: bool = attrs.field(default=False)
+    __handle__ = "validator"
+    fields: tuple[str, ...] | None = field(default=None)
+    element_wise: bool = field(default=False)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class KeyDescriptor(SchemaDescriptor, FieldListDescriptor):
+    __handle__ = "key"
     admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
         DataDescriptor,
         LinkDescriptor,
     )
 
-# @attrs.define(frozen=True)
+
+@declarator
 class SequenceDescriptor(SchemaDescriptor, FieldListDescriptor):
+    __handle__ = "sequence"
     admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
         DataDescriptor,
         LinkDescriptor,
     )
 
-# @attrs.define(frozen=True)
+
+@declarator
 class UnicityDescriptor(SchemaDescriptor, FieldListDescriptor):
+    __handle__ = "unique"
     admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
         DataDescriptor,
         LinkDescriptor,
     )
 
-# @attrs.define(frozen=True)
+
+@declarator
 class IndexDescriptor(SchemaDescriptor, FieldListDescriptor):
-    kind: str | None = attrs.field(default=None)
+    __handle__ = "index"
+    kind: str | None = field(default=None)
     admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
         DataDescriptor,
         LinkDescriptor,
     )
 
-# @attrs.define(frozen=True)
-class PartitioningDescriptor(SchemaDescriptor):
-    key: Any | None = attrs.field(default=None)
-    scheme: str | None = attrs.field(default=None)
-    buckets: Any | None = attrs.field(default=None)
 
-# @attrs.define(frozen=True)
+@declarator
+class PartitionDescriptor(SchemaDescriptor):
+    __handle__ = "partition"
+    key: Any | None = field(default=None)
+    scheme: str | None = field(default=None)
+    buckets: Any | None = field(default=None)
+
+
+@declarator
 class PathDescriptor(SchemaDescriptor):
-    template: str | None = attrs.field(default=None)
+    __handle__ = "path"
+    template: str | None = field(default=None)
 
-# @attrs.define(frozen=True)
+
+@declarator
 class SortDescriptor(SchemaDescriptor):
-    sortkeys: str | tuple[str, ...] | None = attrs.field(default=None)
+    __handle__ = "sort"
+    sortkeys: str | tuple[str, ...] | None = field(default=None)
+# endregion

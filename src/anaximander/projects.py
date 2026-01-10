@@ -11,7 +11,7 @@ from cookiecutter.main import cookiecutter
 
 from .utils import Config, private_field
 from .utils.funcs import workdir
-from .aml import Type
+from .aml import prototype
 
 NXPATH = Path(__file__).parent
 PROJECT_TEMPLATE = NXPATH / "config/projects/project_template"
@@ -20,7 +20,7 @@ PROJECT_TEMPLATE = NXPATH / "config/projects/project_template"
 class NxModuleType(ModuleType):
     """A type hint for Anaximander AML declarative modules."""
     __ast__: ast.Module  # Holds the module's parsed abstract syntax tree
-    __types__: list[Type]  # Holds the module's declared types
+    __types__: list[prototype]  # Holds the module's declared types
 
 
 class ProjectConfig(Config):

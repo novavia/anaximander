@@ -1,10 +1,10 @@
 """This module defines the archetype decorator."""
 
 from typing import cast
-from anaximander.aml.meta import Type, TypeRole, Archetype
+from anaximander.aml.prototype import prototype, TypeRole, Archetype
 
 
-def archetype(type_: Type) -> Type:
+def archetype(type_: prototype) -> prototype:
     """Declares a type as an archetype.
 
     Only types that directly inherit from an archetype can be declared as archetypes.
@@ -15,7 +15,7 @@ def archetype(type_: Type) -> Type:
     Returns:
         Type: The declared archetype class.
     """
-    if not isinstance(type_, Type):
+    if not isinstance(type_, prototype):
         raise TypeError(f"Expected a Type instance, got {type_.__name__}.")
     base_archetype = type_.basetype
     traits = type_.traits

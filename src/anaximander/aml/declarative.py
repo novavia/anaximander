@@ -1,75 +1,55 @@
-"""Defines the Declarator class, which is responsible for declaring descriptors, methods and metadata in the AML language."""
+"""Defines the Declarator class and declarative metaclass.
+
+These artifacts form the foundation for declarative type definitions in AML.
+"""
+
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
+
 
 import ast
-import datetime
 import re
+import weakref
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Mapping
 from contextvars import ContextVar, Token
+from functools import partial
 from itertools import chain, count
 from types import MappingProxyType
-from typing import (
-    ChainMap,
-    ClassVar,
-    Collection,
-    Optional,
-    Protocol,
-    Mapping,
-    Any,
-    TypedDict
-)
-import weakref
+from typing import Any, ClassVar, Optional, Protocol, Self, TypedDict, TypeVar
 
 from attrs import define, field
 
+from ..utils.meta import classproperty
 
-# Sentinel value for unspecified defaults
-class _MissingSentinel:
-    """Unique sentinel for unspecified defaults."""
+# endregion
 
-    def __repr__(self) -> str:
-        return "MISSING"
-
-
-MISSING: _MissingSentinel = _MissingSentinel()
+# =============================================================================
+# Constants
+# =============================================================================
+# region Constants
 
 
-def _is_temporal(type_: Any) -> bool:
-    """Return True when a type behaves like a timestamp or date."""
-    if not isinstance(type_, type):
-        return False
-    if issubclass(type_, (datetime.datetime, datetime.date, datetime.time)):
-        return True
-    return bool(getattr(type_, "__time_like__", False) or getattr(type_, "__temporal__", False))
-
-
-def _is_spatial(type_: Any) -> bool:
-    """Return True when a type represents a geometry/location value."""
-    if not isinstance(type_, type):
-        return False
-    return bool(
-        getattr(type_, "__geometry__", False)
-        or getattr(type_, "__geo__", False)
-        or getattr(type_, "__geom__", False)
-    )
-
+declarator = partial(define, slots=False, frozen=True, kw_only=True)
 
 DECLARATIVE_NAMESPACE: ContextVar[Optional["DeclarativeNamespace"]] = ContextVar("DECLARATIVE_NAMESPACE", default=None)  # noqa
 
-
 type Assignment = ast.Assign | ast.AnnAssign
+# endregion
+
+# =============================================================================
+# Declarator base class
+# =============================================================================
+# region Declarator base class
 
 
-class DeclarativeTypeKey(TypedDict):
-    """A unique key for identifying declarative types."""
-    project: str
-    module: str
-    name: str
-
-
-class DeclaratorKey(TypedDict):
+@define(frozen=True)
+class DeclaratorKey:
     """A unique key for identifying declarators."""
-    owner: DeclarativeTypeKey
-    index: int
+    owner: "DeclarativeTypeKey"
+    order: int
 
 
 class DeclaratorConfig(Protocol):
@@ -82,8 +62,7 @@ type ConfigValue = Any | DeclaratorConfig | Mapping[str, ConfigValue]
 type Config = DeclaratorConfig | Mapping[str, ConfigValue]
 
 
-
-@define
+@declarator
 class Declarator(ABC):
     """Base class for all declarators.
 
@@ -98,13 +77,14 @@ class Declarator(ABC):
         re.compile(r"^__.*"),
     }
 
-    __handle__: ClassVar[Optional[str]]  # A plain-text lowercase handle for this declarator type (override in subclasses) # noqa
     __handles__: ClassVar[dict[str, type]] = {}  # Mapping of handles to declarator types (do not override) # noqa
+    __handle__: ClassVar[Optional[str]]  = None # A plain-text lowercase handle for this declarator type (override in subclasses) # noqa
+    _handles: ClassVar[tuple[str, ...]] = ()  # A tuple of all handles for this declarator type and its ancestors, in reverse mro (do not override) # noqa
 
     # Post-init wired fields (logically immutable; set via internal backdoor).
     name: str = field(init=False, default=None)  # Attribute or key name this declarator is assigned to # noqa
     owner: "declarative" = field(init=False, default=None) # Owning class of this declarator
-    index: int = field(init=False, default=None)  # Index of this declarator within the owning class # noqa
+    order: int = field(init=False, default=None)  # Index of this declarator within the owning class # noqa
     __ast__: ast.AST = field(init=False, default=None)  # AST node that declared this declarator
 
     # Init-time fields (immutable)
@@ -114,12 +94,22 @@ class Declarator(ABC):
     @property
     def __key__(self) -> DeclaratorKey:
         """A unique key for identifying this declarator."""
-        if self.owner is None or self.index is None:
+        if self.owner is None or self.order is None:
             raise RuntimeError("Declarator must be bound to a class before accessing its key.")
         return DeclaratorKey(
             owner=self.owner.__key__,
-            index=self.index,
+            order=self.order,
         )
+
+    @classproperty
+    def handle(cls) -> Optional[str]:
+        """The plain-text lowercase handle for this declarator type."""
+        return cls.__handle__
+
+    @classproperty
+    def handles(cls) -> tuple[str, ...]:
+        """A tuple of all handles for this declarator type and its ancestors."""
+        return cls._handles
 
     def __attrs_post_init__(self) -> None:
         """Post-initialization processing for the declarator."""
@@ -131,10 +121,9 @@ class Declarator(ABC):
 
     def __init_subclass__(cls):
         super().__init_subclass__()
-        parent = cls.mro()[1]
-        reserved_patterns: set[str | re.Pattern[str]] = getattr(
-            parent, "__reserved_patterns__", set()
-        )
+        base_declarators = (b for b in cls.__bases__ if issubclass(b, Declarator))
+        base_reserved_patterns = (b.__reserved_patterns__ for b in base_declarators)
+        reserved_patterns = set(chain.from_iterable(base_reserved_patterns))
         if "__reserved_patterns__" in vars(cls):
             try:
                 assert all(
@@ -154,6 +143,11 @@ class Declarator(ABC):
                         f"Declarator handle '{cls.__handle__}' is already registered."
                     )
             cls.__handles__[cls.__handle__] = cls
+        handles = []
+        for base in reversed(cls.mro()):
+            if issubclass(base, Declarator) and base.__handle__ is not None:
+                handles.append(base.__handle__)
+        cls._handles = tuple(handles)
 
     def _set_once(self, attr: str, value: Any) -> None:
         """Internal backdoor: set a frozen attribute once (or idempotently)."""
@@ -213,164 +207,148 @@ class Declarator(ABC):
         """
         raise AttributeError(f"Declarator of type {self.__class__.__name__} cannot be overridden.")
 
+# endregion
 
-# class Registry[str, T](Mapping[str, T]):
-#     """A base registry class for declarators and bindings.
-
-#     The registration structure is a chain-mapped dictionary which keeps track of inheritance and
-#     allows for easy lookup and iteration over registered items.
-#     """
-
-#     def __init__(self, *, parent: "Registry[str, T] | None" = None):
-#         if parent is not None:
-#             self._data: ChainMap[str, T] = ChainMap({}, *parent._data.maps)
-#         else:
-#             self._data: ChainMap[str, T] = ChainMap()
-#         self.parent = parent
-
-#     def __getitem__(self, key: str) -> T:
-#         try:
-#             return self._data[key]
-#         except KeyError:
-#             raise KeyError(f"Key {key} not found in registry.") from None
-
-#     def __iter__(self):
-#         return iter(self._data)
-
-#     def __len__(self) -> int:
-#         return len(self._data)
-
-#     def __copy__(self) -> "Registry[str, T]":
-#         """Create a shallow copy of the registry."""
-#         new_registry = self.__class__()
-#         new_registry._data = self._data.copy()
-#         return new_registry
-
-#     def copy(self) -> "Registry[str, T]":
-#         """Create a shallow copy of the registry."""
-#         return self.__copy__()
-
-#     @abstractmethod
-#     def register(self, key: str, item: T) -> None:
-#         """Register an item with the given key."""
-#         raise NotImplementedError
-
-#     def update(self, other: Mapping[str, T]) -> None:
-#         """Update the registry with items from another mapping."""
-#         for key, item in other.items():
-#             self.register(key, item)
-
-#     @abstractmethod
-#     def filter(self, *, recursive: bool = True) -> Mapping[str, T]:
-#         """Yield items that satisfy the given predicate.
-
-#         recursive indicates whether to search parent registries.
-#         """
-#         if recursive:
-#             data = self._data
-#         else:
-#             data = self._data.maps[0]
-#         return {k: v for k, v in data.items()}
+# =============================================================================
+# Registry classes
+# =============================================================================
+# region Registry classes
 
 
-# class BindingRegistry(Registry[str, Any]):
-#     """Registry for bindings within a class namespace."""
+class Registry[T](Mapping[str, T]):
+    """A base registry class for declarators and bindings."""
 
-#     def __init__(self, declarator_registry: "DeclaratorRegistry"):
-#         declarator_parent = declarator_registry.parent
-#         # Use the parent's bindings only if the parent is a DeclaratorRegistry instance.
-#         parent_bindings = (
-#             declarator_parent.bindings
-#             if isinstance(declarator_parent, DeclaratorRegistry)
-#             else None
-#         )
-#         super().__init__(parent=parent_bindings)
-#         self.declarators = weakref.ref(declarator_registry)  # Avoid circular reference
+    def __init__(self, data: Mapping[str, T] | Iterable[tuple[str, T]] | None = None):
+        """Initialize the data with an optional mapping."""
+        self._data: dict[str, T] = dict(data or {})
 
-#     def register(self, key: str, item: Any) -> None:
-#         """Register a binding."""
-#         declarators = self.declarators()
-#         if declarators is None:
-#             raise RuntimeError("Declarator registry reference has been garbage collected.")
-#         try:
-#             declarator = declarators[key]
-#         except KeyError:
-#             raise KeyError(f"No declarator found for binding '{key}'.")
-#         extant_binding = self._data.get(key, None)
-#         try:
-#             declarator.__bind__(item, extant_binding)
-#         except AttributeError as e:
-#             raise RuntimeError(f"Cannot bind value to declarator '{key}': {e}") from e
-#         self._data[key] = item
+    def __getitem__(self, key: str) -> T:
+        try:
+            return self._data[key]
+        except KeyError:
+            raise KeyError(f"Key {key} not found in registry.") from None
 
-#     def filter(self, *, recursive: bool = True) -> Mapping[str, Any]:
-#         """Yield bindings that match the given types or handles."""
-#         return super().filter(recursive=recursive)
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __copy__(self) -> Self:
+        """Create a shallow copy of the registry."""
+        new_registry = self.__class__()
+        new_registry._data = self._data.copy()
+        return new_registry
+
+    def copy(self) -> Self:
+        """Create a shallow copy of the registry."""
+        return self.__copy__()
+
+    @abstractmethod
+    def register(self, key: str, item: T) -> None:
+        """Register an item with the given key."""
+        raise NotImplementedError
+
+    def update(self, other: Mapping[str, T]) -> None:
+        """Update the registry with items from another mapping."""
+        for key, item in other.items():
+            self.register(key, item)
 
 
-# class DeclaratorRegistry(Registry[str, Declarator]):
-#     """Registry for declarators within a class namespace."""
+class DeclaratorRegistry[D: Declarator](Registry[D]):
+    """A simple registry for declarators."""
 
-#     __types__: ClassVar[tuple[type[Declarator], ...]]  # Admissible declarator types
+    __types__: ClassVar[tuple[type[Declarator], ...]]  # Admissible declarator types
 
-#     def __init__(
-#         self,
-#         *,
-#         parent: "DeclaratorRegistry | None" = None,
-#         declarator_container: str | None = None,
-#         binding_container: str | None = None,
-#     ):
-#         if parent is not None:
-#             if parent.__class__ is not self.__class__:
-#                 raise TypeError("A registry must be of the same class as its parent.")
-#         super().__init__(parent=parent)
-#         self.declarator_container = declarator_container
-#         self.binding_container = binding_container
-#         self.bindings: BindingRegistry = BindingRegistry(self)
+    def __init__(self, data: Mapping[str, D] | Iterable[tuple[str, D]] | None = None, *,
+                 bindings: "BindingRegistry | None" = None):
+        """Initialize the declarator registry with an optional mapping or iterable of pairs."""
+        super().__init__(data)
+        self.bindings = bindings
 
-#     def register(self, key: str, item: Declarator) -> None:
-#         """Register a declarator."""
-#         if not isinstance(item, self.__types__):
-#             type_names = ", ".join(t.__name__ for t in self.__types__)
-#             raise TypeError(f"Declarator must be one of types: {type_names}")
-#         if key in self._data:
-#             try:
-#                 self._data[key].__override__(item)
-#             except AttributeError as e:
-#                 raise RuntimeError(f"Cannot override declarator '{key}': {e}") from e
-#         self._data[key] = item
+    def register(self, key: str, item: D) -> None:
+        """Registers a declarator."""
+        if not isinstance(item, self.__types__):
+            type_names = ", ".join(t.__name__ for t in self.__types__)
+            raise TypeError(f"Declarator must be one of types: {type_names}")
+        if key in self._data:
+            if self.bindings is not None and key in self.bindings:
+                raise RuntimeError(f"Cannot override declarator '{key}' with active binding.")
+            try:
+                self._data[key].__override__(item)
+            except AttributeError as e:
+                raise RuntimeError(f"Cannot override declarator '{key}': {e}") from e
+        self._data[key] = item
 
-#     def filter(self, *args: type | str, recursive: bool = True) -> Mapping[str, Declarator]:
-#         """Yield declarators that match the given types or handles."""
-#         data = super().filter(recursive=recursive)
-#         if not args:
-#             return data
-#         types = []
-#         for arg in args:
-#             if isinstance(arg, type):
-#                 types.append(arg)
-#             elif isinstance(arg, str):
-#                 try:
-#                     types.append(Declarator.__handles__[arg])
-#                 except KeyError:
-#                     raise ValueError(f"Unknown declarator handle: {arg}") from None
-#             else:
-#                 raise TypeError("Arguments must be types or declarator handles (strings).")
-#         if not all(any(issubclass(t, __t__) for t in types) for __t__ in self.__types__):
-#             type_names = ", ".join(t.__name__ for t in self.__types__)
-#             raise TypeError(f"Arguments must be one of types: {type_names} or their handles.")
-#         return {k: v for k, v in data.items() if isinstance(v, tuple(types))}
+    def filter(self, *args: type | str) -> Self:
+        """Yield declarators that match the given types or handles."""
+        if not args:
+            return self.__copy__()
+        data = self._data
+        types = []
+        for arg in args:
+            if isinstance(arg, type):
+                types.append(arg)
+            elif isinstance(arg, str):
+                try:
+                    types.append(Declarator.__handles__[arg])
+                except KeyError:
+                    raise ValueError(f"Unknown declarator handle: {arg}") from None
+            else:
+                raise TypeError("Arguments must be types or declarator handles (strings).")
+        if not all(any(issubclass(t, __t__) for t in types) for __t__ in self.__types__):
+            type_names = ", ".join(t.__name__ for t in self.__types__)
+            raise TypeError(f"Arguments must be one of types: {type_names} or their handles.")
+        return self.__class__({k: v for k, v in data.items() if isinstance(v, tuple(types))})
 
-#     def update(self, other: Mapping[str, Declarator]) -> None:
-#         """Update the registry with declarators from another mapping."""
-#         super().update(other)
-#         try:
-#             other_bindings = getattr(other, "bindings")
-#             assert isinstance(other_bindings, BindingRegistry)
-#         except (AttributeError, AssertionError):
-#             pass
-#         else:
-#             self.bindings.update(other_bindings)
+
+class BindingRegistry(Registry[Any]):
+    """Registry for bindings."""
+
+    def __init__(self, declarators: DeclaratorRegistry | None = None):
+        """Initialize the binding registry with an optional declarator registry."""
+        super().__init__()
+        self._declarators_ref = (
+            weakref.ref(declarators) if declarators is not None else lambda: None
+        )
+
+    @property
+    def declarators(self) -> DeclaratorRegistry | None:
+        """Return the referenced declarator registry, or None if it has been garbage collected."""
+        return self._declarators_ref()
+
+    def register(self, key: str, item: Any) -> None:
+        """Register a binding."""
+        declarators = self.declarators
+        if declarators is not None:
+            try:
+                declarator: Declarator = declarators[key]
+            except KeyError:
+                raise KeyError(f"No declarator found for binding '{key}'.")
+            extant_binding = self._data.get(key, None)
+            try:
+                declarator.__bind__(item, extant_binding)
+            except AttributeError as e:
+                raise RuntimeError(f"Cannot bind value to declarator '{key}': {e}") from e
+        else:
+            if key in self._data:
+                raise RuntimeError(f"Binding '{key}' is already registered.")
+        self._data[key] = item
+
+# endregion
+
+# =============================================================================
+# Declarative metaclass
+# =============================================================================
+# region Declarative metaclass
+
+
+@define(frozen=True)
+class DeclarativeTypeKey:
+    """A unique key for identifying declarative types."""
+    project: str
+    module: str
+    name: str
 
 
 class DeclarativeNamespace(dict):
@@ -378,7 +356,7 @@ class DeclarativeNamespace(dict):
     context_token: Token
 
     def __init__(self, *, strict: bool = True, bindable_names: list[str] | None = None):
-        super().__init__(__declarations__={}, __bindings__={})
+        super().__init__(__declarations__=DeclaratorRegistry(), __bindings__=BindingRegistry())
         self.strict = strict
         self.bindable_names = bindable_names or []
         self.declaration_index = count(start=1)
@@ -395,17 +373,17 @@ class DeclarativeNamespace(dict):
 
     def register_declaration(self, declarator: Declarator) -> None:
         """Register a declarator in this namespace."""
-        declarations: dict[int, Declarator] = self["__declarations__"]
-        index = next(self.declaration_index)
-        declarations[index] = declarator
-        declarator._set_once("index", index)
+        declarations: DeclaratorRegistry = self["__declarations__"]
+        order = next(self.declaration_index)
+        declarations.register(str(order), declarator)
+        declarator._set_once("order", order)
 
     def register_binding(self, key: str, value: Any) -> None:
         """Register a binding in this namespace."""
-        bindings: dict[str, Any] = self["__bindings__"]
+        bindings: BindingRegistry = self["__bindings__"]
         if key in bindings:
             raise KeyError(f"Binding '{key}' is already registered in this namespace.")
-        bindings[key] = value
+        bindings.register(key, value)
 
     def close(self) -> None:
         """Close the namespace, preventing further modifications."""
@@ -425,8 +403,8 @@ class declarative(type):
     """Metaclass for declarative types."""
 
     __project__: ClassVar[str] = "anaximander"  # Project name for this declarative type
-    __declarations__: dict[int, Declarator]  # Declarators declared in this type
-    __bindings__: dict[str, Any]  # Bindings made in this type
+    __declarations__: DeclaratorRegistry  # Declarators declared in this type
+    __bindings__: BindingRegistry  # Bindings made in this type
     __strict__: bool = False  # Whether this type uses strict declaration rules
     __ast__: ast.ClassDef | None  # Holds the type's parsed abstract syntax tree
 
@@ -467,3 +445,4 @@ class declarative(type):
         finally:
             namespace.close()
         return cls
+# endregion
