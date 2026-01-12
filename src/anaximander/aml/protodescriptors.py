@@ -8,6 +8,7 @@
 
 import datetime
 import re
+import weakref
 from abc import abstractmethod
 from collections.abc import Mapping
 from numbers import Real
@@ -22,7 +23,7 @@ from typing import (
 import yaml
 from attrs import field
 
-from .declarative import Declarator, DeclaratorRegistry, declarator
+from .declarative import BindingRegistry, Declarator, DeclaratorRegistry, MultiRegistry, declarator
 
 # endregion
 
@@ -175,73 +176,6 @@ class SchemaDescriptor(Protodescriptor):
     """Base class for descriptors that characterize schema features."""
     __handle__ = "schema"
 
-# endregion
-
-# =============================================================================
-# Registry classes
-# =============================================================================
-# region Registry classes
-
-
-class ProtodescriptorRegistry(DeclaratorRegistry[Protodescriptor]):
-    """Base registry for protodescriptors."""
-    pass
-
-
-class RubrickedRegistry(Mapping):
-    """A base class for registries organized by rubric."""
-    __rubrics__: ClassVar[tuple[str, ...]] = ()  # Allowed rubrics in this registry
-
-    def __init__(self):
-        self._data: dict[str, dict[str, Any]] = {r: {} for r in self.__rubrics__}
-
-    def __getitem__(self, rubric: str) -> dict[str, Any]:
-        return self._data[rubric]
-
-    def __iter__(self):
-        return iter(self._data)
-
-    def __len__(self) -> int:
-        return len(self._data)
-
-    def __register__(self, rubric: str, name: str, value: Any, overwrite: bool = False) -> None:
-        """Registration primitive for an item under a given rubric and name."""
-        if rubric not in self.__rubrics__:
-            raise KeyError(f"Unknown rubric '{rubric}'")
-        destination = self._data[rubric]
-        if not overwrite and name in destination:
-            raise KeyError(f"Duplicate entry '{name}' in rubric '{rubric}'")
-        destination[name] = value
-
-    @abstractmethod
-    def register(self, item: Any, *, rubric: str, name: str, overwrite: bool = False) -> None:
-        """Registers an item under a given rubric and name."""
-        pass
-
-    def rubrics(self, *, populated: bool = True) -> list[str]:
-        """Returns the list of rubrics in the registry.
-
-        If populated is set to True, only rubrics with at least one entry are returned.
-        """
-        if populated:
-            return [r for r, bucket in self._data.items() if bucket]
-        return list(self._data.keys())
-
-    def flatten(self) -> Iterable[tuple[str, str, Any]]:
-        for rubric, bucket in self._data.items():
-            for name, value in bucket.items():
-                yield rubric, name, value
-
-    def to_dict(self) -> dict[str, dict[str, Any]]:
-        """Convert to a plain nested dict suitable for serialization."""
-        return {rubric: dict(bucket) for rubric, bucket in self._data.items() if bucket}
-
-    def to_yaml(self) -> str:
-        """YAML-style pretty print."""
-        return yaml.safe_dump(self.to_dict(), sort_keys=False, default_flow_style=False)
-
-    def __str__(self) -> str:
-        return self.to_yaml()
 # endregion
 
 
@@ -483,4 +417,60 @@ class PathDescriptor(SchemaDescriptor):
 class SortDescriptor(SchemaDescriptor):
     __handle__ = "sort"
     sortkeys: str | tuple[str, ...] | None = field(default=None)
+
+# endregion
+
+# =============================================================================
+# Registry classes
+# =============================================================================
+# region Registry classes
+
+
+class MetaDescriptorRegistry(MultiRegistry):
+    """Registry for metadescriptors."""
+    metadata: DeclaratorRegistry["MetadataDescriptor"]
+    nxfield: DeclaratorRegistry["NxFieldDescriptor"]
+    option: DeclaratorRegistry["OptionDescriptor"]
+
+    def __init__(self):
+        self.metadata = DeclaratorRegistry[MetadataDescriptor]()
+        self.nxfield = DeclaratorRegistry[NxFieldDescriptor]()
+        self.option = DeclaratorRegistry[OptionDescriptor]()
+        super().__init__(metadata=self.metadata, nxfield=self.nxfield, option=self.option)
+
+
+class ProtodescriptorRegistry(MultiRegistry):
+    """Registry for meta bindings and protodescriptors."""
+    metadata: BindingRegistry["MetadataDescriptor"]
+    nxfield: BindingRegistry["NxFieldDescriptor"]
+    option: BindingRegistry["OptionDescriptor"]
+    field: DeclaratorRegistry["FieldDescriptor"]
+    schema: DeclaratorRegistry["SchemaDescriptor"]
+    construction: DeclaratorRegistry["ConstructionDescriptor"]
+    bindings: BindingRegistry[FieldDescriptor]
+
+    def __init__(self, metadescriptors: MetaDescriptorRegistry):
+        self.metadata = metadescriptors.metadata.bindings
+        self.nxfield = metadescriptors.nxfield.bindings
+        self.option = metadescriptors.option.bindings
+        self.field = DeclaratorRegistry[FieldDescriptor]()
+        self.schema = DeclaratorRegistry[SchemaDescriptor]()
+        self.construction = DeclaratorRegistry[ConstructionDescriptor]()
+        self.bindings = self.field.bindings
+        super().__init__(
+            metadata=self.metadata,
+            nxfield=self.nxfield,
+            option=self.option,
+            field=self.field,
+            schema=self.schema,
+            construction=self.construction,
+            bindings=self.bindings,
+        )
+        self._metadescriptors_ref = (weakref.ref(metadescriptors))
+
+    @property
+    def metadescriptors(self) -> MetaDescriptorRegistry | None:
+        """Returns the metadescriptor registry, or None if it has been garbage collected."""
+        return self._metadescriptors_ref()
+
 # endregion
