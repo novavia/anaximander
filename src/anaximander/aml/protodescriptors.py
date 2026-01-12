@@ -23,7 +23,18 @@ from typing import (
 import yaml
 from attrs import field
 
-from .declarative import BindingRegistry, Declarator, DeclaratorRegistry, MultiRegistry, declarator
+from .declarative import (
+    AnnotatableDeclarator,
+    AssignableDeclarator,
+    BindingRegistry,
+    CallableDeclarator,
+    Declarator,
+    DeclaratorRegistry,
+    EnumerationDeclarator,
+    IdentifiableDeclarator,
+    MultiRegistry,
+    declarator,
+)
 
 # endregion
 
@@ -31,15 +42,6 @@ from .declarative import BindingRegistry, Declarator, DeclaratorRegistry, MultiR
 # Constants and Utilities
 # =============================================================================
 # region Constants and Utilities
-
-
-# Sentinel value for unspecified defaults
-class _MissingSentinel:
-    """Unique sentinel for unspecified defaults."""
-    def __repr__(self) -> str:
-        return "MISSING"
-
-MISSING: _MissingSentinel = _MissingSentinel()
 
 
 def _is_time_like(type_: Any) -> bool:
@@ -77,76 +79,19 @@ class Protodescriptor(Declarator):
     They are called protodescriptors because they are not proper descriptors, but rather
     declarations that are used to generate descriptors in compiled types.
     """
-
+    __handle__ = "proto"
     __reserved_patterns__ = {re.compile(r"^nx.*")}
 
 
 @declarator
-class AnnotatableDescriptor(Protodescriptor):
-    """Base class for descriptors that can be annotated with type information."""
-    annotation: str | None = field(init=False, default=None)  # Literal type annotation as a string
-    type: "type | None" = field(init=False, default=None)  # Evaluated type annotation
-    nullable: bool = field(init=False, default=None)
-    __types__: ClassVar[tuple[type, ...]] = ()
-
-    @abstractmethod
-    def __validate_type__(self, type: Any) -> bool:
-        return issubclass(type, self.__types__)
-
-    def __set_type__(self, annotation: str, type: Any, nullable: bool):
-        """Sets the type by supplying annotation (string), evaluated type, and nullability."""
-        if type is not None and not self.__validate_type__(type):
-            descriptor = self.name
-            owner_name = self.owner.__name__
-            msg = (
-                f"Incompatible annotation {annotation} supplied to {descriptor} descriptor "
-                + f"of {owner_name}."
-            )
-            raise TypeError(msg)
-        self._set_once("annotation", annotation)
-        self._set_once("type", type)
-        self._set_once("nullable", nullable)
-
-
-@declarator
-class IdentifiableDescriptor(AnnotatableDescriptor):
-    """Base class for descriptors of attributes that can uniquely identify an instance."""
-    unique: bool = field(init=False, default=False)
-
-    def __set_unique__(self, unique: bool):
-        self._set_once("unique", unique)
-
-
-@declarator
-class AssignableDescriptor(IdentifiableDescriptor):
-    """Base class for descriptors of attributes that receive their value through assignment."""
-    default: Any = field(default=MISSING)
-    factory: Callable[[], Any] | _MissingSentinel = field(default=MISSING)
-    parser: Callable | Iterable[Callable] | None = field(default=None)
-    validator: Callable | Iterable[Callable] | None = field(default=None)
-
-
-@declarator
-class CallableDescriptor(Protodescriptor):
-    """A mixin class for descriptors that wrap callables."""
-    callable: Callable | None = field(default=None)
-
-
-@declarator
-class FieldListDescriptor(Protodescriptor):
-    """A mixin class for descriptors that reference a list of fields."""
-    fields: tuple["FieldDescriptor", ...] = field(factory=tuple)
-    admissible_field_types: ClassVar[tuple[type["FieldDescriptor"], ...]] = ()
-
-
-@declarator
-class MetaDescriptor(Protodescriptor):
+class Metadescriptor(Declarator):
     """Base class for prototype-level descriptors declared in archetypes and traits."""
     __handle__ = "meta"
+    __reserved_patterns__ = {re.compile(r"^nx.*")}
 
 
 @declarator
-class FieldDescriptor(AnnotatableDescriptor):
+class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
     """Base class for descriptors that represent individual fields."""
     __handle__ = "field"
     load: str | None = field(default=None)
@@ -154,30 +99,23 @@ class FieldDescriptor(AnnotatableDescriptor):
 
 
 @declarator
-class RelationDescriptor(FieldDescriptor):
+class RelationProtodescriptor(FieldProtodescriptor):
     """Base descriptor for relation fields."""
     __handle__ = "relation"
 
 
 @declarator
-class MethodDescriptor(CallableDescriptor):
-    """Base class for method descriptors."""
-    __handle__ = "method"
-
-
-@declarator
-class ConstructionDescriptor(MethodDescriptor):
+class ConstructionDeclarator(CallableDeclarator, Protodescriptor):
     """Base class for construction method descriptors."""
     __handle__ = "construction"
 
 
 @declarator
-class SchemaDescriptor(Protodescriptor):
-    """Base class for descriptors that characterize schema features."""
+class SchemaDeclarator(Metadescriptor):
+    """Base class for declarators that characterize schema features."""
     __handle__ = "schema"
 
 # endregion
-
 
 # =============================================================================
 # Concrete Protodescriptor classes
@@ -186,26 +124,32 @@ class SchemaDescriptor(Protodescriptor):
 
 
 @declarator
-class MetadataDescriptor(AssignableDescriptor, MetaDescriptor):
-    """The descriptor for metadata fields."""
+class MetadataDeclarator(AssignableDeclarator, Metadescriptor):
+    """The metadescriptor class for metadata fields."""
     __handle__ = "metadata"
 
 
 @declarator
-class OptionDescriptor(AssignableDescriptor, MetaDescriptor):
-    """The descriptor for option fields."""
+class OptionDeclarator(AssignableDeclarator, Metadescriptor):
+    """The metadescriptor class for option fields."""
     __handle__ = "option"
 
 
 @declarator
-class NxFieldDescriptor(AssignableDescriptor, MetaDescriptor):
-    """The descriptor for nxfield, i.e. abstract semantic fields."""
+class NxFieldDeclarator(AssignableDeclarator, Metadescriptor):
+    """The metadescriptor class for nxfield, i.e. abstract semantic fields."""
     __handle__ = "nxfield"
 
 
 @declarator
-class DataDescriptor(AssignableDescriptor, FieldDescriptor):
-    """The descriptor for data fields."""
+class MetadataValidator(CallableDeclarator, Metadescriptor):
+    """The metadescriptor class for metadata validators."""
+    __handle__ = "metavalidator"
+
+
+@declarator
+class DataProtodescriptor(AssignableDeclarator, FieldProtodescriptor):
+    """The protodescriptor class for data fields."""
     __handle__ = "data"
     index: bool | None = field(default=None)
     required: bool | None = field(default=None)
@@ -262,7 +206,7 @@ class DataDescriptor(AssignableDescriptor, FieldDescriptor):
 
 
 @declarator
-class LinkDescriptor(AssignableDescriptor, RelationDescriptor):
+class LinkProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     on_delete: Literal["restrict", "set_null", "cascade"] = field(default="restrict")
     key: bool | None = field(default=None)
     __handle__ = "link"
@@ -280,14 +224,14 @@ class LinkDescriptor(AssignableDescriptor, RelationDescriptor):
 
 
 @declarator
-class BackLinkDescriptor(IdentifiableDescriptor, RelationDescriptor):
+class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
     __handle__ = "backlink"
     via: type | None = field(default=None)
     limit: int | None = field(default=None)
 
 
 @declarator
-class SelectionDescriptor(RelationDescriptor, CallableDescriptor):
+class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator):
     __handle__ = "selection"
     kind: str | None = field(default=None)
     sql: Callable | None = field(default=None)
@@ -303,7 +247,7 @@ class SelectionDescriptor(RelationDescriptor, CallableDescriptor):
 
 
 @declarator
-class DocumentDescriptor(AssignableDescriptor, RelationDescriptor):
+class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     __handle__ = "document"
     path: str | Any | None = field(default=None)
     format: str | None = field(default=None)
@@ -311,13 +255,13 @@ class DocumentDescriptor(AssignableDescriptor, RelationDescriptor):
 
 
 @declarator
-class FolderDescriptor(AssignableDescriptor, RelationDescriptor):
+class FolderProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     __handle__ = "folder"
     path: str | Any | None = field(default=None)
 
 
 @declarator
-class StateDescriptor(RelationDescriptor, CallableDescriptor):
+class StateProtodescriptor(RelationProtodescriptor, CallableDeclarator):
     __handle__ = "state"
     source: Any | None = field(default=None)
     reducer: str | Callable | None = field(default=None)
@@ -326,81 +270,69 @@ class StateDescriptor(RelationDescriptor, CallableDescriptor):
 
 
 @declarator
-class FieldExpressionDescriptor(FieldDescriptor, CallableDescriptor):
+class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator):
     __handle__ = "fx"
-    expr: Callable | str | None = field(default=None)
+    ref: str | None = field(default=None)
 
 
 @declarator
-class FieldGroupDescriptor(FieldDescriptor, FieldListDescriptor):
+class FieldGroupProtodescriptor(FieldProtodescriptor, EnumerationDeclarator):
     __handle__ = "fieldgroup"
+    __member_types__ = (FieldProtodescriptor,)
 
 
 @declarator
-class FieldBlockDescriptor(FieldDescriptor):
+class FieldBlockProtodescriptor(FieldProtodescriptor, EnumerationDeclarator):
     __handle__ = "fieldblock"
-    fields: tuple[str, ...] | None = field(default=None)
+    __member_types__ = (FieldProtodescriptor,)
 
 
 @declarator
-class MetricDescriptor(FieldDescriptor, CallableDescriptor):
+class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator):
     __handle__ = "metric"
-    expr: Callable | None = field(default=None)
 
 
 @declarator
-class ParserDescriptor(ConstructionDescriptor):
+class ParserDeclarator(ConstructionDeclarator, EnumerationDeclarator):
     __handle__ = "parser"
-    fields: tuple[str, ...] | None = field(default=None)
+    __member_types__ = (FieldProtodescriptor,)
     element_wise: bool = field(default=False)
 
 
 @declarator
-class ValidatorDescriptor(ConstructionDescriptor):
+class ValidatorDeclarator(ConstructionDeclarator, EnumerationDeclarator):
     __handle__ = "validator"
-    fields: tuple[str, ...] | None = field(default=None)
+    __member_types__ = (FieldProtodescriptor,)
     element_wise: bool = field(default=False)
 
 
 @declarator
-class KeyDescriptor(SchemaDescriptor, FieldListDescriptor):
+class KeyDeclarator(EnumerationDeclarator, SchemaDeclarator):
     __handle__ = "key"
-    admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
-        DataDescriptor,
-        LinkDescriptor,
-    )
+    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
 
 
 @declarator
-class SequenceDescriptor(SchemaDescriptor, FieldListDescriptor):
+class SequenceDeclarator(EnumerationDeclarator, SchemaDeclarator):
     __handle__ = "sequence"
-    admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
-        DataDescriptor,
-        LinkDescriptor,
-    )
+    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
 
 
 @declarator
-class UnicityDescriptor(SchemaDescriptor, FieldListDescriptor):
+class UnicityDeclarator(EnumerationDeclarator, SchemaDeclarator):
     __handle__ = "unique"
-    admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
-        DataDescriptor,
-        LinkDescriptor,
-    )
+    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
 
 
 @declarator
-class IndexDescriptor(SchemaDescriptor, FieldListDescriptor):
+class IndexDeclarator(EnumerationDeclarator, SchemaDeclarator):
     __handle__ = "index"
     kind: str | None = field(default=None)
-    admissible_field_types: ClassVar[tuple[type[FieldDescriptor], ...]] = (
-        DataDescriptor,
-        LinkDescriptor,
-    )
+    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
 
 
 @declarator
-class PartitionDescriptor(SchemaDescriptor):
+class PartitionDeclarator(SchemaDeclarator):
     __handle__ = "partition"
     key: Any | None = field(default=None)
     scheme: str | None = field(default=None)
@@ -408,15 +340,16 @@ class PartitionDescriptor(SchemaDescriptor):
 
 
 @declarator
-class PathDescriptor(SchemaDescriptor):
+class PathDeclarator(SchemaDeclarator):
     __handle__ = "path"
     template: str | None = field(default=None)
 
 
 @declarator
-class SortDescriptor(SchemaDescriptor):
+class SortDeclarator(EnumerationDeclarator, SchemaDeclarator):
     __handle__ = "sort"
-    sortkeys: str | tuple[str, ...] | None = field(default=None)
+    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
+    sort_directions: list[Literal["asc", "desc"]] | None = field(default=None)
 
 # endregion
 
@@ -428,34 +361,34 @@ class SortDescriptor(SchemaDescriptor):
 
 class MetaDescriptorRegistry(MultiRegistry):
     """Registry for metadescriptors."""
-    metadata: DeclaratorRegistry["MetadataDescriptor"]
-    nxfield: DeclaratorRegistry["NxFieldDescriptor"]
-    option: DeclaratorRegistry["OptionDescriptor"]
+    metadata: DeclaratorRegistry[MetadataDeclarator]
+    nxfield: DeclaratorRegistry[NxFieldDeclarator]
+    option: DeclaratorRegistry[OptionDeclarator]
 
     def __init__(self):
-        self.metadata = DeclaratorRegistry[MetadataDescriptor]()
-        self.nxfield = DeclaratorRegistry[NxFieldDescriptor]()
-        self.option = DeclaratorRegistry[OptionDescriptor]()
+        self.metadata = DeclaratorRegistry[MetadataDeclarator]()
+        self.nxfield = DeclaratorRegistry[NxFieldDeclarator]()
+        self.option = DeclaratorRegistry[OptionDeclarator]()
         super().__init__(metadata=self.metadata, nxfield=self.nxfield, option=self.option)
 
 
 class ProtodescriptorRegistry(MultiRegistry):
     """Registry for meta bindings and protodescriptors."""
-    metadata: BindingRegistry["MetadataDescriptor"]
-    nxfield: BindingRegistry["NxFieldDescriptor"]
-    option: BindingRegistry["OptionDescriptor"]
-    field: DeclaratorRegistry["FieldDescriptor"]
-    schema: DeclaratorRegistry["SchemaDescriptor"]
-    construction: DeclaratorRegistry["ConstructionDescriptor"]
-    bindings: BindingRegistry[FieldDescriptor]
+    metadata: BindingRegistry[MetadataDeclarator]
+    nxfield: BindingRegistry[NxFieldDeclarator]
+    option: BindingRegistry[OptionDeclarator]
+    field: DeclaratorRegistry[FieldProtodescriptor]
+    schema: DeclaratorRegistry[SchemaDeclarator]
+    construction: DeclaratorRegistry[ConstructionDeclarator]
+    bindings: BindingRegistry[FieldProtodescriptor]
 
     def __init__(self, metadescriptors: MetaDescriptorRegistry):
         self.metadata = metadescriptors.metadata.bindings
         self.nxfield = metadescriptors.nxfield.bindings
         self.option = metadescriptors.option.bindings
-        self.field = DeclaratorRegistry[FieldDescriptor]()
-        self.schema = DeclaratorRegistry[SchemaDescriptor]()
-        self.construction = DeclaratorRegistry[ConstructionDescriptor]()
+        self.field = DeclaratorRegistry[FieldProtodescriptor]()
+        self.schema = DeclaratorRegistry[SchemaDeclarator]()
+        self.construction = DeclaratorRegistry[ConstructionDeclarator]()
         self.bindings = self.field.bindings
         super().__init__(
             metadata=self.metadata,

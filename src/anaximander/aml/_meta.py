@@ -5,11 +5,11 @@ from abc import ABCMeta
 from enum import Enum
 from types import NoneType
 from typing import (
+    Any,
     ClassVar,
     Generic,
     Literal,
     Mapping,
-    Any,
     Protocol,
     TypeVar,
     cast,
@@ -20,10 +20,9 @@ from typing import (
 
 from annotationlib import Format, get_annotations
 
-from .protodescriptors import Protodescriptor, AnnotatableDescriptor
-
 from anaximander.utils.funcs import type_name_to_collection_name
 
+from .protodescriptors import AnnotatableDescriptor, Protodescriptor
 
 P = TypeVar("P", bound=Protodescriptor)
 
@@ -100,7 +99,7 @@ class Type(ABCMeta):
             if not any(t is not u and issubclass(u, t) for u in traits):
                 normalized.append(t)
         return tuple(normalized)
-    
+
     @property
     def archetype(cls) -> Archetype:
         """The archetype of this type."""
@@ -115,7 +114,7 @@ class Type(ABCMeta):
     def traits(cls) -> tuple[Trait, ...]:
         """The traits of this type."""
         return cls.__traits__
-    
+
     @property
     def metacharacters(cls) -> dict[str, Any]:
         """The metacharacters of this type."""
@@ -213,5 +212,5 @@ class Type(ABCMeta):
         This can be customized by passing metadata (#TODO).
         """
         return type_name_to_collection_name(cls.__name__)
-    
+
 

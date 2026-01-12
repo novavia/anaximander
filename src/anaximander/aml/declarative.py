@@ -18,7 +18,7 @@ from contextvars import ContextVar, Token
 from functools import partial
 from itertools import chain, count
 from types import MappingProxyType
-from typing import Any, ClassVar, Optional, Protocol, Self, TypedDict, TypeVar, get_args
+from typing import Any, Callable, ClassVar, Optional, Protocol, Self, TypedDict, TypeVar, get_args
 
 import yaml
 from attrs import define, field
@@ -38,6 +38,15 @@ declarator = partial(define, slots=False, frozen=True, kw_only=True)
 DECLARATIVE_NAMESPACE: ContextVar[Optional["DeclarativeNamespace"]] = ContextVar("DECLARATIVE_NAMESPACE", default=None)  # noqa
 
 type Assignment = ast.Assign | ast.AnnAssign
+
+# Sentinel value for unspecified defaults
+class _MissingSentinel:
+    """Unique sentinel for unspecified defaults."""
+    def __repr__(self) -> str:
+        return "MISSING"
+
+MISSING: _MissingSentinel = _MissingSentinel()
+
 # endregion
 
 # =============================================================================
@@ -208,6 +217,65 @@ class Declarator(ABC):
         """
         raise AttributeError(f"Declarator of type {self.__class__.__name__} cannot be overridden.")
 
+
+@declarator
+class AnnotatableDeclarator(Declarator):
+    """Base class for declarators that can be annotated with type information."""
+    annotation: str | None = field(init=False, default=None)  # Literal type annotation as a string
+    type: "type | None" = field(init=False, default=None)  # Evaluated type annotation
+    nullable: bool = field(init=False, default=None)  # Whether the type is nullable
+    __types__: ClassVar[tuple[type, ...]] = ()  # Admissible types for this annotatable declarator
+
+    @abstractmethod
+    def __validate_type__(self, type: Any) -> bool:
+        return issubclass(type, self.__types__)
+
+    def __set_type__(self, annotation: str, type: Any, nullable: bool):
+        """Sets the type by supplying annotation (string), evaluated type, and nullability."""
+        if type is not None and not self.__validate_type__(type):
+            declarator = self.name
+            owner_name = self.owner.__name__
+            msg = (
+                f"Incompatible annotation {annotation} supplied to {declarator} declarator "
+                + f"of {owner_name}."
+            )
+            raise TypeError(msg)
+        self._set_once("annotation", annotation)
+        self._set_once("type", type)
+        self._set_once("nullable", nullable)
+
+
+@declarator
+class IdentifiableDeclarator(AnnotatableDeclarator):
+    """Base class for declarators of attributes that can uniquely identify an instance."""
+    unique: bool = field(init=False, default=False)
+
+    def __set_unique__(self, unique: bool):
+        self._set_once("unique", unique)
+
+
+@declarator
+class AssignableDeclarator(IdentifiableDeclarator):
+    """Base class for declarators of attributes that receive their value through assignment."""
+    default: Any = field(default=MISSING)
+    factory: Callable[[], Any] | _MissingSentinel = field(default=MISSING)
+    parsers: Iterable[Callable] = field(factory=list)
+    validators: Iterable[Callable] = field(factory=list)
+
+
+@declarator
+class CallableDeclarator(Declarator):
+    """A mixin class for declarators that wrap callables."""
+    callable: Callable | None = field(default=None)
+
+
+@declarator
+class EnumerationDeclarator(Declarator):
+    """A mixin class for declarators that reference a list of declarators."""
+    members: tuple[Declarator, ...] = field(factory=tuple)
+    __member_types__: ClassVar[tuple[type[Declarator], ...]] = ()  # Admissible member types
+
+
 # endregion
 
 # =============================================================================
@@ -224,7 +292,7 @@ class DeclarativeTypeKey:
     name: str
 
 
-class DeclarativeNamespace(dict):
+class DeclarativeNamespace(dict[str, Any]):
     """Collects class body declarations for a declarative type."""
     context_token: Token
 

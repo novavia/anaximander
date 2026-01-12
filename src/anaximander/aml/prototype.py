@@ -27,7 +27,12 @@ from annotationlib import Format, get_annotations
 from anaximander.utils.funcs import type_name_to_collection_name
 
 from .declarative import declarative
-from .protodescriptors import AnnotatableDescriptor, Protodescriptor
+from .protodescriptors import (
+    AnnotatableDescriptor,
+    MetaDescriptorRegistry,
+    Protodescriptor,
+    ProtodescriptorRegistry,
+)
 
 # endregion
 
@@ -35,9 +40,6 @@ from .protodescriptors import AnnotatableDescriptor, Protodescriptor
 # Prototype Metaclass
 # =============================================================================
 # region Prototype Metaclass
-
-
-P = TypeVar("P", bound=Protodescriptor)
 
 
 class TypeRole(Enum):
