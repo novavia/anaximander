@@ -1622,6 +1622,7 @@ class Bar(nx.Model):
 <u>Notes</u>:
 
 - Only eligible fields from the source model are inlined (typically data, link, state, and field-expression fields; schema descriptors and other blocks are not inlined as fields).
+- The block’s internal fields are expanded **in place**, at the position where the block is declared.
 - Inlining copies the **logical field declarations** (names, types, and relevant flags) into the owner model. Backends may choose to share or reuse physical storage where appropriate.
 - For each field block `X` declared on a model:
   - fields from the source model are inlined into the owner, subject to the `fields` filter, and
@@ -1631,6 +1632,49 @@ class Bar(nx.Model):
 - Inheritance may refine blocks by:
   - narrowing the `fields` list,
   - adjusting `doc`, while preserving the basic inlining semantics.
+- Block expansion happens during **resolution**, after declarator merging.
+- Field blocks **do not affect precedence rules**; they only affect ordering.
+- The only problematic cases are **name collisions**.
+
+<u>Validity Rules</u>:
+
+1. A field block may only introduce **new field names**.
+2. If a block introduces a field name that already exists **at or before the expansion point**, raise.
+3. Multiple blocks must not introduce overlapping field names; raise.
+4. Fields introduced by a block **may be overridden later** (override preserves position).
+5. A block may be inherited; expansion happens once and is inherited structurally.
+6. A block may be overridden by another block; the new block expands at the same position.
+
+
+<u>Resolution Algorithm (Field Ordering + Block Expansion)</u>:
+
+- Merged field declarators are processed in declaration order  
+  (`archetype → traits → declaring class`).
+- Each declarator is either a `field` or a `fieldblock`.
+- Each `fieldblock` references a block model with its own resolved field order.
+
+```python
+resolved_fields = []
+seen = set()
+
+for decl in merged_declarations:
+    if decl.is_field:
+        name = decl.name
+        if name in seen:
+            continue  # override, keep position
+        resolved_fields.append(name)
+        seen.add(name)
+
+    elif decl.is_fieldblock:
+        block_fields = decl.block_model.resolved_field_order
+        for name in block_fields:
+            if name in seen:
+                raise ValueError(
+                    f"Field block introduces duplicate field '{name}'"
+                )
+            resolved_fields.append(name)
+            seen.add(name)
+```
 
 #### MetricDescriptor(FieldDescriptor)  ← mixins: CallableDescriptor, IdentifiableDescriptor (AML: `metric`)
 

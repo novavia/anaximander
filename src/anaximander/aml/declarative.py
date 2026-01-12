@@ -18,7 +18,16 @@ from contextvars import ContextVar, Token
 from functools import partial
 from itertools import chain, count
 from types import MappingProxyType
-from typing import Any, Callable, ClassVar, Optional, Protocol, Self, TypedDict, TypeVar, get_args
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Optional,
+    Protocol,
+    Self,
+    get_args,
+    get_origin,
+)
 
 import yaml
 from attrs import define, field
@@ -226,8 +235,25 @@ class AnnotatableDeclarator(Declarator):
     nullable: bool = field(init=False, default=None)  # Whether the type is nullable
     __types__: ClassVar[tuple[type, ...]] = ()  # Admissible types for this annotatable declarator
 
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        # Check that __types__ are tightening the admissible types from base classes.
+        base_annotatables = (b for b in cls.__bases__ if issubclass(b, AnnotatableDeclarator))
+        base_types = tuple(chain.from_iterable(b.__types__ for b in base_annotatables))
+        if "__types__" in vars(cls):
+            types: tuple[type, ...] = cls.__types__
+            try:
+                assert all(issubclass(t, base_type) for t in types for base_type in base_types)
+            except AssertionError:
+                raise TypeError(
+                    "__types__ must only contain types that are subclasses of all "
+                    + "admissible types from base classes."
+                )
+
     @abstractmethod
     def __validate_type__(self, type: Any) -> bool:
+        if not self.__types__:
+            return True
         return issubclass(type, self.__types__)
 
     def __set_type__(self, annotation: str, type: Any, nullable: bool):
@@ -270,11 +296,25 @@ class CallableDeclarator(Declarator):
 
 
 @declarator
-class EnumerationDeclarator(Declarator):
+class EnumerationDeclarator[M: Declarator](Declarator):
     """A mixin class for declarators that reference a list of declarators."""
-    members: tuple[Declarator, ...] = field(factory=tuple)
+    members: tuple[M, ...] = field(factory=tuple)
     __member_types__: ClassVar[tuple[type[Declarator], ...]] = ()  # Admissible member types
 
+    def __init_subclass__(cls):
+        super().__init_subclass__()
+        # Check that __member_types__ are tightening the admissible types from base classes.
+        base_enumerations = (b for b in cls.__bases__ if issubclass(b, EnumerationDeclarator))
+        base_mbtypes = tuple(chain.from_iterable(b.__member_types__ for b in base_enumerations))
+        if "__member_types__" in vars(cls):
+            mbtypes: tuple[type, ...] = cls.__member_types__
+            try:
+                assert all(issubclass(t, base_type) for t in mbtypes for base_type in base_mbtypes)
+            except AssertionError:
+                raise TypeError(
+                    "__member_types__ must only contain types that are subclasses of all "
+                    + "admissible types from base classes."
+                )
 
 # endregion
 

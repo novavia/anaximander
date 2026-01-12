@@ -99,6 +99,12 @@ class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
 
 
 @declarator
+class AssignableFieldProtodescriptor(AssignableDeclarator, FieldProtodescriptor):
+    """Abstract base class for assignable field descriptors ('data' and 'link')."""
+    pass
+
+
+@declarator
 class RelationProtodescriptor(FieldProtodescriptor):
     """Base descriptor for relation fields."""
     __handle__ = "relation"
@@ -114,6 +120,19 @@ class ConstructionDeclarator(CallableDeclarator, Protodescriptor):
 class SchemaDeclarator(Metadescriptor):
     """Base class for declarators that characterize schema features."""
     __handle__ = "schema"
+
+
+@declarator
+class FieldEnumeration(EnumerationDeclarator[FieldProtodescriptor]):
+    """Base class for enumerations of field protodescriptors."""
+    __member_types__ = (FieldProtodescriptor,)
+
+
+@declarator
+class AssignableFieldEnumeration(EnumerationDeclarator[AssignableFieldProtodescriptor]):
+    """Base class for enumerations of assignable field protodescriptors."""
+    __member_types__ = (AssignableFieldProtodescriptor,)
+
 
 # endregion
 
@@ -148,7 +167,7 @@ class MetadataValidator(CallableDeclarator, Metadescriptor):
 
 
 @declarator
-class DataProtodescriptor(AssignableDeclarator, FieldProtodescriptor):
+class DataProtodescriptor(AssignableFieldProtodescriptor):
     """The protodescriptor class for data fields."""
     __handle__ = "data"
     index: bool | None = field(default=None)
@@ -206,7 +225,8 @@ class DataProtodescriptor(AssignableDeclarator, FieldProtodescriptor):
 
 
 @declarator
-class LinkProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
+class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescriptor):
+    """The protodescriptor class for link fields."""
     on_delete: Literal["restrict", "set_null", "cascade"] = field(default="restrict")
     key: bool | None = field(default=None)
     __handle__ = "link"
@@ -225,6 +245,7 @@ class LinkProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
 
 @declarator
 class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
+    """The protodescriptor class for backlink fields."""
     __handle__ = "backlink"
     via: type | None = field(default=None)
     limit: int | None = field(default=None)
@@ -232,6 +253,7 @@ class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
 
 @declarator
 class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator):
+    """The protodescriptor class for selection relations."""
     __handle__ = "selection"
     kind: str | None = field(default=None)
     sql: Callable | None = field(default=None)
@@ -248,6 +270,7 @@ class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator):
 
 @declarator
 class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
+    """The protodescriptor class for document fields."""
     __handle__ = "document"
     path: str | Any | None = field(default=None)
     format: str | None = field(default=None)
@@ -256,12 +279,14 @@ class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
 
 @declarator
 class FolderProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
+    """The protodescriptor class for folder fields."""
     __handle__ = "folder"
     path: str | Any | None = field(default=None)
 
 
 @declarator
 class StateProtodescriptor(RelationProtodescriptor, CallableDeclarator):
+    """The protodescriptor class for state fields."""
     __handle__ = "state"
     source: Any | None = field(default=None)
     reducer: str | Callable | None = field(default=None)
@@ -271,68 +296,71 @@ class StateProtodescriptor(RelationProtodescriptor, CallableDeclarator):
 
 @declarator
 class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator):
+    """The protodescriptor class for field expressions."""
     __handle__ = "fx"
     ref: str | None = field(default=None)
 
 
 @declarator
-class FieldGroupProtodescriptor(FieldProtodescriptor, EnumerationDeclarator):
+class FieldGroupProtodescriptor(FieldProtodescriptor, FieldEnumeration):
+    """The protodescriptor class for field groups."""
     __handle__ = "fieldgroup"
-    __member_types__ = (FieldProtodescriptor,)
 
 
 @declarator
-class FieldBlockProtodescriptor(FieldProtodescriptor, EnumerationDeclarator):
+class FieldBlockProtodescriptor(FieldProtodescriptor, FieldEnumeration):
+    """The protodescriptor class for field blocks."""
     __handle__ = "fieldblock"
-    __member_types__ = (FieldProtodescriptor,)
 
 
 @declarator
 class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator):
+    """The protodescriptor class for metric fields."""
     __handle__ = "metric"
 
 
 @declarator
-class ParserDeclarator(ConstructionDeclarator, EnumerationDeclarator):
+class ParserDeclarator(ConstructionDeclarator, FieldEnumeration):
+    """The declarator class for field parsers."""
     __handle__ = "parser"
-    __member_types__ = (FieldProtodescriptor,)
     element_wise: bool = field(default=False)
 
 
 @declarator
-class ValidatorDeclarator(ConstructionDeclarator, EnumerationDeclarator):
+class ValidatorDeclarator(ConstructionDeclarator, FieldEnumeration):
+    """The declarator class for field validators."""
     __handle__ = "validator"
-    __member_types__ = (FieldProtodescriptor,)
     element_wise: bool = field(default=False)
 
 
 @declarator
-class KeyDeclarator(EnumerationDeclarator, SchemaDeclarator):
+class KeyDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
+    """The declarator class for schema keys."""
     __handle__ = "key"
-    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
 
 
 @declarator
-class SequenceDeclarator(EnumerationDeclarator, SchemaDeclarator):
+class SequenceDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
+    """The declarator class for schema sequences."""
     __handle__ = "sequence"
-    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
 
 
 @declarator
-class UnicityDeclarator(EnumerationDeclarator, SchemaDeclarator):
+class UnicityDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
+    """The declarator class for schema unique constraints."""
     __handle__ = "unique"
-    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
 
 
 @declarator
-class IndexDeclarator(EnumerationDeclarator, SchemaDeclarator):
+class IndexDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
+    """The declarator class for schema indexes."""
     __handle__ = "index"
     kind: str | None = field(default=None)
-    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
 
 
 @declarator
 class PartitionDeclarator(SchemaDeclarator):
+    """The declarator class for schema partitions."""
     __handle__ = "partition"
     key: Any | None = field(default=None)
     scheme: str | None = field(default=None)
@@ -341,14 +369,15 @@ class PartitionDeclarator(SchemaDeclarator):
 
 @declarator
 class PathDeclarator(SchemaDeclarator):
+    """The declarator class for traversal paths."""
     __handle__ = "path"
     template: str | None = field(default=None)
 
 
 @declarator
-class SortDeclarator(EnumerationDeclarator, SchemaDeclarator):
+class SortDeclarator(FieldEnumeration, SchemaDeclarator):
+    """The declarator class for schema sort orders."""
     __handle__ = "sort"
-    __member_types__ = (DataProtodescriptor, LinkProtodescriptor, )
     sort_directions: list[Literal["asc", "desc"]] | None = field(default=None)
 
 # endregion
