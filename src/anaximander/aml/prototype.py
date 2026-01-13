@@ -15,6 +15,7 @@ from typing import (
     Literal,
     Mapping,
     Protocol,
+    TypeGuard,
     TypeVar,
     cast,
     get_args,
@@ -26,10 +27,9 @@ from annotationlib import Format, get_annotations
 
 from anaximander.utils.funcs import type_name_to_collection_name
 
-from .declarative import declarative
+from .declarative import AnnotatableDeclarator, DeclarativeNamespace, declarative
 from .protodescriptors import (
-    AnnotatableDescriptor,
-    MetaDescriptorRegistry,
+    MetadescriptorRegistry,
     Protodescriptor,
     ProtodescriptorRegistry,
 )
@@ -49,29 +49,86 @@ class TypeRole(Enum):
     PROTOTYPE = "prototype"
 
 
-class ArchetypeProtocol(Protocol):
+class RegistryState(Enum):
+    """Enumeration of registry states that serve as arguments to registry access methods."""
+    LOCAL = "local"  # Only locally declared items
+    INHERITED = "inherited"  # Only inherited items
+    MERGED = "merged"  # Both local and inherited items, merged
+    RESOLVED = "resolved"  # Merged items, with defaults applied
+
+
+class prototypeProtocol(Protocol):
+    """Protocol for prototype classes."""
+    __archetype__: ClassVar["Archetype"]
+    __traits__: ClassVar[tuple["Trait", ...]]
+    __local_metadescriptors__: ClassVar[MetadescriptorRegistry]
+    __local_metacharacters__: ClassVar[ProtodescriptorRegistry]
+    __inherited_metadescriptors__: ClassVar[MetadescriptorRegistry]
+    __inherited_metacharacters__: ClassVar[ProtodescriptorRegistry]
+    __compilations__: ClassVar[dict[str, dict]]
+
+    @classmethod
+    def metadescriptors(cls, *, state: RegistryState = RegistryState.RESOLVED) -> MetadescriptorRegistry:  # noqa
+        """The metadescriptors of this type."""
+        ...
+
+    @classmethod
+    def metacharacters(cls, *, state: RegistryState = RegistryState.RESOLVED) -> ProtodescriptorRegistry:  # noqa
+        """The metacharacters of this type."""
+        ...
+
+
+class ArchetypeProtocol(prototypeProtocol):
     """Protocol for archetype classes."""
     __role__: ClassVar[Literal[TypeRole.ARCHETYPE]]
 
 Archetype = type[ArchetypeProtocol]
 
-class TraitProtocol(Protocol):
+def is_archetype(cls: type[Any]) -> TypeGuard[Archetype]:
+    """Type guard to check if a class is an Archetype."""
+    return (isinstance(cls, prototype) and getattr(cls, "__role__", None) == TypeRole.ARCHETYPE)
+
+
+class TraitProtocol(prototypeProtocol):
     """Protocol for trait classes."""
     __role__: ClassVar[Literal[TypeRole.TRAIT]]
+    supertrait: ClassVar["Trait | None"]
 
 Trait = type[TraitProtocol]
 
-class PrototypeProtocol(Protocol):
+def is_trait(cls: type[Any]) -> TypeGuard[Trait]:
+    """Type guard to check if a class is a Trait."""
+    return (isinstance(cls, prototype) and getattr(cls, "__role__", None) == TypeRole.TRAIT)
+
+
+class PrototypeProtocol(prototypeProtocol):
     """Protocol for prototype classes."""
     __role__: ClassVar[Literal[TypeRole.PROTOTYPE]]
 
 Prototype = type[PrototypeProtocol]
 
+def is_prototype(cls: type[Any]) -> TypeGuard[Prototype]:
+    """Type guard to check if a class is a Prototype."""
+    return (isinstance(cls, prototype) and getattr(cls, "__role__", None) == TypeRole.PROTOTYPE)
+
 
 class Arche(metaclass=declarative):
     """The base class for all AML declartive types."""
-    __role__: ClassVar[TypeRole] = TypeRole.ARCHETYPE
-    __archetype__: ClassVar[Archetype]  # The prototype's archetype
+    __role__ = TypeRole.ARCHETYPE
+    __archetype__: ClassVar[Archetype]
+    __traits__ = ()
+    _metadescriptors: ClassVar[MetadescriptorRegistry] = MetadescriptorRegistry()
+    _metacharacters: ClassVar[ProtodescriptorRegistry] = ProtodescriptorRegistry(_metadescriptors)
+
+    @classmethod
+    def metadescriptors(cls, *, state: RegistryState = RegistryState.RESOLVED) -> MetadescriptorRegistry:  # noqa
+        """The metadescriptors of this archetype."""
+        return cls._metadescriptors
+
+    @classmethod
+    def metacharacters(cls, *, state: RegistryState = RegistryState.RESOLVED) -> ProtodescriptorRegistry:  # noqa
+        """The metacharacters of this archetype."""
+        return cls._metacharacters
 
 Arche.__archetype__ = cast(Archetype, Arche)
 
@@ -81,39 +138,76 @@ class prototype(declarative):
     __role__: TypeRole
     __archetype__: Archetype  # The prototype's archetype
     __traits__: tuple[Trait, ...]  # The prototype's traits
-    __metadescriptors__: dict[str, Protodescriptor]  # The prototype's metadescriptors
-    __metacharacters__: dict[str, Any]  # The prototype's metacharacters
+    __local_metadescriptors__: MetadescriptorRegistry  # The prototype's locally declared metadescriptors  #noqa
+    __local_metacharacters__: ProtodescriptorRegistry  # The prototype's locally declared metacharacters  #noqa
+    __inherited_metadescriptors__: MetadescriptorRegistry  # The prototype's inherited metadescriptors  #noqa
+    __inherited_metacharacters__: ProtodescriptorRegistry  # The prototype's inherited metacharacters  #noqa
     __compilations__: dict[str, dict]  # Holds compilation target handles and parameters
 
-    def __new__(mcls, name, bases, namespace, traits=(), **metadata):
+    def __new__(mcls, name, bases, namespace: DeclarativeNamespace, traits=(), **metadata):
         base = bases[0]
-        traits = [b for b in bases[1:] if b not in (object, Generic, int)]
-        try:
-            base_role: TypeRole = getattr(base, "__role__")  # noqa: F841
-            archetype: Archetype = getattr(base, "__archetype__")
-        except AttributeError:
-            raise TypeError(f"Base class {base} is not a valid AML type.")
-        # Each trait must be based on the archetype or one of its bases
-        archetype_mro = archetype.__mro__
-        bad_traits = []
-        for trait in traits:
-            try:
-                assert getattr(trait, "__role__") == TypeRole.TRAIT
-                assert getattr(trait, "__archetype__") in archetype_mro
-            except AssertionError:
-                bad_traits.append(trait.__name__)
-        if bad_traits:
-            raise TypeError(f"Invalid traits: {bad_traits}")
+        if not issubclass(base, prototype) or base is Arche:
+            raise TypeError(f"Base class {base} is not a valid AML prototype base.")
         cls = super().__new__(mcls, name, bases, namespace)
+        # Set type annotations on annotatble declarators
+        cls.__set_type_annotations__()
         return cls
 
+    def __init__(cls, name, bases, namespace: DeclarativeNamespace, traits=(), **metadata):
+        super().__init__(name, bases, namespace, **metadata)
+        # Set the base archetype
+        base = bases[0]
+        base_archetype: Archetype = getattr(base, "__archetype__")
+        cls.__archetype__ = base_archetype
+        # Next we set and normalize traits
+        base_traits: tuple[Trait, ...] = base_archetype.__traits__
+        cls.__traits__ = prototype._normalize_traits(*base_traits, *traits)
+        # Set metadescriptors
+        base_metadescriptors: MetadescriptorRegistry = getattr(base, "__metadescriptors__")
+        metadescriptors = MetadescriptorRegistry()
+
+
+        # TODO: validate metacharacters against archetype definition
+        # TODO: validate metacharacter tightening rules
+
+        # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler
+        cls.__compilations__: dict[str, dict] = {}
+        cls.__ast__ = None
+        # Provisionally, new types are assigned the prototype role, but this may be overridden in decorators
+        cls.__role__ = TypeRole.PROTOTYPE
+
+
     @staticmethod
-    def _normalize_traits(*traits: type) -> tuple[type, ...]:
-        normalized = []
-        for t in traits:
-            if not any(t is not u and issubclass(u, t) for u in traits):
-                normalized.append(t)
-        return tuple(normalized)
+    def _normalize_traits(*traits: Trait) -> tuple[Trait, ...]:
+        """Normalize traits by removing those that are supertraits of others.
+
+        This method also ensures a consistent ordering of traits based on specialization and
+        implementation hierarchy.
+        The supplied list may contain duplicates and be supplied in an arbitrary order. The
+        algorithm visits each trait and uses recursion to ensure that supertraits and implemented
+        traits are added to the ordered list before the trait itself.
+        """
+        # Containers for the ordered traits and visited set
+        order = []
+        visited = set()
+
+        def visit(T: Trait):
+            """Recursively visit traits to build ordered list."""
+            if T in visited:
+                return
+            # First, ensure specialization parent comes first
+            if T.supertrait is not None:
+                visit(T.supertrait)
+            # Then, ensure implemented traits come first, in declared order
+            for U in T.__traits__:
+                visit(U)
+            visited.add(T)
+            order.append(T)
+
+        for T in traits:
+            visit(T)
+
+        return tuple(order)
 
     @property
     def archetype(cls) -> Archetype:
@@ -128,64 +222,31 @@ class prototype(declarative):
     @property
     def traits(cls) -> tuple[Trait, ...]:
         """The traits of this type."""
-        return cls.__traits__
+        return tuple(cls.__traits__)
 
     @property
-    def metacharacters(cls) -> dict[str, Any]:
-        """The metacharacters of this type."""
-        return cls.__metacharacters__
+    def supertrait(cls) -> Trait | None:
+        """The supertrait of this trait, if any."""
+        if cls.__role__ != TypeRole.TRAIT:
+            raise TypeError("Only trait types have a supertrait.")
+        base: prototype = cls.__bases__[0]
+        if base.__role__ == TypeRole.TRAIT:
+            return cast(Trait, base)
+        return None
 
-    def __init__(cls, name, bases, namespace, **metacharacters):
-        super().__init__(name, bases, namespace)
-        base = bases[0]
-        traits = [b for b in bases[1:] if b not in (object, Generic, int)]
-        base_archetype: Archetype = getattr(base, "__archetype__")
-        base_traits: tuple[Trait, ...] = getattr(base, "__traits__", tuple())
-        base_metacharacters: dict[str, Any] = getattr(base, "__metacharacters__", {})
-        # Set archetype
-        cls.__archetype__ = base_archetype
-        # Set traits
-        cls.__traits__ = prototype._normalize_traits(*traits, *base_traits)
-        # Set metacharacters
-        # TODO: validate metacharacters against archetype definition
-        # TODO: validate metacharacter tightening rules
-        cls.__metacharacters__ = {**base_metacharacters, **metacharacters}
-        # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler
-        cls.__compilations__: dict[str, dict] = {}
-        cls.__ast__ = None
-        # Provisionally, new types are assigned the prototype role, but this may be overridden in decorators
-        cls.__role__ = TypeRole.PROTOTYPE
+    def metadescriptors(cls, *, state: RegistryState = RegistryState.RESOLVED) -> MetadescriptorRegistry:  # noqa
+        """The metadescriptors of this type.
 
-
-    @overload
-    def protodescriptors(cls, *, inherited: bool = True) -> Mapping[str, Protodescriptor]: ...
-    @overload
-    def protodescriptors(cls, *types: type[P], inherited: bool = True) -> Mapping[str, P]: ...
-
-    def protodescriptors(
-        cls,
-        *types: type[Protodescriptor],
-        inherited: bool = True,
-    ) -> Mapping[str, Protodescriptor]:
-        """Returns a dictionary of protodescriptors of the supplied types.
-
-        If inherited is set to True, protodescriptors declared in parent models are included.
-        Otherwise, only the protodescriptors directly declared by cls are returned.
+        The method pulls from local and/or inherited metadescriptors based on the specified state.
         """
-        selected_types: tuple[type[Protodescriptor], ...] = types or (Protodescriptor,)
-        cls_protodescriptors = {
-            k: v for k, v in cls.__dict__.items() if isinstance(v, selected_types)
-        }
-        if inherited:
-            parent = cls.mro()[1]
-            if isinstance(parent, prototype):
-                parent_protodescriptors = dict(parent.protodescriptors(*selected_types, inherited=True))
-                protodescriptors = parent_protodescriptors | cls_protodescriptors
-            else:
-                protodescriptors = cls_protodescriptors
-        else:
-            protodescriptors = cls_protodescriptors
-        return protodescriptors
+        return NotImplemented
+
+    def metacharacters(cls, *, state: RegistryState = RegistryState.RESOLVED) -> ProtodescriptorRegistry:  # noqa
+        """The metacharacters of this type.
+
+        The method pulls from local and/or inherited metacharacters based on the specified state.
+        """
+        return NotImplemented
 
     @staticmethod
     def __unwrap_optional_type__(type_hint: Any) -> tuple[Any, bool]:
@@ -206,8 +267,13 @@ class prototype(declarative):
         annotation_values = get_annotations(cls, format=Format.VALUE)
         annotation_strings = get_annotations(cls, format=Format.STRING)
         superhints = get_type_hints(cls)  # This includes super classes
-        protodescriptors = cls.protodescriptors(AnnotatableDescriptor, inherited=False)
-        for name, protodescriptor in protodescriptors.items():
+        assignable_declarators = [
+            declarator for declarator in cls.__declarations__.values()
+            if isinstance(declarator, AnnotatableDeclarator)
+        ]
+        for declarator in assignable_declarators:
+            if (name := declarator.name) is None:
+                continue
             annotation_value = annotation_values.get(name, "")
             annotation_string = annotation_strings.get(name, "")
             if isinstance(annotation_value, str):
@@ -218,7 +284,7 @@ class prototype(declarative):
             # TODO: normalize to a metadata type in case of option / metacharacter
             hint = superhints.get(name, None)
             hint, nullable = cls.__unwrap_optional_type__(hint)
-            protodescriptor.__set_type__(annotation, hint, nullable)
+            declarator.__set_type__(annotation, hint, nullable)
 
     @property
     def collection_name(cls):

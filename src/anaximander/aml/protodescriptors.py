@@ -388,7 +388,7 @@ class SortDeclarator(FieldEnumeration, SchemaDeclarator):
 # region Registry classes
 
 
-class MetaDescriptorRegistry(MultiRegistry):
+class MetadescriptorRegistry(MultiRegistry):
     """Registry for metadescriptors."""
     metadata: DeclaratorRegistry[MetadataDeclarator]
     nxfield: DeclaratorRegistry[NxFieldDeclarator]
@@ -411,7 +411,7 @@ class ProtodescriptorRegistry(MultiRegistry):
     construction: DeclaratorRegistry[ConstructionDeclarator]
     bindings: BindingRegistry[FieldProtodescriptor]
 
-    def __init__(self, metadescriptors: MetaDescriptorRegistry):
+    def __init__(self, metadescriptors: MetadescriptorRegistry):
         self.metadata = metadescriptors.metadata.bindings
         self.nxfield = metadescriptors.nxfield.bindings
         self.option = metadescriptors.option.bindings
@@ -431,7 +431,7 @@ class ProtodescriptorRegistry(MultiRegistry):
         self._metadescriptors_ref = (weakref.ref(metadescriptors))
 
     @property
-    def metadescriptors(self) -> MetaDescriptorRegistry | None:
+    def metadescriptors(self) -> MetadescriptorRegistry | None:
         """Returns the metadescriptor registry, or None if it has been garbage collected."""
         return self._metadescriptors_ref()
 
