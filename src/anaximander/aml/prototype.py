@@ -24,11 +24,8 @@ from annotationlib import Format, get_annotations
 from anaximander.utils.funcs import type_name_to_collection_name
 
 from .declarative import AnnotatableDeclarator, DeclarativeNamespace, declarative
-from .protodescriptors import (
-    Metadescriptor,
-    MetadescriptorRegistry,
-    ProtodescriptorRegistry,
-)
+from .metadescriptors import Metadescriptor, MetadescriptorRegistry
+from .protodescriptors import ProtodescriptorRegistry
 
 # endregion
 
@@ -124,6 +121,9 @@ class Arche(metaclass=declarative):
     _metadescriptors: ClassVar[MetadescriptorRegistry] = MetadescriptorRegistry()
     _metacharacters: ClassVar[ProtodescriptorRegistry] = ProtodescriptorRegistry(_metadescriptors)
 
+    def __new__(cls, *args, **kwargs):
+        raise TypeError("Archetypes, traits and prototypes cannot be instantiated directly.")
+
     @classmethod
     def traits(cls, view: Literal["local", "merged", "total"]) -> tuple[Trait, ...]:
         """The traits of this archetype."""
@@ -158,6 +158,8 @@ class prototype(declarative):
         base = bases[0]
         if not (isinstance(base, prototype) or base is Arche):
             raise TypeError(f"Base class {base} is not a valid AML prototype base.")
+        if any(isinstance(base, prototype) for base in bases[1:]):
+            raise TypeError("Prototypes do not support multiple inheritance.")
         cls = super().__new__(mcls, name, bases, namespace)
         # Set type annotations on annotatble declarators
         cls.__set_type_annotations__()
@@ -210,6 +212,9 @@ class prototype(declarative):
         cls.__ast__ = None
         # Provisionally, new types are assigned the prototype role, but this may be overridden in decorators # noqa
         cls.__role__ = TypeRole.PROTOTYPE
+
+    def __call__(cls, *args, **kwargs):
+        raise TypeError("Archetypes, traits and prototypes cannot be instantiated directly.")
 
     def _normalize_traits(cls, *traits: Trait) -> tuple[Trait, ...]:
         """Establishes a normalized and ordered list of traits assignable to __merged_traits__.

@@ -427,6 +427,7 @@ class declarative(type):
         finally:
             namespace.close()
         return cls
+
 # endregion
 
 # =============================================================================

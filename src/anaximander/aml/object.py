@@ -1,7 +1,7 @@
 """This module defines the base object class for the Anaximander Modeling Language (AML)."""
 
-from .prototype import Arche, prototype
 from .archetype import archetype
+from .prototype import Arche, prototype
 
 
 @archetype

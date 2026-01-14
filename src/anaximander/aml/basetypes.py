@@ -1,9 +1,10 @@
+"""This module defines base types for AML data and metadata."""
+
 from abc import ABC
 from decimal import Decimal
 from enum import IntEnum, StrEnum
+from typing import get_args
 from uuid import UUID
-from typing import  get_args
-
 
 type PyScalar = (
     Decimal
