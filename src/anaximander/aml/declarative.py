@@ -26,7 +26,6 @@ from typing import (
     Protocol,
     Self,
     get_args,
-    get_origin,
 )
 
 import yaml
@@ -207,7 +206,7 @@ class Declarator(ABC):
         pass
 
     @abstractmethod
-    def __bind__(self, value: Any, previous: Any) -> None:
+    def __bind__(self, value: Any, previous: Any = MISSING) -> None:
         """Hook called when this declarator is bound to a value.
 
         This method can be overridden by subclasses to customize the binding behavior.
@@ -224,6 +223,8 @@ class Declarator(ABC):
         This method can be overridden by subclasses to customize the override behavior.
         The default implementation raises an AttributeError.
         """
+        if override == self:
+            return
         raise AttributeError(f"Declarator of type {self.__class__.__name__} cannot be overridden.")
 
 
@@ -529,21 +530,28 @@ class DeclaratorRegistry[D: Declarator](Registry[D]):
     ) -> None:
         """Initialize the declarator registry with an optional mapping or iterable of pairs."""
         super().__init__(data, **kwargs)
-        self.bindings = BindingRegistry(_declarators=self)
+
+    def __copy__(self) -> Self:
+        """Create a shallow copy of the registry."""
+        new_registry = self.__class__()
+        new_registry._data = self._data.copy()
+        return new_registry
 
     def register(self, key: str, item: D) -> None:
         """Registers a declarator."""
         if not isinstance(item, self.__types__):
             type_names = ", ".join(t.__name__ for t in self.__types__)
             raise TypeError(f"Declarator must be one of types: {type_names}")
-        if key in self._data:
-            if self.bindings is not None and key in self.bindings:
-                raise RuntimeError(f"Cannot override declarator '{key}' with active binding.")
+        registered = self._data.get(key)
+        if registered is None:
+            self._data[key] = item
+        elif registered == item:
+            return
+        else:
             try:
                 self._data[key].__override__(item)
             except AttributeError as e:
                 raise RuntimeError(f"Cannot override declarator '{key}': {e}") from e
-        self._data[key] = item
 
     def filter(self, *args: type | str) -> Self:
         """Yield declarators that match the given types or handles."""
@@ -579,13 +587,22 @@ class BindingRegistry[D: Declarator](Registry[Any]):
         """Initialize the binding registry with an optional declarator registry."""
         if "_declarators" in kwargs:
             raise ValueError("Declarators cannot be passed as a keyword argument.")
-        super().__init__(data, **kwargs)
-        self._declarators_ref = (weakref.ref(_declarators))
+        self._declarators = _declarators
+        bindings = dict(data or {}, **kwargs)
+        self._data: dict[str, Any] = {}
+        for key, item in bindings.items():
+            self.register(key, item)
 
     @property
-    def declarators(self) -> DeclaratorRegistry[D] | None:
+    def declarators(self) -> DeclaratorRegistry[D] :
         """Return the referenced declarator registry, or None if it has been garbage collected."""
-        return self._declarators_ref()
+        return self._declarators
+
+    def __copy__(self) -> Self:
+        """Create a shallow copy of the binding registry."""
+        new_registry = self.__class__(_declarators=self.declarators)
+        new_registry._data = self._data.copy()
+        return new_registry
 
     def register(self, key: str, item: Any) -> None:
         """Register a binding."""
@@ -596,13 +613,12 @@ class BindingRegistry[D: Declarator](Registry[Any]):
             declarator: D = declarators[key]
         except KeyError:
             raise KeyError(f"No declarator found for binding '{key}'.")
-        try:
-            extant_binding = self._data[key]
-        except KeyError:
-            self._data[key] = item
+        binding = self._data.get(key, MISSING)
+        if item == binding:
+            return
         else:
             try:
-                declarator.__bind__(item, extant_binding)
+                declarator.__bind__(item, binding)
             except AttributeError as e:
                 raise RuntimeError(f"Cannot bind value to declarator '{key}': {e}") from e
             else:
@@ -611,6 +627,8 @@ class BindingRegistry[D: Declarator](Registry[Any]):
 
 class MultiRegistry(Mapping[str, Registry[Any]]):
     """A mapping that organizes multiple registries by namespace or rubric."""
+
+    __namespaces__: ClassVar[set[str]] = set()  # Set of valid registry namespaces
 
     def __init__(self, data: Mapping[str, Registry[Any]] | Iterable[tuple[str, Registry[Any]]] | None = None, **kwargs: Registry[Any]):  # noqa
         """Initialize the multi-registry with an optional mapping or iterable of pairs."""
@@ -630,11 +648,76 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
 
     def __copy__(self) -> Self:
         """Create a shallow copy of the multi-registry."""
-        return self.__class__(self._data)
+        new_registry = self.__class__()
+        new_registry.update(self)
+        return new_registry
 
     def copy(self) -> Self:
         """Create a shallow copy of the multi-registry."""
         return self.__copy__()
+
+    def get_registry(self, namespace: str) -> Registry[Any]:
+        """Returns the registry for the given namespace."""
+        if namespace not in self.__namespaces__:
+            msg = f"Unknown registration namespace {namespace!r}."
+            raise ValueError(msg)
+        return getattr(self, namespace)
+
+    @property
+    def declarator_registries(self) -> dict[str, DeclaratorRegistry[Declarator]]:
+        """Returns a mapping of namespace to declarator registries."""
+        registries: dict[str, DeclaratorRegistry] = {}
+        for namespace in self.__namespaces__:
+            registry = self.get_registry(namespace)
+            if isinstance(registry, DeclaratorRegistry):
+                registries[namespace] = registry
+        return registries
+
+    @property
+    def binding_registries(self) -> dict[str, BindingRegistry[Declarator]]:
+        """Returns a mapping of namespace to binding registries."""
+        registries: dict[str, BindingRegistry] = {}
+        for namespace in self.__namespaces__:
+            registry = self.get_registry(namespace)
+            if isinstance(registry, BindingRegistry):
+                registries[namespace] = registry
+        return registries
+
+    @abstractmethod
+    def register(self, key: str, item: Any, *, namespace: str | None = None) -> None:
+        if namespace is not None:
+            registry = self.get_registry(namespace)
+            registry.register(key, item)
+            return
+        raise NotImplementedError
+
+    def update(self, other: Mapping[str, Registry[Any]]) -> None:
+        """Update the multi-registry with items from another mapping."""
+        declarators: dict[str, DeclaratorRegistry] = {}
+        bindings: dict[str, BindingRegistry] = {}
+        for namespace, registry in other.items():
+            if namespace not in self.__namespaces__:
+                msg = f"Unknown registration namespace {namespace!r}."
+                raise ValueError(msg)
+            elif isinstance(registry, DeclaratorRegistry):
+                declarators[namespace] = registry
+            elif isinstance(registry, BindingRegistry):
+                bindings[namespace] = registry
+            else:
+                msg = f"Invalid registry type for namespace {namespace!r}."
+                raise TypeError(msg)
+        # Declarators get updated first, since bindings may depend on them.
+        for namespace, registry in self.declarator_registries.items():
+            declarator_updates = declarators.get(namespace, {})
+            registry.update(declarator_updates)
+        # In the case of bindings, even extant bindings must be updated,
+        # since they may refer to new declarators.
+        for namespace, registry in self.binding_registries.items():
+            self_bindings = registry.to_dict()
+            binding_updates = bindings.get(namespace, {})
+            self_bindings.update(binding_updates)
+            new_registry = BindingRegistry(_declarators=registry.declarators, **self_bindings)
+            self._data[namespace] = new_registry
 
     def to_dict(self) -> dict[str, dict[str, Any]]:
         """Convert to a plain nested dict suitable for serialization."""

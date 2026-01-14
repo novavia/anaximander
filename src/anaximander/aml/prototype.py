@@ -11,16 +11,12 @@ from types import NoneType
 from typing import (
     Any,
     ClassVar,
-    Generic,
     Literal,
-    Mapping,
     Protocol,
     TypeGuard,
-    TypeVar,
     cast,
     get_args,
     get_type_hints,
-    overload,
 )
 
 from annotationlib import Format, get_annotations
@@ -29,8 +25,8 @@ from anaximander.utils.funcs import type_name_to_collection_name
 
 from .declarative import AnnotatableDeclarator, DeclarativeNamespace, declarative
 from .protodescriptors import (
+    Metadescriptor,
     MetadescriptorRegistry,
-    Protodescriptor,
     ProtodescriptorRegistry,
 )
 
@@ -49,31 +45,29 @@ class TypeRole(Enum):
     PROTOTYPE = "prototype"
 
 
-class RegistryState(Enum):
-    """Enumeration of registry states that serve as arguments to registry access methods."""
-    LOCAL = "local"  # Only locally declared items
-    INHERITED = "inherited"  # Only inherited items
-    MERGED = "merged"  # Both local and inherited items, merged
-    RESOLVED = "resolved"  # Merged items, with defaults applied
-
-
 class prototypeProtocol(Protocol):
     """Protocol for prototype classes."""
     __archetype__: ClassVar["Archetype"]
     __traits__: ClassVar[tuple["Trait", ...]]
-    __local_metadescriptors__: ClassVar[MetadescriptorRegistry]
-    __local_metacharacters__: ClassVar[ProtodescriptorRegistry]
-    __inherited_metadescriptors__: ClassVar[MetadescriptorRegistry]
-    __inherited_metacharacters__: ClassVar[ProtodescriptorRegistry]
+    __merged_traits__: ClassVar[tuple["Trait", ...]]
+    __metadescriptors__: ClassVar[MetadescriptorRegistry]
+    __metacharacters__: ClassVar[ProtodescriptorRegistry]
+    __merged_metadescriptors__: ClassVar[MetadescriptorRegistry]
+    __merged_metacharacters__: ClassVar[ProtodescriptorRegistry]
     __compilations__: ClassVar[dict[str, dict]]
 
     @classmethod
-    def metadescriptors(cls, *, state: RegistryState = RegistryState.RESOLVED) -> MetadescriptorRegistry:  # noqa
+    def implements(cls, metatype: "Archetype | Trait") -> bool:
+        """Checks if this type implements the specified archetype or trait."""
+        ...
+
+    @classmethod
+    def metadescriptors(cls, view: Literal["local", "merged", "resolved"]) -> MetadescriptorRegistry:  # noqa
         """The metadescriptors of this type."""
         ...
 
     @classmethod
-    def metacharacters(cls, *, state: RegistryState = RegistryState.RESOLVED) -> ProtodescriptorRegistry:  # noqa
+    def metacharacters(cls, view: Literal["local", "merged", "resolved"]) -> ProtodescriptorRegistry:  # noqa
         """The metacharacters of this type."""
         ...
 
@@ -100,6 +94,16 @@ def is_trait(cls: type[Any]) -> TypeGuard[Trait]:
     """Type guard to check if a class is a Trait."""
     return (isinstance(cls, prototype) and getattr(cls, "__role__", None) == TypeRole.TRAIT)
 
+def conforms(trait: Trait, archetype: Archetype) -> bool:
+    """Checks if a trait conforms to the specified archetype."""
+    if not is_trait(trait):
+        raise TypeError(f"Expected a Trait type, got {trait}.")
+    if not is_archetype(archetype):
+        raise TypeError(f"Expected an Archetype type, got {archetype}.")
+    # The trait conforms if its archetype is a parent of the specified archetype
+    trait_archetype = trait.__archetype__
+    return trait_archetype in archetype.mro()
+
 
 class PrototypeProtocol(prototypeProtocol):
     """Protocol for prototype classes."""
@@ -114,21 +118,26 @@ def is_prototype(cls: type[Any]) -> TypeGuard[Prototype]:
 
 class Arche(metaclass=declarative):
     """The base class for all AML declartive types."""
-    __role__ = TypeRole.ARCHETYPE
+    __role__: ClassVar[Literal[TypeRole.ARCHETYPE]] = TypeRole.ARCHETYPE
     __archetype__: ClassVar[Archetype]
-    __traits__ = ()
+    __traits__: ClassVar[tuple[Trait, ...]] = ()
     _metadescriptors: ClassVar[MetadescriptorRegistry] = MetadescriptorRegistry()
     _metacharacters: ClassVar[ProtodescriptorRegistry] = ProtodescriptorRegistry(_metadescriptors)
 
     @classmethod
-    def metadescriptors(cls, *, state: RegistryState = RegistryState.RESOLVED) -> MetadescriptorRegistry:  # noqa
-        """The metadescriptors of this archetype."""
-        return cls._metadescriptors
+    def traits(cls, view: Literal["local", "merged", "total"]) -> tuple[Trait, ...]:
+        """The traits of this archetype."""
+        return ()
 
     @classmethod
-    def metacharacters(cls, *, state: RegistryState = RegistryState.RESOLVED) -> ProtodescriptorRegistry:  # noqa
+    def metadescriptors(cls, view: Literal["local", "merged", "resolved"]) -> MetadescriptorRegistry:  # noqa
+        """The metadescriptors of this archetype."""
+        return cls._metadescriptors.copy()
+
+    @classmethod
+    def metacharacters(cls, view: Literal["local", "merged", "resolved"]) -> ProtodescriptorRegistry:  # noqa
         """The metacharacters of this archetype."""
-        return cls._metacharacters
+        return cls._metacharacters.copy()
 
 Arche.__archetype__ = cast(Archetype, Arche)
 
@@ -137,56 +146,81 @@ class prototype(declarative):
     """Metaclass for declarative types -archetypes, traits and prototypes."""
     __role__: TypeRole
     __archetype__: Archetype  # The prototype's archetype
-    __traits__: tuple[Trait, ...]  # The prototype's traits
-    __local_metadescriptors__: MetadescriptorRegistry  # The prototype's locally declared metadescriptors  #noqa
-    __local_metacharacters__: ProtodescriptorRegistry  # The prototype's locally declared metacharacters  #noqa
-    __inherited_metadescriptors__: MetadescriptorRegistry  # The prototype's inherited metadescriptors  #noqa
-    __inherited_metacharacters__: ProtodescriptorRegistry  # The prototype's inherited metacharacters  #noqa
+    __traits__: tuple[Trait, ...]  # The prototype's traits implemented on top of its archetype
+    __merged_traits__: tuple[Trait, ...]  # The prototype's merged traits, including inherited ones
+    __metadescriptors__: MetadescriptorRegistry  # The prototype's locally declared metadescriptors
+    __metacharacters__: ProtodescriptorRegistry  # The prototype's locally declared metacharacters
+    __merged_metadescriptors__: MetadescriptorRegistry  # The prototype's merged metadescriptors
+    __merged_metacharacters__: ProtodescriptorRegistry  # The prototype's merged metacharacters
     __compilations__: dict[str, dict]  # Holds compilation target handles and parameters
 
     def __new__(mcls, name, bases, namespace: DeclarativeNamespace, traits=(), **metadata):
         base = bases[0]
-        if not issubclass(base, prototype) or base is Arche:
+        if not (isinstance(base, prototype) or base is Arche):
             raise TypeError(f"Base class {base} is not a valid AML prototype base.")
         cls = super().__new__(mcls, name, bases, namespace)
         # Set type annotations on annotatble declarators
         cls.__set_type_annotations__()
+
         return cls
 
     def __init__(cls, name, bases, namespace: DeclarativeNamespace, traits=(), **metadata):
         super().__init__(name, bases, namespace, **metadata)
         # Set the base archetype
-        base = bases[0]
+        base: prototype | type[Arche]= bases[0]
         base_archetype: Archetype = getattr(base, "__archetype__")
         cls.__archetype__ = base_archetype
-        # Next we set and normalize traits
-        base_traits: tuple[Trait, ...] = base_archetype.__traits__
-        cls.__traits__ = prototype._normalize_traits(*base_traits, *traits)
-        # Set metadescriptors
-        base_metadescriptors: MetadescriptorRegistry = getattr(base, "__metadescriptors__")
-        metadescriptors = MetadescriptorRegistry()
-
-
+        # Next we normalize and set traits
+        # Merged traits include those of the base type
+        cls.__merged_traits__ = prototype._normalize_traits(cls, *traits)
+        # Local traits are those that concretely specialize the base
+        base_traits = base.traits("merged")
+        cls.__traits__ = tuple(T for T in cls.__merged_traits__ if T not in base_traits)
+        # Set local metadescriptors
+        cls.__metadescriptors__ = MetadescriptorRegistry()
+        for declarator in cls.__declarations__.values():
+            if isinstance(declarator, Metadescriptor):
+                cls.__metadescriptors__.register(declarator.name, declarator)
+        # Merge inherited metadescriptors
+        merged_metadescriptors = base.metadescriptors("merged")
+        for trait in cls.__traits__:
+            trait_metadescriptors = trait.metadescriptors("merged")
+            merged_metadescriptors.update(trait_metadescriptors)
+        merged_metadescriptors.update(cls.__metadescriptors__)
+        cls.__merged_metadescriptors__ = merged_metadescriptors
+        # Set local metacharacters
+        cls.__metacharacters__ = ProtodescriptorRegistry(cls.__merged_metadescriptors__)
+        for declarator in cls.__declarations__.values():
+            if not isinstance(declarator, Metadescriptor):
+                cls.__metacharacters__.register(declarator.name, declarator)
+        for name, value in cls.__bindings__.items():
+            cls.__metacharacters__.register(name, value)
+        # Merge inherited metacharacters
+        merged_metacharacters = ProtodescriptorRegistry(cls.__merged_metadescriptors__)
+        base_metacharacters = base.metacharacters("merged")
+        merged_metacharacters.update(base_metacharacters)
+        for trait in cls.__traits__:
+            trait_metacharacters = trait.metacharacters("merged")
+            merged_metacharacters.update(trait_metacharacters)
+        merged_metacharacters.update(cls.__metacharacters__)
+        cls.__merged_metacharacters__ = merged_metacharacters
         # TODO: validate metacharacters against archetype definition
-        # TODO: validate metacharacter tightening rules
-
-        # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler
+        # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler  # noqa
         cls.__compilations__: dict[str, dict] = {}
         cls.__ast__ = None
-        # Provisionally, new types are assigned the prototype role, but this may be overridden in decorators
+        # Provisionally, new types are assigned the prototype role, but this may be overridden in decorators # noqa
         cls.__role__ = TypeRole.PROTOTYPE
 
+    def _normalize_traits(cls, *traits: Trait) -> tuple[Trait, ...]:
+        """Establishes a normalized and ordered list of traits assignable to __merged_traits__.
 
-    @staticmethod
-    def _normalize_traits(*traits: Trait) -> tuple[Trait, ...]:
-        """Normalize traits by removing those that are supertraits of others.
-
-        This method also ensures a consistent ordering of traits based on specialization and
-        implementation hierarchy.
-        The supplied list may contain duplicates and be supplied in an arbitrary order. The
-        algorithm visits each trait and uses recursion to ensure that supertraits and implemented
-        traits are added to the ordered list before the trait itself.
+        This method merges the supplied traits with those of the base type.
+        It ensures that all traits conform to the archetype, and then creates a normalized list.
+        The normalization establishes a consistent ordering of traits based on specialization and
+        implementation hierarchy, and removes duplicates as well as unnecessary parents that are
+        already included via inherited traits.
         """
+        archetype = cls.__archetype__
         # Containers for the ordered traits and visited set
         order = []
         visited = set()
@@ -195,7 +229,11 @@ class prototype(declarative):
             """Recursively visit traits to build ordered list."""
             if T in visited:
                 return
-            # First, ensure specialization parent comes first
+            # First, verifiy that the trait conforms to the archetype
+            if not conforms(T, archetype):
+                msg = f"Trait {T.__name__} does not conform to archetype {archetype.__name__}."
+                raise TypeError(msg)
+            # Ensure specialization parent comes first
             if T.supertrait is not None:
                 visit(T.supertrait)
             # Then, ensure implemented traits come first, in declared order
@@ -204,6 +242,10 @@ class prototype(declarative):
             visited.add(T)
             order.append(T)
 
+        # Visit traits from base type first, then from supplied traits
+        base: prototype = cls.__bases__[0]
+        for T in base.traits("merged"):
+            visit(T)
         for T in traits:
             visit(T)
 
@@ -211,18 +253,13 @@ class prototype(declarative):
 
     @property
     def archetype(cls) -> Archetype:
-        """The archetype of this type."""
+        """The archetype implemented by this type."""
         return cls.__archetype__
 
     @property
     def basetype(cls) -> "prototype":
         """The base class of this type."""
         return cls.__bases__[0]
-
-    @property
-    def traits(cls) -> tuple[Trait, ...]:
-        """The traits of this type."""
-        return tuple(cls.__traits__)
 
     @property
     def supertrait(cls) -> Trait | None:
@@ -234,19 +271,83 @@ class prototype(declarative):
             return cast(Trait, base)
         return None
 
-    def metadescriptors(cls, *, state: RegistryState = RegistryState.RESOLVED) -> MetadescriptorRegistry:  # noqa
+    def implements(cls, metatype: Archetype | Trait) -> bool:
+        """Checks if this type implements the specified archetype or trait."""
+        if is_archetype(metatype):
+            return metatype in cls.__archetype__.mro()
+
+        if not is_trait(metatype):
+            raise TypeError(f"Expected an Archetype or Trait type, got {metatype}.")
+
+        for trait in cls.__merged_traits__:
+            # direct match
+            if trait is metatype:
+                return True
+            # otherwise walk specialization chain
+            parent = trait.supertrait
+            while parent is not None:
+                if parent is metatype:
+                    return True
+                parent = parent.supertrait
+
+        return False
+
+    def traits(cls, view: Literal["local", "merged"]) -> tuple[Trait, ...]:
+        """The traits implemented by this type.
+
+        Args:
+            view: Specifies which traits to return:
+                - "local": resolved list of traits implemented on top of the archetype
+                - "merged": resolved list of traits implemented by this type and its archetype
+        """
+        if view == "local":
+            return cls.__traits__
+        elif view == "merged":
+            return cls.__merged_traits__
+        else:
+            msg = f"Invalid view '{view}'. Expected 'local' or 'merged'."
+            raise ValueError(msg)
+
+    def metadescriptors(cls, view: Literal["local", "merged", "resolved"]) -> MetadescriptorRegistry:  # noqa
         """The metadescriptors of this type.
 
-        The method pulls from local and/or inherited metadescriptors based on the specified state.
+        Args:
+            view: Specifies which metadescriptors to return:
+                - "local": metadescriptors declared directly on this type
+                - "merged": metadescriptors declared on this type and inherited from archetype
+                and traits
+                - "resolved": metadescriptors after applying resolution rules, if any
         """
-        return NotImplemented
+        if view == "local":
+            return cls.__metadescriptors__.copy()
+        elif view == "merged":
+            return cls.__merged_metadescriptors__.copy()
+        elif view == "resolved":
+            return NotImplemented
+        else:
+            msg = f"Invalid view '{view}'. Expected 'local', 'merged', or 'resolved'."
+            raise ValueError(msg)
 
-    def metacharacters(cls, *, state: RegistryState = RegistryState.RESOLVED) -> ProtodescriptorRegistry:  # noqa
+    def metacharacters(cls, view: Literal["local", "merged", "resolved"]) -> ProtodescriptorRegistry:  # noqa
         """The metacharacters of this type.
 
-        The method pulls from local and/or inherited metacharacters based on the specified state.
+        Args:
+            view: Specifies which metacharacters to return:
+                - "local": metacharacters declared directly on this type
+                - "merged": metacharacters declared on this type and inherited from archetype and
+                traits
+                - "resolved": metacharacters after applying resolution rules, particularly
+                default bindings, if any
         """
-        return NotImplemented
+        if view == "local":
+            return cls.__metacharacters__.copy()
+        elif view == "merged":
+            return cls.__merged_metacharacters__.copy()
+        elif view == "resolved":
+            return NotImplemented
+        else:
+            msg = f"Invalid view '{view}'. Expected 'local', 'merged', or 'resolved'."
+            raise ValueError(msg)
 
     @staticmethod
     def __unwrap_optional_type__(type_hint: Any) -> tuple[Any, bool]:
@@ -293,5 +394,3 @@ class prototype(declarative):
         This can be customized by passing metadata (#TODO).
         """
         return type_name_to_collection_name(cls.__name__)
-
-

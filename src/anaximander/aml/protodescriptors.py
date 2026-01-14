@@ -8,19 +8,14 @@
 
 import datetime
 import re
-import weakref
-from abc import abstractmethod
-from collections.abc import Mapping
 from numbers import Real
 from typing import (
     Any,
     Callable,
-    ClassVar,
-    Iterable,
     Literal,
+    cast,
 )
 
-import yaml
 from attrs import field
 
 from .declarative import (
@@ -390,49 +385,139 @@ class SortDeclarator(FieldEnumeration, SchemaDeclarator):
 
 class MetadescriptorRegistry(MultiRegistry):
     """Registry for metadescriptors."""
-    metadata: DeclaratorRegistry[MetadataDeclarator]
-    nxfield: DeclaratorRegistry[NxFieldDeclarator]
-    option: DeclaratorRegistry[OptionDeclarator]
+
+    __namespaces__ = {"metadata", "nxfield", "option"}
 
     def __init__(self):
-        self.metadata = DeclaratorRegistry[MetadataDeclarator]()
-        self.nxfield = DeclaratorRegistry[NxFieldDeclarator]()
-        self.option = DeclaratorRegistry[OptionDeclarator]()
-        super().__init__(metadata=self.metadata, nxfield=self.nxfield, option=self.option)
+        metadata = DeclaratorRegistry[MetadataDeclarator]()
+        nxfield = DeclaratorRegistry[NxFieldDeclarator]()
+        option = DeclaratorRegistry[OptionDeclarator]()
+        super().__init__(metadata=metadata, nxfield=nxfield, option=option)
+
+    @property
+    def metadata(self) -> DeclaratorRegistry[MetadataDeclarator]:
+        """Returns the metadata metadescriptor registry."""
+        return cast(DeclaratorRegistry[MetadataDeclarator], self._data["metadata"])
+
+    @property
+    def nxfield(self) -> DeclaratorRegistry[NxFieldDeclarator]:
+        """Returns the nxfield metadescriptor registry."""
+        return cast(DeclaratorRegistry[NxFieldDeclarator], self._data["nxfield"])
+
+    @property
+    def option(self) -> DeclaratorRegistry[OptionDeclarator]:
+        """Returns the option metadescriptor registry."""
+        return cast(DeclaratorRegistry[OptionDeclarator], self._data["option"])
+
+    def register(self, key, item: Metadescriptor, *, namespace: str | None = None) -> None:
+        """Registers a metadescriptor in the appropriate registry."""
+        if namespace is not None:
+            registry = self.get_registry(namespace)
+            registry.register(key, item)
+            return
+        match item:
+            case MetadataDeclarator():
+                self.metadata.register(key, item)
+            case NxFieldDeclarator():
+                self.nxfield.register(key, item)
+            case OptionDeclarator():
+                self.option.register(key, item)
+            case _:
+                msg = f"Cannot register metadescriptor of type {type(item).__name__}."
+                raise TypeError(msg)
 
 
 class ProtodescriptorRegistry(MultiRegistry):
     """Registry for meta bindings and protodescriptors."""
-    metadata: BindingRegistry[MetadataDeclarator]
-    nxfield: BindingRegistry[NxFieldDeclarator]
-    option: BindingRegistry[OptionDeclarator]
-    field: DeclaratorRegistry[FieldProtodescriptor]
-    schema: DeclaratorRegistry[SchemaDeclarator]
-    construction: DeclaratorRegistry[ConstructionDeclarator]
-    bindings: BindingRegistry[FieldProtodescriptor]
+
+    __namespaces__ = {"metadata", "nxfield", "option", "field", "schema", "construction", "data"}
 
     def __init__(self, metadescriptors: MetadescriptorRegistry):
-        self.metadata = metadescriptors.metadata.bindings
-        self.nxfield = metadescriptors.nxfield.bindings
-        self.option = metadescriptors.option.bindings
-        self.field = DeclaratorRegistry[FieldProtodescriptor]()
-        self.schema = DeclaratorRegistry[SchemaDeclarator]()
-        self.construction = DeclaratorRegistry[ConstructionDeclarator]()
-        self.bindings = self.field.bindings
+        metadata = BindingRegistry(_declarators=metadescriptors.metadata)
+        nxfield = BindingRegistry(_declarators=metadescriptors.nxfield)
+        option = BindingRegistry(_declarators=metadescriptors.option)
+        field = DeclaratorRegistry[FieldProtodescriptor]()
+        schema = DeclaratorRegistry[SchemaDeclarator]()
+        construction = DeclaratorRegistry[ConstructionDeclarator]()
+        data = BindingRegistry(_declarators=field)
         super().__init__(
-            metadata=self.metadata,
-            nxfield=self.nxfield,
-            option=self.option,
-            field=self.field,
-            schema=self.schema,
-            construction=self.construction,
-            bindings=self.bindings,
+            metadata=metadata,
+            nxfield=nxfield,
+            option=option,
+            field=field,
+            schema=schema,
+            construction=construction,
+            data=data,
         )
-        self._metadescriptors_ref = (weakref.ref(metadescriptors))
+        self._metadescriptors = metadescriptors
 
     @property
     def metadescriptors(self) -> MetadescriptorRegistry | None:
         """Returns the metadescriptor registry, or None if it has been garbage collected."""
-        return self._metadescriptors_ref()
+        return self._metadescriptors
+
+    @property
+    def metadata(self) -> BindingRegistry[MetadataDeclarator]:
+        """Returns the metadata binding registry."""
+        return cast(BindingRegistry[MetadataDeclarator], self._data["metadata"])
+
+    @property
+    def nxfield(self) -> BindingRegistry[NxFieldDeclarator]:
+        """Returns the nxfield binding registry."""
+        return cast(BindingRegistry[NxFieldDeclarator], self._data["nxfield"])
+
+    @property
+    def option(self) -> BindingRegistry[OptionDeclarator]:
+        """Returns the option binding registry."""
+        return cast(BindingRegistry[OptionDeclarator], self._data["option"])
+
+    @property
+    def field(self) -> DeclaratorRegistry[FieldProtodescriptor]:
+        """Returns the field protodescriptor registry."""
+        return cast(DeclaratorRegistry[FieldProtodescriptor], self._data["field"])
+
+    @property
+    def schema(self) -> DeclaratorRegistry[SchemaDeclarator]:
+        """Returns the schema declarator registry."""
+        return cast(DeclaratorRegistry[SchemaDeclarator], self._data["schema"])
+
+    @property
+    def construction(self) -> DeclaratorRegistry[ConstructionDeclarator]:
+        """Returns the construction declarator registry."""
+        return cast(DeclaratorRegistry[ConstructionDeclarator], self._data["construction"])
+
+    @property
+    def data(self) -> BindingRegistry[DataProtodescriptor]:
+        """Returns the data binding registry."""
+        return cast(BindingRegistry[DataProtodescriptor], self._data["data"])
+
+    def register(self, key, item: Any, *, namespace: str | None = None) -> None:
+        """Registers a declarator or binding in the appropriate registry."""
+        # If the namespace is specified, use it directly
+        if namespace is not None:
+            registry = self.get_registry(namespace)
+            registry.register(key, item)
+            return
+        # If the item is a declarator, route to the appropriate registry
+        match = True
+        match item:
+            case FieldProtodescriptor():
+                self.field.register(key, item)
+            case SchemaDeclarator():
+                self.schema.register(key, item)
+            case ConstructionDeclarator():
+                self.construction.register(key, item)
+            case _:
+                match = False
+        if match:
+            return
+        # If the item is a binding, try to register in each binding registry
+        for binding_registry in (self.metadata, self.nxfield, self.option, self.data):
+            try:
+                binding_registry.register(key, item)
+                return
+            except KeyError:
+                continue
+        raise KeyError(f"Cannot register item {item} with key {key} in any registry.")
 
 # endregion
