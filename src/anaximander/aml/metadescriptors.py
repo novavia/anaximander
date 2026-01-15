@@ -9,11 +9,14 @@
 import re
 from typing import cast
 
+from attrs import field
+
 from .declarative import (
     AssignableDeclarator,
     CallableDeclarator,
     Declarator,
     DeclaratorRegistry,
+    EnumerationDeclarator,
     MultiRegistry,
     declarator,
 )
@@ -49,12 +52,26 @@ class OptionDeclarator(AssignableDeclarator, Metadescriptor):
 class NxFieldDeclarator(AssignableDeclarator, Metadescriptor):
     """The metadescriptor class for nxfield, i.e. abstract semantic fields."""
     __handle__ = "nxfield"
+    fieldtype: type = field()
 
 
 @declarator
-class MetadataValidator(CallableDeclarator, Metadescriptor):
+class PrototypeValidator(CallableDeclarator, Metadescriptor):
+    """The metadescriptor class for prototype validators."""
+    __handle__ = "prototype_validator"
+
+
+@declarator
+class MetadataValidator(CallableDeclarator, EnumerationDeclarator, Metadescriptor):  # noqa
     """The metadescriptor class for metadata validators."""
-    __handle__ = "metavalidator"
+    __handle__ = "metadata_validator"
+
+
+@declarator
+class OptionValidator(CallableDeclarator, EnumerationDeclarator, Metadescriptor):
+    """The metadescriptor class for option validators."""
+    __handle__ = "option_validator"
+
 
 # endregion
 
@@ -67,13 +84,14 @@ class MetadataValidator(CallableDeclarator, Metadescriptor):
 class MetadescriptorRegistry(MultiRegistry):
     """Registry for metadescriptors."""
 
-    __namespaces__ = {"metadata", "nxfield", "option"}
+    __namespaces__ = {"metadata", "nxfield", "option", "validation"}
 
     def __init__(self):
         metadata = DeclaratorRegistry[MetadataDeclarator]()
         nxfield = DeclaratorRegistry[NxFieldDeclarator]()
         option = DeclaratorRegistry[OptionDeclarator]()
-        super().__init__(metadata=metadata, nxfield=nxfield, option=option)
+        validation = DeclaratorRegistry[CallableDeclarator]()
+        super().__init__(metadata=metadata, nxfield=nxfield, option=option, validation=validation)
 
     @property
     def metadata(self) -> DeclaratorRegistry[MetadataDeclarator]:
@@ -90,6 +108,11 @@ class MetadescriptorRegistry(MultiRegistry):
         """Returns the option metadescriptor registry."""
         return cast(DeclaratorRegistry[OptionDeclarator], self._data["option"])
 
+    @property
+    def validation(self) -> DeclaratorRegistry[CallableDeclarator]:
+        """Returns the validation metadescriptor registry."""
+        return cast(DeclaratorRegistry[CallableDeclarator], self._data["validation"])
+
     def register(self, key, item: Metadescriptor, *, namespace: str | None = None) -> None:
         """Registers a metadescriptor in the appropriate registry."""
         if namespace is not None:
@@ -103,8 +126,7 @@ class MetadescriptorRegistry(MultiRegistry):
                 self.nxfield.register(key, item)
             case OptionDeclarator():
                 self.option.register(key, item)
-            case _:
-                msg = f"Cannot register metadescriptor of type {type(item).__name__}."
-                raise TypeError(msg)
+            case PrototypeValidator() | MetadataValidator() | OptionValidator():
+                self.validation.register(key, item)
 
 # endregion

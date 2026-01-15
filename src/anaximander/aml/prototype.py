@@ -72,6 +72,7 @@ class prototypeProtocol(Protocol):
 class ArchetypeProtocol(prototypeProtocol):
     """Protocol for archetype classes."""
     __role__: ClassVar[Literal[TypeRole.ARCHETYPE]]
+    __declarator_types__: ClassVar[set[type[Metadescriptor]]]
 
 Archetype = type[ArchetypeProtocol]
 
@@ -120,6 +121,7 @@ class Arche(metaclass=declarative):
     __traits__: ClassVar[tuple[Trait, ...]] = ()
     _metadescriptors: ClassVar[MetadescriptorRegistry] = MetadescriptorRegistry()
     _metacharacters: ClassVar[ProtodescriptorRegistry] = ProtodescriptorRegistry(_metadescriptors)
+    __declarator_types__: ClassVar[set[type[Metadescriptor]]] = {Metadescriptor}
 
     def __new__(cls, *args, **kwargs):
         raise TypeError("Archetypes, traits and prototypes cannot be instantiated directly.")
@@ -171,13 +173,20 @@ class prototype(declarative):
         # Set the base archetype
         base: prototype | type[Arche]= bases[0]
         base_archetype: Archetype = getattr(base, "__archetype__")
-        cls.__archetype__ = base_archetype
+        archetype = cls.__archetype__ = base_archetype
         # Next we normalize and set traits
         # Merged traits include those of the base type
         cls.__merged_traits__ = prototype._normalize_traits(cls, *traits)
         # Local traits are those that concretely specialize the base
         base_traits = base.traits("merged")
         cls.__traits__ = tuple(T for T in cls.__merged_traits__ if T not in base_traits)
+        # Validate that all declarations conform to the archetype
+        allowed_declarator_types = tuple(getattr(archetype, "__declarator_types__", set()))
+        for declarator in cls.__declarations__.values():
+            if not isinstance(declarator, allowed_declarator_types):
+                dtype = type(declarator).__handle__ or type(declarator).__name__
+                msg = f"Declarator of type '{dtype}' is not allowed in archetype {archetype.__name__}."  # noqa
+                raise TypeError(msg)
         # Set local metadescriptors
         cls.__metadescriptors__ = MetadescriptorRegistry()
         for declarator in cls.__declarations__.values():

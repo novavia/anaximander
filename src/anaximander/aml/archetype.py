@@ -22,4 +22,11 @@ def archetype(cls: prototype) -> Archetype:
         raise TypeError(f"Archetype '{cls.__name__}' must directly inherit from another archetype.")  # noqa
     cls.__role__ = TypeRole.ARCHETYPE
     cls.__archetype__ = cast(Archetype, cls)
+    # Next we merge the declarator types from the base archetype
+    base_declarator_types = getattr(base, "__declarator_types__", set())
+    if "__declarator_types__" in vars(cls):
+        new_declarator_types = getattr(cls, "__declarator_types__")
+        setattr(cls, "__declarator_types__", base_declarator_types | set(new_declarator_types))
+    else:
+        setattr(cls, "__declarator_types__", base_declarator_types)
     return cast(Archetype, cls)

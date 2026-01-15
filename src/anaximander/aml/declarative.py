@@ -85,7 +85,8 @@ class Declarator(ABC):
     """Base class for all declarators.
 
     Declarators are used to declare named attributes or add features to classes that use them,
-    working in conjunction with the declarative metaclass to process and register these declarations.
+    working in conjunction with the declarative metaclass to process and register these
+    declarations.
     """
 
     # Reserved names that cannot be used for protodescriptors.
@@ -286,8 +287,7 @@ class AssignableDeclarator(IdentifiableDeclarator):
     """Base class for declarators of attributes that receive their value through assignment."""
     default: Any = field(default=MISSING)
     factory: Callable[[], Any] | _MissingSentinel = field(default=MISSING)
-    parsers: Iterable[Callable] = field(factory=list)
-    validators: Iterable[Callable] = field(factory=list)
+    validator: Callable | None = field(default=None)
 
 
 @declarator
@@ -297,9 +297,9 @@ class CallableDeclarator(Declarator):
 
 
 @declarator
-class EnumerationDeclarator[M: Declarator](Declarator):
-    """A mixin class for declarators that reference a list of declarators."""
-    members: tuple[M, ...] = field(factory=tuple)
+class EnumerationDeclarator(Declarator):
+    """A mixin class for declarators that reference a list of declarators by name."""
+    members: tuple[str, ...] = field(factory=tuple)
     __member_types__: ClassVar[tuple[type[Declarator], ...]] = ()  # Admissible member types
 
     def __init_subclass__(cls):
@@ -426,6 +426,9 @@ class declarative(type):
             cls = super().__new__(mcls, name, bases, dict(namespace))
         finally:
             namespace.close()
+        # Runs declarator validation hooks
+        for declarator in cls.__declarations__.values():
+            declarator.__validate__()
         return cls
 
 # endregion
