@@ -16,15 +16,21 @@ from typing import (
     TypeGuard,
     cast,
     get_args,
-    get_type_hints,
+    get_origin,
 )
 
 from annotationlib import Format, get_annotations
 
 from anaximander.utils.funcs import type_name_to_collection_name
 
-from .declarative import AnnotatableDeclarator, DeclarativeNamespace, declarative
-from .metadescriptors import Metadescriptor, MetadescriptorRegistry
+from .declarative import (
+    MISSING,
+    AnnotatableDeclarator,
+    DeclarativeNamespace,
+    EnumerationCallableDeclarator,
+    declarative,
+)
+from .metadescriptors import Metadescriptor, MetadescriptorRegistry, PrototypeValidator
 from .protodescriptors import ProtodescriptorRegistry
 
 # endregion
@@ -163,7 +169,7 @@ class prototype(declarative):
         if any(isinstance(base, prototype) for base in bases[1:]):
             raise TypeError("Prototypes do not support multiple inheritance.")
         cls = super().__new__(mcls, name, bases, namespace)
-        # Set type annotations on annotatble declarators
+        # Set type annotations on annotatable declarators
         cls.__set_type_annotations__()
 
         return cls
@@ -184,8 +190,7 @@ class prototype(declarative):
         allowed_declarator_types = tuple(getattr(archetype, "__declarator_types__", set()))
         for declarator in cls.__declarations__.values():
             if not isinstance(declarator, allowed_declarator_types):
-                dtype = type(declarator).__handle__ or type(declarator).__name__
-                msg = f"Declarator of type '{dtype}' is not allowed in archetype {archetype.__name__}."  # noqa
+                msg = f"Declarator of type '{declarator.dtype}' is not allowed in archetype {archetype.__name__}."  # noqa
                 raise TypeError(msg)
         # Set local metadescriptors
         cls.__metadescriptors__ = MetadescriptorRegistry()
@@ -205,7 +210,11 @@ class prototype(declarative):
             if not isinstance(declarator, Metadescriptor):
                 cls.__metacharacters__.register(declarator.name, declarator)
         for name, value in cls.__bindings__.items():
-            cls.__metacharacters__.register(name, value)
+            if "." in name:
+                handle, binding_name = name.split(".", 1)
+                cls.__metacharacters__.register(binding_name, value, namespace=handle)
+            else:
+                cls.__metacharacters__.register(name, value)
         # Merge inherited metacharacters
         merged_metacharacters = ProtodescriptorRegistry(cls.__merged_metadescriptors__)
         base_metacharacters = base.metacharacters("merged")
@@ -215,7 +224,32 @@ class prototype(declarative):
             merged_metacharacters.update(trait_metacharacters)
         merged_metacharacters.update(cls.__metacharacters__)
         cls.__merged_metacharacters__ = merged_metacharacters
-        # TODO: validate metacharacters against archetype definition
+        # Validate bindings in context of this class
+        # First, the __validate_binding__ method is run for each bound declarator
+        for registry in merged_metacharacters.binding_registries.values():
+            for name, value in registry.items():
+                declarator = registry.declarators[name]
+                if not declarator.__validate_binding__(cls, value):
+                    msg = (f"Binding '{name}' with value '{value}' is not valid for declarator "
+                           f"of type '{declarator.dtype}' in prototype '{cls.__name__}'.")
+                    raise ValueError(msg)
+        # Next, registered validators are run, starting with attribute validators,
+        # and followed by prototype-wide validators
+        validators = merged_metadescriptors.validation.values()
+        attribute_validators = [v for v in validators if isinstance(v, EnumerationCallableDeclarator)]  # noqa
+        # TODO: work out callable declarator's callable signature and execution
+        for validator in attribute_validators:
+            target_handle = validator.__handle__.removesuffix("_validator")
+            registry = merged_metacharacters.get_registry(target_handle)
+            for member in validator.members:
+                if member in registry:
+                    value = registry[member]
+                    if not validator.callable(cls, value):
+                        msg = (f"Binding '{member}' with value '{value}' failed validation by "
+                               f"'{validator}' in prototype '{cls.__name__}'.")
+                        raise ValueError(msg)
+        # TODO: define prototype.validator, along with signature and execution model
+        prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]  # noqa
         # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler  # noqa
         cls.__compilations__: dict[str, dict] = {}
         cls.__ast__ = None
@@ -377,29 +411,52 @@ class prototype(declarative):
             return base_type, True
         return type_hint, False
 
+    @staticmethod
+    def __unwrap_classvar_type__(type_hint: Any) -> tuple[Any, bool]:
+        """Detect ClassVar annotations and return base type with a classvar flag."""
+        if get_origin(type_hint) is ClassVar:
+            args = get_args(type_hint)
+            base_type = args[0] if args else None
+            return base_type, True
+        return type_hint, False
+
     def __set_type_annotations__(cls):
         """Sets type annotations on typed protodescriptors."""
+        # Get annotations defined on this class
         annotation_values = get_annotations(cls, format=Format.VALUE)
         annotation_strings = get_annotations(cls, format=Format.STRING)
-        superhints = get_type_hints(cls)  # This includes super classes
-        assignable_declarators = [
+        # Fetch annotatable declarators declared on this class
+        annotatable_declarators = [
             declarator for declarator in cls.__declarations__.values()
             if isinstance(declarator, AnnotatableDeclarator)
         ]
-        for declarator in assignable_declarators:
+        # Set annotations on each annotatable declarator
+        for declarator in annotatable_declarators:
+            # This is a sentinel, as we expect all annotatable declarators to be named at this stage # noqa
             if (name := declarator.name) is None:
+                raise TypeError("Annotatable declarators must be named before annotation binding.")
+            # Then we distinguish between declarators that were declared through assignment vs
+            # those that relied on the DeclaratorNamespace.declare method
+            is_assigned = getattr(cls, name, None) is declarator
+            if not is_assigned:
                 continue
-            annotation_value = annotation_values.get(name, "")
-            annotation_string = annotation_strings.get(name, "")
+            # For assigned declarators, we enforce that an annotation must be present
+            if name not in annotation_values and name not in annotation_strings:
+                raise TypeError(f"Missing annotation for declarator '{name}'.")
+            annotation_value = annotation_values[name]
+            annotation_string = annotation_strings[name]
             if isinstance(annotation_value, str):
                 annotation = f'"{annotation_value}"'
+                hint = MISSING
+                classvar = MISSING
+                nullable = MISSING
             else:
                 annotation = annotation_string
+                hint, classvar = cls.__unwrap_classvar_type__(annotation_value)
+                hint, nullable = cls.__unwrap_optional_type__(hint)
             # TODO: normalize to a prototype in case of model attributes
             # TODO: normalize to a metadata type in case of option / metacharacter
-            hint = superhints.get(name, None)
-            hint, nullable = cls.__unwrap_optional_type__(hint)
-            declarator.__set_type__(annotation, hint, nullable)
+            declarator.__set_type__(annotation, hint, nullable, classvar)
 
     @property
     def collection_name(cls):

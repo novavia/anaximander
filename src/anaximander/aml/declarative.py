@@ -11,7 +11,6 @@ These artifacts form the foundation for declarative type definitions in AML.
 
 import ast
 import re
-import weakref
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from contextvars import ContextVar, Token
@@ -25,6 +24,8 @@ from typing import (
     Optional,
     Protocol,
     Self,
+    TypeVar,
+    dataclass_transform,
     get_args,
 )
 
@@ -41,7 +42,13 @@ from ..utils.meta import classproperty
 # region Constants
 
 
-declarator = partial(define, slots=False, frozen=True, kw_only=True)
+DT = TypeVar("DT", bound=type)  # Declarator-type type variable
+
+
+@dataclass_transform(kw_only_default=True, field_specifiers=(field,))
+def declarator(cls: DT) -> DT:
+    """Apply attrs define for declarator classes with a preserved init signature."""
+    return define(cls, slots=False, frozen=True, kw_only=True)
 
 DECLARATIVE_NAMESPACE: ContextVar[Optional["DeclarativeNamespace"]] = ContextVar("DECLARATIVE_NAMESPACE", default=None)  # noqa
 
@@ -89,22 +96,23 @@ class Declarator(ABC):
     declarations.
     """
 
-    # Reserved names that cannot be used for protodescriptors.
+    # Reserved names that cannot be used for declarators.
     # These can be either strings or compiled regex patterns.
     # Strings restrict exact matches, while regex patterns allow for more complex rules.
     __reserved_patterns__: ClassVar[set[str | re.Pattern[str]]] = {
         re.compile(r"^__.*"),
+        re.compile(r".*\..*"),
     }
 
     __handles__: ClassVar[dict[str, type]] = {}  # Mapping of handles to declarator types (do not override) # noqa
-    __handle__: ClassVar[Optional[str]]  = None # A plain-text lowercase handle for this declarator type (override in subclasses) # noqa
+    __handle__: ClassVar[str] = ""  # A plain-text lowercase handle for this declarator type (override in subclasses) # noqa
     _handles: ClassVar[tuple[str, ...]] = ()  # A tuple of all handles for this declarator type and its ancestors, in reverse mro (do not override) # noqa
 
     # Post-init wired fields (logically immutable; set via internal backdoor).
     name: str = field(init=False, default=None)  # Attribute or key name this declarator is assigned to # noqa
-    owner: "declarative" = field(init=False, default=None) # Owning class of this declarator
+    owner: "declarative" = field(init=False, default=None)  # Owning class of this declarator
     ordinal: int = field(init=False, default=None)  # Index of this declarator within the owning class # noqa
-    __ast__: ast.AST = field(init=False, default=None)  # AST node that declared this declarator
+    __ast__: ast.AST | None | _MissingSentinel = field(init=False, default=MISSING)  # AST node that declared this declarator
 
     # Init-time fields (immutable)
     doc: str | None = field(default=None)  # Optional documentation string
@@ -121,7 +129,7 @@ class Declarator(ABC):
         )
 
     @classproperty
-    def handle(cls) -> Optional[str]:
+    def handle(cls) -> str:
         """The plain-text lowercase handle for this declarator type."""
         return cls.__handle__
 
@@ -129,6 +137,11 @@ class Declarator(ABC):
     def handles(cls) -> tuple[str, ...]:
         """A tuple of all handles for this declarator type and its ancestors."""
         return cls._handles
+
+    @classproperty
+    def dtype(cls):
+        """A message-friendly shorthand for the declarator's type."""
+        return cls.__handle__ or cls.__name__
 
     def __attrs_post_init__(self) -> None:
         """Post-initialization processing for the declarator."""
@@ -141,6 +154,7 @@ class Declarator(ABC):
     def __init_subclass__(cls):
         super().__init_subclass__()
         base_declarators = (b for b in cls.__bases__ if issubclass(b, Declarator))
+        # Resolve reserved patterns from base classes
         base_reserved_patterns = (b.__reserved_patterns__ for b in base_declarators)
         reserved_patterns = set(chain.from_iterable(base_reserved_patterns))
         if "__reserved_patterns__" in vars(cls):
@@ -155,28 +169,32 @@ class Declarator(ABC):
             cls.__reserved_patterns__ = reserved_patterns | set(cls.__reserved_patterns__)
         else:
             cls.__reserved_patterns__ = reserved_patterns
-        if cls.__handle__ is not None:
+        # Register and resolve handles
+        if cls.__handle__ == "" and any(b.__handle__ != "" for b in base_declarators):  # noqa
+            raise ValueError("Declarator subclasses cannot define an empty __handle__ if any base class does not.")  # noqa
+        if cls.__handle__ != "":
             if cls.__handle__ in cls.__handles__:
                 if cls.__handles__[cls.__handle__] not in cls.mro():
-                    raise ValueError(
-                        f"Declarator handle '{cls.__handle__}' is already registered."
-                    )
+                    raise ValueError(f"Declarator handle '{cls.__handle__}' is already registered.")  # noqa
             cls.__handles__[cls.__handle__] = cls
         handles = []
         for base in reversed(cls.mro()):
-            if issubclass(base, Declarator) and base.__handle__ is not None:
+            if issubclass(base, Declarator) and base.__handle__ != "":
                 handles.append(base.__handle__)
         cls._handles = tuple(handles)
 
-    def _set_once(self, attr: str, value: Any) -> None:
+    def _set_once(self, attr: str, value: Any, *, allow_none_unset: bool = True) -> None:
         """Internal backdoor: set a frozen attribute once (or idempotently)."""
         current = getattr(self, attr)
-        if current is not None and current != value:
+        if current is MISSING or (allow_none_unset and current is None):
+            object.__setattr__(self, attr, value)
+            return
+        if current != value:
             raise RuntimeError(f"{self.__class__.__name__}.{attr} is already set.")
         object.__setattr__(self, attr, value)
 
     def __set_name__(self, owner: type, name: str):
-        """Attach the name and owner class to this protodescriptor."""
+        """Attach the name and owner class to this declarator."""
         forbidden_names = {
             pattern for pattern in self.__reserved_patterns__ if isinstance(pattern, str)
         }
@@ -184,25 +202,26 @@ class Declarator(ABC):
             pattern for pattern in self.__reserved_patterns__ if isinstance(pattern, re.Pattern)
         }
         if name in forbidden_names:
-            mdtype = self.__class__.__name__
-            msg = f"Cannot use reserved name {name} for Protodescriptor or type {mdtype}."
+            msg = f"Cannot use reserved name {name} for declarator or type {self.dtype}."
             raise ValueError(msg)
         if any(pattern.fullmatch(name) for pattern in forbidden_patterns):
-            mdtype = self.__class__.__name__
-            msg = f"Cannot use reserved name {name} for Protodescriptor or type {mdtype}."
+            msg = f"Cannot use reserved name {name} for declarator or type {self.dtype}."
             raise ValueError(msg)
-        self._set_once("name", name)
-        self._set_once("owner", owner)
+        self._set_once("name", name, allow_none_unset=True)
+        self._set_once("owner", owner, allow_none_unset=True)
 
     def __set_ast__(self, node: ast.AST | None) -> None:
-        """Attach the AST node that declared this protodescriptor (if any)."""
-        self._set_once("__ast__", node)
+        """Attach the AST node that declared this declarator (if any)."""
+        self._set_once("__ast__", node, allow_none_unset=False)
 
     def __validate__(self) -> None:
-        """Validate this declarator after it has been bound to a class.
+        """Validate this declarator after it has been bound to a namespace.
 
         This method is called by the declarative metaclass after the declarator
-        has been assigned to a class attribute.
+        has been assigned to a class attribute, but before the class is finalized.
+        Its role is to validate the declarator's attributes and configuration,
+        absent any context. Subclasses can override this method to implement custom
+        validation logic.
         """
         pass
 
@@ -228,13 +247,24 @@ class Declarator(ABC):
             return
         raise AttributeError(f"Declarator of type {self.__class__.__name__} cannot be overridden.")
 
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        """Hook called to validate a bound value in the context of a hosting class.
+
+        Unlike __bind__, which is called when the binding occurs and does not use context,
+        this method is designed to be called when the host class is finalized.
+        This method can be overridden by subclasses to implement custom validation logic.
+        The default implementation returns True.
+        """
+        return True
+
 
 @declarator
 class AnnotatableDeclarator(Declarator):
     """Base class for declarators that can be annotated with type information."""
-    annotation: str | None = field(init=False, default=None)  # Literal type annotation as a string
-    type: "type | None" = field(init=False, default=None)  # Evaluated type annotation
-    nullable: bool = field(init=False, default=None)  # Whether the type is nullable
+    annotation: str | _MissingSentinel = field(init=False, default=MISSING)  # Literal type annotation as a string  # noqa
+    type: type | _MissingSentinel = field(init=False, default=MISSING)  # Evaluated type annotation  # noqa
+    nullable: bool | _MissingSentinel = field(init=False, default=MISSING)  # Whether the type is nullable  # noqa
+    classvar: bool | _MissingSentinel = field(init=False, default=MISSING)  # Whether the type is a ClassVar  # noqa
     __types__: ClassVar[tuple[type, ...]] = ()  # Admissible types for this annotatable declarator
 
     def __init_subclass__(cls):
@@ -258,9 +288,15 @@ class AnnotatableDeclarator(Declarator):
             return True
         return issubclass(type, self.__types__)
 
-    def __set_type__(self, annotation: str, type: Any, nullable: bool):
-        """Sets the type by supplying annotation (string), evaluated type, and nullability."""
-        if type is not None and not self.__validate_type__(type):
+    def __set_type__(
+        self,
+        annotation: str | _MissingSentinel,
+        type: Any | _MissingSentinel,
+        nullable: bool | _MissingSentinel,
+        classvar: bool | _MissingSentinel = MISSING,
+    ):
+        """Sets the type by supplying annotation, evaluated type, nullability and classvar."""
+        if type is not MISSING and type is not None and not self.__validate_type__(type):
             declarator = self.name
             owner_name = self.owner.__name__
             msg = (
@@ -268,9 +304,14 @@ class AnnotatableDeclarator(Declarator):
                 + f"of {owner_name}."
             )
             raise TypeError(msg)
-        self._set_once("annotation", annotation)
-        self._set_once("type", type)
-        self._set_once("nullable", nullable)
+        if annotation is not MISSING:
+            self._set_once("annotation", annotation, allow_none_unset=False)
+        if type is not MISSING:
+            self._set_once("type", type, allow_none_unset=False)
+        if nullable is not MISSING:
+            self._set_once("nullable", nullable, allow_none_unset=False)
+        if classvar is not MISSING:
+            self._set_once("classvar", classvar, allow_none_unset=False)
 
 
 @declarator
@@ -317,6 +358,12 @@ class EnumerationDeclarator(Declarator):
                     + "admissible types from base classes."
                 )
 
+
+@declarator
+class EnumerationCallableDeclarator(CallableDeclarator, EnumerationDeclarator):
+    """A mixin class for callable declarators that reference a list of declarators by name."""
+    pass
+
 # endregion
 
 # =============================================================================
@@ -353,19 +400,57 @@ class DeclarativeNamespace(dict[str, Any]):
     def __delitem__(self, key: Any) -> None:
         raise RuntimeError("Cannot delete items from a declarative namespace.")
 
-    def register_declaration(self, declarator: Declarator) -> None:
-        """Register a declarator in this namespace."""
+    def register_declaration(self, declarator: Declarator, *, name: str | None = None) -> None:
+        """Register a declarator in this namespace.
+
+        name is optional and only used when the declarator is registered through a namespace
+        with a .declare() method. Otherwise the declarator is not given a name yet as it is
+        set by the __set_name__ hook after the class body is executed.
+        """
         declarations: dict[int, Declarator] = self["__declarations__"]
+        if not isinstance(declarator, Declarator):
+            raise TypeError(f"Expected a Declarator instance, got {declarator}.")
+        if name is not None:
+            # sentinel to fail quick if name contains a forbidden dot
+            if "." in name:
+                raise ValueError("Declarator names cannot contain '.'.")
+            # next we check for name conflicts, starting with a cursory lookup
+            # and then refining it at the namespace level if warranted
+            if name in (d.name for d in declarations.values()):
+                declarator_handle = declarator.handle
+                matches = [d for d in declarations.values() if d.name == name]
+                if any(d.handle == declarator_handle for d in matches):
+                    msg = f"Duplicate declaration for name '{name}'"
+                    if declarator_handle:
+                        msg += f" and handle '{declarator_handle}'."
+                    raise KeyError(msg)
+            declarator._set_once("name", name, allow_none_unset=True)
+        if declarator in declarations.values():
+            return
         ordinal = next(self.declaration_index)
         declarations[ordinal] = declarator
-        declarator._set_once("ordinal", ordinal)
+        declarator._set_once("ordinal", ordinal, allow_none_unset=True)
 
-    def register_binding(self, key: str, value: Any) -> None:
-        """Register a binding in this namespace."""
+    def register_binding(self, key: str, value: Any, *, handle: str | None= None) -> None:
+        """Register a binding in this namespace.
+
+        The handle parameter specifies the namespace handle under which the binding is registered.
+        It is optional and defaults to None, which indicates the declarative namespace itself.
+        The handle is passed when the binding is registered through a declarator namespace
+        using the .bind() method. If it belongs to one of the metadescriptor namespaces,
+        specifically "metadata", "option", or "nxfield", the binding key is prefixed with
+        the handle and a dot, reflecting the namespace context.
+        """
         bindings: dict[str, Any] = self["__bindings__"]
-        if key in bindings:
-            raise KeyError(f"Binding '{key}' is already registered in this namespace.")
-        bindings[key] = value
+        if handle in {"metadata", "option", "nxfield"}:
+            binding_key = f"{handle}.{key}"
+            if binding_key in bindings:
+                raise KeyError(f"Binding '{key}' is already registered in namespace '{handle}'.")
+        else:
+            binding_key = key
+            if binding_key in bindings:
+                raise KeyError(f"Binding '{key}' is already registered in this namespace.")
+        bindings[binding_key] = value
 
     def close(self) -> None:
         """Close the namespace, preventing further modifications."""
@@ -426,10 +511,16 @@ class declarative(type):
             cls = super().__new__(mcls, name, bases, dict(namespace))
         finally:
             namespace.close()
+        for declarator in cls.__declarations__.values():
+            if declarator.owner is None:
+                if declarator.name is None:
+                    raise RuntimeError("Unnamed declarator registered outside class assignment.")
+                declarator.__set_name__(cls, declarator.name)
         # Runs declarator validation hooks
         for declarator in cls.__declarations__.values():
             declarator.__validate__()
         return cls
+
 
 # endregion
 
@@ -725,7 +816,7 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
 
     def to_dict(self) -> dict[str, dict[str, Any]]:
         """Convert to a plain nested dict suitable for serialization."""
-        return {namespace: dict(registry) for namespace, registry in self._data.items() if registry}
+        return {namespace: dict(registry) for namespace, registry in self._data.items() if registry}  # noqa
 
     def to_yaml(self) -> str:
         """YAML-style pretty print."""

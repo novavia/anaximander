@@ -30,6 +30,8 @@ from .declarative import (
     EnumerationDeclarator,
     IdentifiableDeclarator,
     MultiRegistry,
+    MISSING,
+    _MissingSentinel,
     declarator,
 )
 
@@ -113,13 +115,13 @@ class SchemaDeclarator(Declarator):
 
 
 @declarator
-class FieldEnumeration(EnumerationDeclarator[FieldProtodescriptor]):
+class FieldEnumeration(EnumerationDeclarator):
     """Base class for enumerations of field protodescriptors."""
     __member_types__ = (FieldProtodescriptor,)
 
 
 @declarator
-class AssignableFieldEnumeration(EnumerationDeclarator[AssignableFieldProtodescriptor]):
+class AssignableFieldEnumeration(EnumerationDeclarator):
     """Base class for enumerations of assignable field protodescriptors."""
     __member_types__ = (AssignableFieldProtodescriptor,)
 
@@ -173,12 +175,18 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
             msg = "start_time and end_time must be set together."
             raise ValueError(msg)
 
-    def __set_type__(self, annotation: str, type: Any, nullable: bool):
-        super().__set_type__(annotation, type, nullable)
-        if (self.key is True or self.sequence is True) and nullable:
+    def __set_type__(
+        self,
+        annotation: str | _MissingSentinel,
+        type: Any | _MissingSentinel,
+        nullable: bool | _MissingSentinel,
+        classvar: bool | _MissingSentinel = MISSING,
+    ):
+        super().__set_type__(annotation, type, nullable, classvar)
+        if nullable is not MISSING and (self.key is True or self.sequence is True) and nullable:
             msg = "Key and sequence fields must be non-nullable."
             raise TypeError(msg)
-        if type is None:
+        if type is MISSING or type is None:
             return
         if any(
             flag is True for flag in (self.timestamp, self.start_time, self.end_time, self.period)
@@ -202,9 +210,15 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
             msg = f"Invalid on_delete value {self.on_delete!r}."
             raise ValueError(msg)
 
-    def __set_type__(self, annotation: str, type: Any, nullable: bool):
-        super().__set_type__(annotation, type, nullable)
-        if self.key is True and nullable:
+    def __set_type__(
+        self,
+        annotation: str | _MissingSentinel,
+        type: Any | _MissingSentinel,
+        nullable: bool | _MissingSentinel,
+        classvar: bool | _MissingSentinel = MISSING,
+    ):
+        super().__set_type__(annotation, type, nullable, classvar)
+        if nullable is not MISSING and self.key is True and nullable:
             msg = "Key links must be non-nullable."
             raise TypeError(msg)
 

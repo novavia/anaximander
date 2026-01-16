@@ -1,4 +1,4 @@
-"""This module defines the Protodescriptor classes for the Anaximander Modeling Language (AML)."""
+"""This module defines the Metadescriptor classes for the Anaximander Modeling Language (AML)."""
 
 # =============================================================================
 # Imports
@@ -16,7 +16,7 @@ from .declarative import (
     CallableDeclarator,
     Declarator,
     DeclaratorRegistry,
-    EnumerationDeclarator,
+    EnumerationCallableDeclarator,
     MultiRegistry,
     declarator,
 )
@@ -62,15 +62,21 @@ class PrototypeValidator(CallableDeclarator, Metadescriptor):
 
 
 @declarator
-class MetadataValidator(CallableDeclarator, EnumerationDeclarator, Metadescriptor):  # noqa
+class MetadataValidator(EnumerationCallableDeclarator, Metadescriptor):
     """The metadescriptor class for metadata validators."""
     __handle__ = "metadata_validator"
 
 
 @declarator
-class OptionValidator(CallableDeclarator, EnumerationDeclarator, Metadescriptor):
+class OptionValidator(EnumerationCallableDeclarator, Metadescriptor):
     """The metadescriptor class for option validators."""
     __handle__ = "option_validator"
+
+
+@declarator
+class NxFieldValidator(EnumerationCallableDeclarator, Metadescriptor):
+    """The metadescriptor class for nxfield validators."""
+    __handle__ = "nxfield_validator"
 
 
 # endregion
@@ -126,7 +132,7 @@ class MetadescriptorRegistry(MultiRegistry):
                 self.nxfield.register(key, item)
             case OptionDeclarator():
                 self.option.register(key, item)
-            case PrototypeValidator() | MetadataValidator() | OptionValidator():
+            case PrototypeValidator() | MetadataValidator() | OptionValidator() | NxFieldValidator():  # noqa
                 self.validation.register(key, item)
 
 # endregion
