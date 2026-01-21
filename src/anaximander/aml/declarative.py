@@ -112,7 +112,7 @@ class Declarator(ABC):
     name: str = field(init=False, default=None)  # Attribute or key name this declarator is assigned to # noqa
     owner: "declarative" = field(init=False, default=None)  # Owning class of this declarator
     ordinal: int = field(init=False, default=None)  # Index of this declarator within the owning class # noqa
-    __ast__: ast.AST | None | _MissingSentinel = field(init=False, default=MISSING)  # AST node that declared this declarator
+    __ast__: ast.AST | None | _MissingSentinel = field(init=False, default=MISSING)  # AST node that declared this declarator  # noqa
 
     # Init-time fields (immutable)
     doc: str | None = field(default=None)  # Optional documentation string
@@ -183,10 +183,10 @@ class Declarator(ABC):
                 handles.append(base.__handle__)
         cls._handles = tuple(handles)
 
-    def _set_once(self, attr: str, value: Any, *, allow_none_unset: bool = True) -> None:
+    def _set_once(self, attr: str, value: Any, *, treat_none_as_unset: bool = True) -> None:
         """Internal backdoor: set a frozen attribute once (or idempotently)."""
         current = getattr(self, attr)
-        if current is MISSING or (allow_none_unset and current is None):
+        if current is MISSING or (treat_none_as_unset and current is None):
             object.__setattr__(self, attr, value)
             return
         if current != value:
@@ -207,12 +207,12 @@ class Declarator(ABC):
         if any(pattern.fullmatch(name) for pattern in forbidden_patterns):
             msg = f"Cannot use reserved name {name} for declarator or type {self.dtype}."
             raise ValueError(msg)
-        self._set_once("name", name, allow_none_unset=True)
-        self._set_once("owner", owner, allow_none_unset=True)
+        self._set_once("name", name)
+        self._set_once("owner", owner)
 
     def __set_ast__(self, node: ast.AST | None) -> None:
         """Attach the AST node that declared this declarator (if any)."""
-        self._set_once("__ast__", node, allow_none_unset=False)
+        self._set_once("__ast__", node, treat_none_as_unset=False)
 
     def __validate__(self) -> None:
         """Validate this declarator after it has been bound to a namespace.
@@ -261,10 +261,10 @@ class Declarator(ABC):
 @declarator
 class AnnotatableDeclarator(Declarator):
     """Base class for declarators that can be annotated with type information."""
-    annotation: str | _MissingSentinel = field(init=False, default=MISSING)  # Literal type annotation as a string  # noqa
-    type: type | _MissingSentinel = field(init=False, default=MISSING)  # Evaluated type annotation  # noqa
-    nullable: bool | _MissingSentinel = field(init=False, default=MISSING)  # Whether the type is nullable  # noqa
-    classvar: bool | _MissingSentinel = field(init=False, default=MISSING)  # Whether the type is a ClassVar  # noqa
+    annotation: str | None = field(init=False, default=None)  # Literal type annotation as a string  # noqa
+    type: type | None = field(init=False, default=None)  # Evaluated type annotation  # noqa
+    nullable: bool | None = field(init=False, default=None)  # Whether the type is nullable  # noqa
+    classvar: bool | None = field(init=False, default=None)  # Whether the type is a ClassVar  # noqa
     __types__: ClassVar[tuple[type, ...]] = ()  # Admissible types for this annotatable declarator
 
     def __init_subclass__(cls):
@@ -290,13 +290,13 @@ class AnnotatableDeclarator(Declarator):
 
     def __set_type__(
         self,
-        annotation: str | _MissingSentinel,
-        type: Any | _MissingSentinel,
-        nullable: bool | _MissingSentinel,
-        classvar: bool | _MissingSentinel = MISSING,
+        annotation: str,
+        type: Any | None,
+        nullable: bool | None,
+        classvar: bool | None = None,
     ):
         """Sets the type by supplying annotation, evaluated type, nullability and classvar."""
-        if type is not MISSING and type is not None and not self.__validate_type__(type):
+        if type is not None and not self.__validate_type__(type):
             declarator = self.name
             owner_name = self.owner.__name__
             msg = (
@@ -304,20 +304,16 @@ class AnnotatableDeclarator(Declarator):
                 + f"of {owner_name}."
             )
             raise TypeError(msg)
-        if annotation is not MISSING:
-            self._set_once("annotation", annotation, allow_none_unset=False)
-        if type is not MISSING:
-            self._set_once("type", type, allow_none_unset=False)
-        if nullable is not MISSING:
-            self._set_once("nullable", nullable, allow_none_unset=False)
-        if classvar is not MISSING:
-            self._set_once("classvar", classvar, allow_none_unset=False)
+        self._set_once("annotation", annotation)
+        self._set_once("type", type)
+        self._set_once("nullable", nullable)
+        self._set_once("classvar", classvar)
 
 
 @declarator
 class IdentifiableDeclarator(AnnotatableDeclarator):
     """Base class for declarators of attributes that can uniquely identify an instance."""
-    unique: bool = field(init=False, default=False)
+    unique: bool | None = field(init=False, default=None)
 
     def __set_unique__(self, unique: bool):
         self._set_once("unique", unique)
@@ -328,7 +324,9 @@ class AssignableDeclarator(IdentifiableDeclarator):
     """Base class for declarators of attributes that receive their value through assignment."""
     default: Any = field(default=MISSING)
     factory: Callable[[], Any] | _MissingSentinel = field(default=MISSING)
-    validator: Callable | None = field(default=None)
+    # This is a fail-quick optional inline validator that takes a value as its only argument
+    # It is intended to be called in the __bind__ hook to validate assigned values
+    validator: Callable[[Any], bool] | None = field(default=None)
 
 
 @declarator
@@ -424,12 +422,12 @@ class DeclarativeNamespace(dict[str, Any]):
                     if declarator_handle:
                         msg += f" and handle '{declarator_handle}'."
                     raise KeyError(msg)
-            declarator._set_once("name", name, allow_none_unset=True)
+            declarator._set_once("name", name)
         if declarator in declarations.values():
             return
         ordinal = next(self.declaration_index)
         declarations[ordinal] = declarator
-        declarator._set_once("ordinal", ordinal, allow_none_unset=True)
+        declarator._set_once("ordinal", ordinal)
 
     def register_binding(self, key: str, value: Any, *, handle: str | None= None) -> None:
         """Register a binding in this namespace.

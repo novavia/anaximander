@@ -30,8 +30,7 @@ from .declarative import (
     EnumerationDeclarator,
     IdentifiableDeclarator,
     MultiRegistry,
-    MISSING,
-    _MissingSentinel,
+    declarative,
     declarator,
 )
 
@@ -177,16 +176,16 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
 
     def __set_type__(
         self,
-        annotation: str | _MissingSentinel,
-        type: Any | _MissingSentinel,
-        nullable: bool | _MissingSentinel,
-        classvar: bool | _MissingSentinel = MISSING,
+        annotation: str,
+        type: Any | None,
+        nullable: bool | None,
+        classvar: bool | None = None,
     ):
         super().__set_type__(annotation, type, nullable, classvar)
-        if nullable is not MISSING and (self.key is True or self.sequence is True) and nullable:
+        if nullable is True and (self.key is True or self.sequence is True):
             msg = "Key and sequence fields must be non-nullable."
             raise TypeError(msg)
-        if type is MISSING or type is None:
+        if type is None:
             return
         if any(
             flag is True for flag in (self.timestamp, self.start_time, self.end_time, self.period)
@@ -212,13 +211,13 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
 
     def __set_type__(
         self,
-        annotation: str | _MissingSentinel,
-        type: Any | _MissingSentinel,
-        nullable: bool | _MissingSentinel,
-        classvar: bool | _MissingSentinel = MISSING,
+        annotation: str,
+        type: Any | None,
+        nullable: bool | None,
+        classvar: bool | None = None,
     ):
         super().__set_type__(annotation, type, nullable, classvar)
-        if nullable is not MISSING and self.key is True and nullable:
+        if nullable is True and self.key is True:
             msg = "Key links must be non-nullable."
             raise TypeError(msg)
 
@@ -303,14 +302,16 @@ class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator):
 class ParserDeclarator(ConstructionDeclarator, FieldEnumeration):
     """The declarator class for field parsers."""
     __handle__ = "parser"
-    element_wise: bool = field(default=False)
+    callable: Callable[[declarative, Any], Any] | None = field(default=None)
+    element_wise: bool | None = field(default=None)
 
 
 @declarator
 class ValidatorDeclarator(ConstructionDeclarator, FieldEnumeration):
     """The declarator class for field validators."""
     __handle__ = "validator"
-    element_wise: bool = field(default=False)
+    callable: Callable[[declarative, Any], bool] | None = field(default=None)
+    element_wise: bool | None = field(default=None)
 
 
 @declarator

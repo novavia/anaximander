@@ -237,8 +237,9 @@ class prototype(declarative):
         # and followed by prototype-wide validators
         validators = merged_metadescriptors.validation.values()
         attribute_validators = [v for v in validators if isinstance(v, EnumerationCallableDeclarator)]  # noqa
-        # TODO: work out callable declarator's callable signature and execution
         for validator in attribute_validators:
+            if validator.callable is None:
+                continue
             target_handle = validator.__handle__.removesuffix("_validator")
             registry = merged_metacharacters.get_registry(target_handle)
             for member in validator.members:
@@ -248,8 +249,13 @@ class prototype(declarative):
                         msg = (f"Binding '{member}' with value '{value}' failed validation by "
                                f"'{validator}' in prototype '{cls.__name__}'.")
                         raise ValueError(msg)
-        # TODO: define prototype.validator, along with signature and execution model
-        prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]  # noqa
+        prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]
+        for validator in prototype_validators:
+            if validator.callable is None:
+                continue
+            if not validator.callable(cls):
+                msg = f"Prototype '{cls.__name__}' failed validation by '{validator}'."
+                raise ValueError(msg)
         # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler  # noqa
         cls.__compilations__: dict[str, dict] = {}
         cls.__ast__ = None
@@ -447,9 +453,9 @@ class prototype(declarative):
             annotation_string = annotation_strings[name]
             if isinstance(annotation_value, str):
                 annotation = f'"{annotation_value}"'
-                hint = MISSING
-                classvar = MISSING
-                nullable = MISSING
+                hint = None
+                classvar = None
+                nullable = None
             else:
                 annotation = annotation_string
                 hint, classvar = cls.__unwrap_classvar_type__(annotation_value)

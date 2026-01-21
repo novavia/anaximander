@@ -7,7 +7,7 @@
 
 
 import re
-from typing import cast
+from typing import Any, Callable, cast
 
 from attrs import field
 
@@ -18,6 +18,7 @@ from .declarative import (
     DeclaratorRegistry,
     EnumerationCallableDeclarator,
     MultiRegistry,
+    declarative,
     declarator,
 )
 
@@ -59,24 +60,27 @@ class NxFieldDeclarator(AssignableDeclarator, Metadescriptor):
 class PrototypeValidator(CallableDeclarator, Metadescriptor):
     """The metadescriptor class for prototype validators."""
     __handle__ = "prototype_validator"
+    callable: Callable[[declarative], bool] | None = field(default=None)
 
 
 @declarator
 class MetadataValidator(EnumerationCallableDeclarator, Metadescriptor):
     """The metadescriptor class for metadata validators."""
     __handle__ = "metadata_validator"
+    callable: Callable[[declarative, Any], bool] | None = field(default=None)
 
 
 @declarator
 class OptionValidator(EnumerationCallableDeclarator, Metadescriptor):
     """The metadescriptor class for option validators."""
     __handle__ = "option_validator"
-
+    callable: Callable[[declarative, Any], bool] | None = field(default=None)
 
 @declarator
 class NxFieldValidator(EnumerationCallableDeclarator, Metadescriptor):
     """The metadescriptor class for nxfield validators."""
     __handle__ = "nxfield_validator"
+    callable: Callable[[declarative, Any], bool] | None = field(default=None)
 
 
 # endregion
