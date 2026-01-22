@@ -1,6 +1,7 @@
 """Anaximander AML package initialization."""
 
 from .prototype import prototype, Archetype, Trait, Prototype
+from .modules import finalize_module
 from .archetype import archetype
 from .trait import trait
 from .object import Object
@@ -19,4 +20,5 @@ __all__ = [
     "option",
     "nxfield",
     "meta",
+    "finalize_module",
 ]
