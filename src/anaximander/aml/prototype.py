@@ -224,6 +224,14 @@ class prototype(declarative):
             merged_metacharacters.update(trait_metacharacters)
         merged_metacharacters.update(cls.__metacharacters__)
         cls.__merged_metacharacters__ = merged_metacharacters
+        # Next we check for possible naming conflicts between domain metadata and protodescriptors
+        domain_metadata_names = (md.name for md in merged_metadescriptors.metadata.values()
+                                 if md.domain is True)
+        if any(name in registry for registry in merged_metacharacters.declarator_registries.values()  # noqa
+               for name in domain_metadata_names):
+            msg = (f"Prototype '{cls.__name__}' has naming conflicts between domain metadata "
+                   "and protodescriptors.")
+            raise ValueError(msg)
         # Validate bindings in context of this class
         # First, the __validate_binding__ method is run for each bound declarator
         for registry in merged_metacharacters.binding_registries.values():

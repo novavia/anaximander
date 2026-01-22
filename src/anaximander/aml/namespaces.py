@@ -77,8 +77,9 @@ class DeclaratorNamespace(metaclass=Singleton):
 
     def declare(self, name: str, **kwargs: Any) -> Declarator:
         """Declare a named declarator without binding it as a class attribute."""
+        dns = self._require_namespace()
         declarator = self.declarator_type(**kwargs)
-        declarator._set_once("name", name)
+        dns.register_declaration(declarator, name=name)
         return declarator
 
     def bind(self, name: str, value: Any) -> None:
@@ -102,6 +103,12 @@ class MetadataNamespace(DeclaratorNamespace):
     __declarator_type__ = MetadataDeclarator
     __validator_type__ = MetadataValidator
     __namespace_name__ = "metadata"
+
+    def declare(self, name: str, *, domain: bool = False, **kwargs: Any) -> Declarator:
+        """Declare a named metadata declarator without binding it as a class attribute."""
+        kwargs["domain"] = domain
+        declarator = super().declare(name, **kwargs)
+        return declarator
 
 
 class OptionNamespace(DeclaratorNamespace):

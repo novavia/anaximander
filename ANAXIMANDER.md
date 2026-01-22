@@ -1,6 +1,6 @@
 # ANAXIMANDER
 
-##  Summary
+## Summary
 
 Anaximander is an open-source modeling framework designed to simplify and unify the development of software systems that represent and respond to physical-world operations — these are typically IoT backends, but we broadly refer to them as digital twins. The framework defines a domain-specific modeling language (AML) embedded in Python, along with compilers, system interfaces, and deployment conventions. It framework enables developers to represent physical-world systems semantically and generate consistent, executable artifacts across storage, access, and processing layers.
 
@@ -8,7 +8,7 @@ Designed for modularity and clarity, Anaximander supports data ingestion, schema
 
 Anaximander serves as a bridge between domain expertise and system implementation, supporting workflows that combine human authorship, automation, and long-term system evolution.
 
-##  Intended Audience
+## Intended Audience
 
 Anaximander is an open-source software framework designed for engineers, scientists, and system architects who model, manage, or manipulate structured representations of the physical world. Its primary users fall into the following categories:
 
@@ -20,24 +20,24 @@ Anaximander is an open-source software framework designed for engineers, scienti
 
 Anaximander provides a developer-facing modeling interface and generates code for back-end systems, ensuring consistency between design and implementation.
 
-##  Use Cases
+## Use Cases
 
 Anaximander is designed to support applications that require structured digital representations of physical systems, especially in settings where data modeling, integration, and lifecycle management are central. Representative use cases include:
 
 - **Environmental modeling and monitoring**
-   Defining and managing models of natural systems (e.g. climate, water, soil, snowpack) to support field data integration, state estimation, and environmental forecasting.
+  Defining and managing models of natural systems (e.g. climate, water, soil, snowpack) to support field data integration, state estimation, and environmental forecasting.
 - **Industrial operations and performance tracking**
-   Structuring data from transportation networks, utilities, or manufacturing systems to enable real-time or retrospective analysis of safety, efficiency, and operational KPIs.
+  Structuring data from transportation networks, utilities, or manufacturing systems to enable real-time or retrospective analysis of safety, efficiency, and operational KPIs.
 - **Scenario planning and decision support**
-   Representing possible or future system states for use in what-if modeling, predictive analytics, or decision-making under uncertainty. Anaximander can interface with simulation engines to organize scenario inputs, track simulation runs, and analyze simulation output.
+  Representing possible or future system states for use in what-if modeling, predictive analytics, or decision-making under uncertainty. Anaximander can interface with simulation engines to organize scenario inputs, track simulation runs, and analyze simulation output.
 - **Automation and process coordination**
-   Supporting automated decision logic and system actuation, such as triggering alerts, adjusting configurations, or synchronizing workflows based on the current state of the digital twin.
+  Supporting automated decision logic and system actuation, such as triggering alerts, adjusting configurations, or synchronizing workflows based on the current state of the digital twin.
 - **Asset tracking and lifecycle management**
-   Modeling physical and virtual assets with identifiers, histories, and metadata — supporting inventory control, maintenance forecasting, and long-term system analysis.
+  Modeling physical and virtual assets with identifiers, histories, and metadata — supporting inventory control, maintenance forecasting, and long-term system analysis.
 
 These use cases often overlap in practice. Anaximander provides a shared modeling substrate to unify them, enabling consistent representations across ingestion, processing, visualization, and control layers.
 
-##  Functional Scope
+## Functional Scope
 
 Anaximander provides the core functional capabilities needed to build, operate, and evolve digital twin systems. Its scope includes:
 
@@ -54,7 +54,7 @@ Anaximander provides the core functional capabilities needed to build, operate, 
 
 These functional areas are unified by a shared semantic model, allowing declarative design to propagate through the system and ensuring consistency between definition, implementation, and execution.
 
-##  Architecture
+## Architecture
 
 Anaximander is a domain-specific modeling (DSM) framework for digital twin systems. Its architecture defines a modular stack that guides how models are authored, compiled, executed, and deployed. Each layer plays a distinct role in the system lifecycle:
 
@@ -71,7 +71,7 @@ Anaximander is a domain-specific modeling (DSM) framework for digital twin syste
 
 Each layer is designed for clarity, composability, and evolution. Together, they enable declarative models to propagate through the full development and deployment lifecycle with semantic fidelity and minimal boilerplate.
 
-##  Positioning
+## Positioning
 
 Anaximander is a domain-specific modeling (DSM) framework for the composition of digital twin systems. It provides a unified modeling surface for specifying the structure, behavior, and deployment of digital twin components — including data schemas, access interfaces, telemetry flows, and physical metadata.
 
@@ -85,7 +85,7 @@ Anaximander’s modeling abstractions overlap with those found in open standards
 
 Finally, Anaximander’s declarative structure makes it particularly amenable to interpretation by large language models. Its design anticipates hybrid workflows in which human authors, LLM agents, and compilers collaborate on the construction and evolution of complex digital systems.
 
-##  Long-Term Vision
+## Long-Term Vision
 
 Anaximander aims to establish a new baseline for how complex, physically grounded systems are modeled, assembled, and maintained. It envisions a modeling-first workflow in which structured semantic models act as the foundation for both human understanding and system implementation. As an open-source software framework, it has unbounded potential to expand into a range of physical and industrial domains through specialized, reusable modeling constructs and integration capabilities.
 

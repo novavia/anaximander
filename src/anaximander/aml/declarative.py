@@ -14,7 +14,6 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from contextvars import ContextVar, Token
-from functools import partial
 from itertools import chain, count
 from types import MappingProxyType
 from typing import (
@@ -112,7 +111,7 @@ class Declarator(ABC):
     name: str = field(init=False, default=None)  # Attribute or key name this declarator is assigned to # noqa
     owner: "declarative" = field(init=False, default=None)  # Owning class of this declarator
     ordinal: int = field(init=False, default=None)  # Index of this declarator within the owning class # noqa
-    __ast__: ast.AST | None | _MissingSentinel = field(init=False, default=MISSING)  # AST node that declared this declarator  # noqa
+    __ast__: ast.AST | None = field(init=False, default=None)  # AST node that declared this declarator # noqa
 
     # Init-time fields (immutable)
     doc: str | None = field(default=None)  # Optional documentation string
@@ -212,7 +211,7 @@ class Declarator(ABC):
 
     def __set_ast__(self, node: ast.AST | None) -> None:
         """Attach the AST node that declared this declarator (if any)."""
-        self._set_once("__ast__", node, treat_none_as_unset=False)
+        self._set_once("__ast__", node)
 
     def __validate__(self) -> None:
         """Validate this declarator after it has been bound to a namespace.
@@ -290,7 +289,7 @@ class AnnotatableDeclarator(Declarator):
 
     def __set_type__(
         self,
-        annotation: str,
+        annotation: str | None,
         type: Any | None,
         nullable: bool | None,
         classvar: bool | None = None,
@@ -313,7 +312,7 @@ class AnnotatableDeclarator(Declarator):
 @declarator
 class IdentifiableDeclarator(AnnotatableDeclarator):
     """Base class for declarators of attributes that can uniquely identify an instance."""
-    unique: bool | None = field(init=False, default=None)
+    unique: bool = field(default=None)
 
     def __set_unique__(self, unique: bool):
         self._set_once("unique", unique)
@@ -330,9 +329,9 @@ class AssignableDeclarator(IdentifiableDeclarator):
 
 
 @declarator
-class CallableDeclarator(Declarator):
+class CallableDeclarator[C: Callable | None](Declarator):
     """A mixin class for declarators that wrap callables."""
-    callable: Callable | None = field(default=None)
+    callable: C = field()
 
 
 @declarator
@@ -358,7 +357,7 @@ class EnumerationDeclarator(Declarator):
 
 
 @declarator
-class EnumerationCallableDeclarator(CallableDeclarator, EnumerationDeclarator):
+class EnumerationCallableDeclarator[C: Callable | None](CallableDeclarator[C], EnumerationDeclarator):  # noqa
     """A mixin class for callable declarators that reference a list of declarators by name."""
     pass
 
@@ -406,6 +405,8 @@ class DeclarativeNamespace(dict[str, Any]):
         set by the __set_name__ hook after the class body is executed.
         """
         declarations: dict[int, Declarator] = self["__declarations__"]
+        if declarator in declarations.values():
+            return
         if not isinstance(declarator, Declarator):
             raise TypeError(f"Expected a Declarator instance, got {declarator}.")
         if name is not None:
@@ -423,8 +424,6 @@ class DeclarativeNamespace(dict[str, Any]):
                         msg += f" and handle '{declarator_handle}'."
                     raise KeyError(msg)
             declarator._set_once("name", name)
-        if declarator in declarations.values():
-            return
         ordinal = next(self.declaration_index)
         declarations[ordinal] = declarator
         declarator._set_once("ordinal", ordinal)
@@ -511,9 +510,10 @@ class declarative(type):
             namespace.close()
         for declarator in cls.__declarations__.values():
             if declarator.owner is None:
-                if declarator.name is None:
+                name = getattr(declarator, "name", None)
+                if name is None:
                     raise RuntimeError("Unnamed declarator registered outside class assignment.")
-                declarator.__set_name__(cls, declarator.name)
+                declarator.__set_name__(cls, name)
         # Runs declarator validation hooks
         for declarator in cls.__declarations__.values():
             declarator.__validate__()

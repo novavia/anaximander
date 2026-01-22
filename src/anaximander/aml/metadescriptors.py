@@ -41,6 +41,7 @@ class Metadescriptor(Declarator):
 class MetadataDeclarator(AssignableDeclarator, Metadescriptor):
     """The metadescriptor class for metadata fields."""
     __handle__ = "metadata"
+    domain: bool = field(default=None)  # Whether this metadata is part of the domain schema  # noqa
 
 
 @declarator
@@ -57,30 +58,30 @@ class NxFieldDeclarator(AssignableDeclarator, Metadescriptor):
 
 
 @declarator
-class PrototypeValidator(CallableDeclarator, Metadescriptor):
+class PrototypeValidator(CallableDeclarator[Callable[[declarative], bool]], Metadescriptor):
     """The metadescriptor class for prototype validators."""
     __handle__ = "prototype_validator"
-    callable: Callable[[declarative], bool] | None = field(default=None)
 
 
 @declarator
-class MetadataValidator(EnumerationCallableDeclarator, Metadescriptor):
+class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
     """The metadescriptor class for metadata validators."""
     __handle__ = "metadata_validator"
-    callable: Callable[[declarative, Any], bool] | None = field(default=None)
+    callable: Callable[[declarative, Any], bool] = field()
 
 
 @declarator
-class OptionValidator(EnumerationCallableDeclarator, Metadescriptor):
+class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
     """The metadescriptor class for option validators."""
     __handle__ = "option_validator"
-    callable: Callable[[declarative, Any], bool] | None = field(default=None)
+    callable: Callable[[declarative, Any], bool] = field()
+
 
 @declarator
-class NxFieldValidator(EnumerationCallableDeclarator, Metadescriptor):
+class NxFieldValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
     """The metadescriptor class for nxfield validators."""
     __handle__ = "nxfield_validator"
-    callable: Callable[[declarative, Any], bool] | None = field(default=None)
+    callable: Callable[[declarative, Any], bool] = field()
 
 
 # endregion

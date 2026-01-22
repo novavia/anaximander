@@ -6,7 +6,6 @@
 # region Imports
 
 
-import datetime
 import re
 from numbers import Real
 from typing import Any, Callable, Literal, cast
@@ -33,33 +32,6 @@ from .declarative import (
     declarative,
     declarator,
 )
-
-# endregion
-
-# =============================================================================
-# Constants and Utilities
-# =============================================================================
-# region Constants and Utilities
-
-
-def _is_time_like(type_: Any) -> bool:
-    """Return True when a type behaves like a timestamp or date."""
-    if not isinstance(type_, type):
-        return False
-    if issubclass(type_, (datetime.datetime, datetime.date, datetime.time)):
-        return True
-    return bool(getattr(type_, "__time_like__", False) or getattr(type_, "__temporal__", False))
-
-
-def _is_geometry_like(type_: Any) -> bool:
-    """Return True when a type represents a geometry/location value."""
-    if not isinstance(type_, type):
-        return False
-    return bool(
-        getattr(type_, "__geometry__", False)
-        or getattr(type_, "__geo__", False)
-        or getattr(type_, "__geom__", False)
-    )
 
 # endregion
 
@@ -102,9 +74,10 @@ class RelationProtodescriptor(FieldProtodescriptor):
 
 
 @declarator
-class ConstructionDeclarator(CallableDeclarator, Protodescriptor):
+class ConstructionDeclarator(CallableDeclarator[Callable[[declarative, Any], bool]], Protodescriptor):  # noqa
     """Base class for construction method descriptors."""
     __handle__ = "construction"
+    callable: Callable[[declarative, Any], bool] = field()
 
 
 @declarator
@@ -138,8 +111,8 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
     """The protodescriptor class for data fields."""
     __handle__ = "data"
     index: bool | None = field(default=None)
-    required: bool | None = field(default=None)
-    typekey: bool | None = field(default=None)
+    required: bool | None = field(default=False)
+    typekey: bool | None = field(default=False)
     key: bool | None = field(default=None)
     sequence: bool | None = field(default=None)
     timestamp: bool | None = field(default=None)
@@ -156,46 +129,6 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
     max_length: int | None = field(default=None)
     pattern: str | None = field(default=None)
 
-    def __attrs_post_init__(self) -> None:
-        super().__attrs_post_init__()
-        temporal_flags = {
-            "timestamp": self.timestamp is True,
-            "start_time": self.start_time is True,
-            "end_time": self.end_time is True,
-            "period": self.period is True,
-        }
-        if sum(temporal_flags.values()) > 1:
-            msg = "Temporal flags are mutually exclusive on data descriptors."
-            raise ValueError(msg)
-        if self.sequence is True and any(temporal_flags.values()):
-            msg = "Sequence cannot be combined with temporal flags."
-            raise ValueError(msg)
-        if (self.start_time is True) != (self.end_time is True):
-            msg = "start_time and end_time must be set together."
-            raise ValueError(msg)
-
-    def __set_type__(
-        self,
-        annotation: str,
-        type: Any | None,
-        nullable: bool | None,
-        classvar: bool | None = None,
-    ):
-        super().__set_type__(annotation, type, nullable, classvar)
-        if nullable is True and (self.key is True or self.sequence is True):
-            msg = "Key and sequence fields must be non-nullable."
-            raise TypeError(msg)
-        if type is None:
-            return
-        if any(
-            flag is True for flag in (self.timestamp, self.start_time, self.end_time, self.period)
-        ) and not _is_time_like(type):
-            msg = "Temporal flags require a time-like field type."
-            raise TypeError(msg)
-        if (self.location is True or self.geom is True) and not _is_geometry_like(type):
-            msg = "Location/geom flags require a geometry-like field type."
-            raise TypeError(msg)
-
 
 @declarator
 class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescriptor):
@@ -203,23 +136,6 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
     on_delete: Literal["restrict", "set_null", "cascade"] = field(default="restrict")
     key: bool | None = field(default=None)
     __handle__ = "link"
-    def __attrs_post_init__(self) -> None:
-        super().__attrs_post_init__()
-        if self.on_delete not in {"restrict", "set_null", "cascade"}:
-            msg = f"Invalid on_delete value {self.on_delete!r}."
-            raise ValueError(msg)
-
-    def __set_type__(
-        self,
-        annotation: str,
-        type: Any | None,
-        nullable: bool | None,
-        classvar: bool | None = None,
-    ):
-        super().__set_type__(annotation, type, nullable, classvar)
-        if nullable is True and self.key is True:
-            msg = "Key links must be non-nullable."
-            raise TypeError(msg)
 
 
 @declarator
@@ -302,7 +218,6 @@ class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator):
 class ParserDeclarator(ConstructionDeclarator, FieldEnumeration):
     """The declarator class for field parsers."""
     __handle__ = "parser"
-    callable: Callable[[declarative, Any], Any] | None = field(default=None)
     element_wise: bool | None = field(default=None)
 
 
@@ -310,7 +225,6 @@ class ParserDeclarator(ConstructionDeclarator, FieldEnumeration):
 class ValidatorDeclarator(ConstructionDeclarator, FieldEnumeration):
     """The declarator class for field validators."""
     __handle__ = "validator"
-    callable: Callable[[declarative, Any], bool] | None = field(default=None)
     element_wise: bool | None = field(default=None)
 
 
