@@ -1,3 +1,10 @@
+"""Utilities for creating and managing Anaximander projects."""
+
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
+
 import ast
 import shutil
 import sys
@@ -9,18 +16,39 @@ from typing import cast
 import attrs
 from cookiecutter.main import cookiecutter
 
+from .aml import prototype
 from .utils import Config, private_field
 from .utils.funcs import workdir
-from .aml import prototype
+
+# endregion
+
+# =============================================================================
+# Constants
+# =============================================================================
+# region Constants
 
 NXPATH = Path(__file__).parent
 PROJECT_TEMPLATE = NXPATH / "config/projects/project_template"
+
+# endregion
+
+# =============================================================================
+# Module types
+# =============================================================================
+# region Module types
 
 
 class NxModuleType(ModuleType):
     """A type hint for Anaximander AML declarative modules."""
     __ast__: ast.Module  # Holds the module's parsed abstract syntax tree
-    __types__: list[prototype]  # Holds the module's declared types
+    __prototypes__: list[prototype]  # Holds the module's declared types
+
+# endregion
+
+# =============================================================================
+# Project configuration
+# =============================================================================
+# region Project configuration
 
 
 class ProjectConfig(Config):
@@ -35,6 +63,13 @@ class ProjectConfig(Config):
             "project_name": self.name,
             "project_slug": self.slug,
         }
+
+# endregion
+
+# =============================================================================
+# Project model
+# =============================================================================
+# region Project model
 
 
 @attrs.define
@@ -220,3 +255,5 @@ class Project:
     def compile(self, *compilations: str, **kwargs):
         """Compiles the project using the specified compilers."""
         return None
+
+# endregion
