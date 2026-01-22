@@ -1,6 +1,18 @@
-"""This module provides metaprogramming utilities."""
+"""Metaprogramming utilities for Anaximander."""
+
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
 
 from typing import Any, Callable
+
+# endregion
+
+# =============================================================================
+# Metaclasses and descriptors
+# =============================================================================
+# region Metaclasses and descriptors
 
 
 class AutoDecoratedType(type):
@@ -46,8 +58,8 @@ class AutoDecoratedType(type):
 class classproperty[T]:
     """A descriptor that behaves like a property for both classes and instances.
 
-    Unlike standard properties or classmethods, this descriptor ensures the getter 
-    receives the class (owner) as its first argument regardless of whether it is 
+    Unlike standard properties or classmethods, this descriptor ensures the getter
+    receives the class (owner) as its first argument regardless of whether it is
     accessed via the class itself or one of its instances.
     """
 
@@ -70,3 +82,5 @@ class Singleton(type):
         if cls not in cls._instances:
             cls._instances[cls] = super().__call__(*args, **kwargs)
         return cls._instances[cls]
+
+# endregion

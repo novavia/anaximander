@@ -1,4 +1,11 @@
-"""Finalize AML modules after import."""
+"""Finalize AML modules after import.
+
+This module centralizes AML's module-finalization behavior. It parses the module
+source, enforces import-safety through an AST allow list, binds AST nodes to
+declarators and prototypes, resolves forward references, and validates core type
+roles. The logic is designed to be reusable by projects and compilers while
+remaining self-contained inside AML.
+"""
 
 # =============================================================================
 # Imports
@@ -8,10 +15,26 @@
 import ast
 from pathlib import Path
 from types import ModuleType
-from typing import Any, ClassVar, get_args, get_origin, get_type_hints
+from typing import get_type_hints
 
+from ..utils.funcs import unwrap_classvar_type, unwrap_optional_type
 from .declarative import AnnotatableDeclarator
 from .prototype import TypeRole, is_archetype, is_prototype, is_trait, prototype
+
+# endregion
+
+# =============================================================================
+# Module types
+# =============================================================================
+# region Module types
+
+
+class NxModuleType(ModuleType):
+    """A type hint for Anaximander AML declarative modules."""
+
+    __ast__: ast.Module  # Holds the module's parsed abstract syntax tree
+    __prototypes__: list[prototype]  # Holds the module's declared types
+    __finalized__: bool  # Whether the module has been finalized
 
 # endregion
 
@@ -51,12 +74,14 @@ DEFAULT_ALLOWED_CLASS_NODES: tuple[type[ast.AST], ...] = (
 
 
 def _is_docstring_expr(node: ast.AST) -> bool:
+    """Return True if the node is a string literal expression (docstring)."""
     return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(
         node.value.value, str
     )
 
 
 def _is_type_checking_guard(node: ast.AST) -> bool:
+    """Return True for `if TYPE_CHECKING:` guards at module scope."""
     if not isinstance(node, ast.If):
         return False
     test = node.test
@@ -73,30 +98,41 @@ def _iter_allowed_body(
     allowed: tuple[type[ast.AST], ...],
     class_allowed: tuple[type[ast.AST], ...],
 ) -> None:
+    """Walk a statement body and enforce AML's allow list.
+
+    This is a shallow enforcement on module and class bodies only. It does not
+    inspect the content of function bodies or declarator callables.
+    """
     for node in body:
+        # Enforce statement type restrictions first.
         if not isinstance(node, allowed):
             raise SyntaxError(f"AML disallows statement: {node.__class__.__name__}.")
+        # Only module docstrings are allowed as bare expressions.
         if isinstance(node, ast.Expr) and not _is_docstring_expr(node):
             raise SyntaxError("AML only allows docstring expressions at module scope.")
+        # Allow TYPE_CHECKING guards and validate their nested bodies.
         if isinstance(node, ast.If):
             if not _is_type_checking_guard(node):
                 raise SyntaxError("AML only allows TYPE_CHECKING guards at module scope.")
             _iter_allowed_body(node.body, allowed=allowed, class_allowed=class_allowed)
             _iter_allowed_body(node.orelse, allowed=allowed, class_allowed=class_allowed)
+        # Recurse into class bodies to validate class-level statements.
         if isinstance(node, ast.ClassDef):
             _iter_allowed_body(node.body, allowed=class_allowed, class_allowed=class_allowed)
 
 
-def _validate_ast_whitelist(
+def _validate_ast_allow_list(
     module_ast: ast.Module,
     *,
     module_allowed: tuple[type[ast.AST], ...],
     class_allowed: tuple[type[ast.AST], ...],
 ) -> None:
+    """Validate module and class bodies against AML's allow list."""
     _iter_allowed_body(module_ast.body, allowed=module_allowed, class_allowed=class_allowed)
 
 
-def _module_path(module: ModuleType) -> Path:
+def _module_path(module: NxModuleType) -> Path:
+    """Return the on-disk path for a module, raising on missing origins."""
     spec = module.__spec__
     origin = spec.origin if spec is not None else None
     origin = origin or getattr(module, "__file__", None)
@@ -105,17 +141,23 @@ def _module_path(module: ModuleType) -> Path:
     return Path(origin)
 
 
-def _ensure_module_ast(module: ModuleType) -> ast.Module:
+def _ensure_module_ast(module: NxModuleType) -> ast.Module:
+    """Return the module AST, parsing and caching it if needed."""
     module_ast = getattr(module, "__ast__", None)
     if isinstance(module_ast, ast.Module):
         return module_ast
     source = _module_path(module).read_text()
+    # Parse and cache the module AST for later binding.
     module_ast = ast.parse(source)
     setattr(module, "__ast__", module_ast)
     return module_ast
 
 
 def _name_assignments(node: ast.ClassDef) -> dict[str, ast.AST]:
+    """Collect simple name assignments from a class body.
+
+    This maps declarator names to their AST assignment or annotation nodes.
+    """
     assignments: dict[str, ast.AST] = {}
     for subnode in node.body:
         match subnode:
@@ -133,7 +175,12 @@ def _name_assignments(node: ast.ClassDef) -> dict[str, ast.AST]:
     return assignments
 
 
-def _collect_module_types(module: ModuleType, module_ast: ast.Module) -> list[prototype]:
+def _collect_module_types(module: NxModuleType, module_ast: ast.Module) -> list[prototype]:
+    """Collect prototype classes declared in the module.
+
+    Only classes with a `prototype` metaclass and defined in this module are
+    collected. Ordering follows the source order of class definitions.
+    """
     class_defs = [node for node in module_ast.body if isinstance(node, ast.ClassDef)]
     class_names = {node.name for node in class_defs}
     prototypes = [
@@ -145,11 +192,13 @@ def _collect_module_types(module: ModuleType, module_ast: ast.Module) -> list[pr
     ]
     order = {node.name: idx for idx, node in enumerate(class_defs)}
     prototypes.sort(key=lambda cls: order.get(cls.__name__, len(order)))
-    setattr(module, "__types__", prototypes)
+    # Cache on the module for downstream compiler usage.
+    setattr(module, "__prototypes__", prototypes)
     return prototypes
 
 
 def _assign_declarator_ast(cls: prototype, class_def: ast.ClassDef) -> None:
+    """Bind AST assignment nodes to declarators declared on a prototype."""
     assignments = _name_assignments(class_def)
     for declarator in cls.__declarations__.values():
         if declarator.__ast__ is not None:
@@ -160,26 +209,13 @@ def _assign_declarator_ast(cls: prototype, class_def: ast.ClassDef) -> None:
             declarator.__set_ast__(assignments[name])
 
 
-def _unwrap_optional_type(type_hint: Any) -> tuple[Any, bool]:
-    if type_hint is None:
-        return None, False
-    args = get_args(type_hint)
-    if args and any(arg is type(None) for arg in args):
-        non_none_args = [arg for arg in args if arg is not type(None)]
-        base_type = non_none_args[0] if non_none_args else None
-        return base_type, True
-    return type_hint, False
+def _backfill_annotation_types(cls: prototype, module: NxModuleType) -> None:
+    """Resolve type hints and backfill declarator types.
 
-
-def _unwrap_classvar_type(type_hint: Any) -> tuple[Any, bool]:
-    if get_origin(type_hint) is ClassVar:
-        args = get_args(type_hint)
-        base_type = args[0] if args else None
-        return base_type, True
-    return type_hint, False
-
-
-def _backfill_annotation_types(cls: prototype, module: ModuleType) -> None:
+    Forward references are evaluated with the module namespace, and type
+    annotations are normalized into base types plus nullability and classvar
+    flags.
+    """
     try:
         hints = get_type_hints(
             cls, globalns=module.__dict__, localns=module.__dict__, include_extras=True
@@ -194,8 +230,8 @@ def _backfill_annotation_types(cls: prototype, module: ModuleType) -> None:
         if (name := declarator.name) is None or name not in hints:
             continue
         hint_value = hints[name]
-        unwrap_classvar = getattr(cls, "__unwrap_classvar_type__", _unwrap_classvar_type)
-        unwrap_optional = getattr(cls, "__unwrap_optional_type__", _unwrap_optional_type)
+        unwrap_classvar = getattr(cls, "__unwrap_classvar_type__", unwrap_classvar_type)
+        unwrap_optional = getattr(cls, "__unwrap_optional_type__", unwrap_optional_type)
         hint_value, classvar = unwrap_classvar(hint_value)
         hint_value, nullable = unwrap_optional(hint_value)
         hint = hint_value if isinstance(hint_value, type) else None
@@ -203,6 +239,7 @@ def _backfill_annotation_types(cls: prototype, module: ModuleType) -> None:
 
 
 def _validate_type_role(cls: prototype) -> None:
+    """Validate archetype/trait/prototype role invariants."""
     if is_archetype(cls):
         if cls.__archetype__ is not cls:
             raise TypeError(f"Archetype {cls.__name__} must reference itself as __archetype__.")
@@ -216,6 +253,10 @@ def _validate_type_role(cls: prototype) -> None:
     if is_prototype(cls):
         if cls.__role__ is not TypeRole.PROTOTYPE:
             raise TypeError(f"Prototype {cls.__name__} must have role PROTOTYPE.")
+        # Pure prototypes cannot declare metadescriptors locally.
+        metadescriptors = cls.metacharacters("local")
+        if any(registry for registry in metadescriptors.values()):
+            raise TypeError("Prototypes cannot declare metadescriptors.")
         return
     raise TypeError(f"AML type {cls.__name__} is not a valid archetype, trait, or prototype.")
 
@@ -228,7 +269,7 @@ def _validate_type_role(cls: prototype) -> None:
 
 
 def finalize_module(
-    module: ModuleType,
+    module: NxModuleType,
     *,
     strict: bool = True,
     module_allowed: tuple[type[ast.AST], ...] = DEFAULT_ALLOWED_MODULE_NODES,
@@ -238,7 +279,7 @@ def finalize_module(
 
     Args:
         module: Imported AML module to finalize.
-        strict: Whether to enforce AST statement whitelisting.
+        strict: Whether to enforce AST statement allow-listing.
         module_allowed: Allowed AST node types at module scope.
         class_allowed: Allowed AST node types in class bodies.
 
@@ -247,19 +288,24 @@ def finalize_module(
         SyntaxError: If the module uses forbidden statements in strict mode.
         RuntimeError: If the module source cannot be located for parsing.
     """
+    # Finalization is idempotent per module.
     if getattr(module, "__finalized__", False):
         return
     module_ast = _ensure_module_ast(module)
     if strict:
-        _validate_ast_whitelist(module_ast, module_allowed=module_allowed, class_allowed=class_allowed)
+        # Enforce import safety and declarative-only module/class bodies.
+        _validate_ast_allow_list(module_ast, module_allowed=module_allowed, class_allowed=class_allowed)  # noqa
+    # Collect prototypes and bind their AST nodes.
     prototypes = _collect_module_types(module, module_ast)
     class_defs = {node.name: node for node in module_ast.body if isinstance(node, ast.ClassDef)}
     for cls in prototypes:
         if (class_def := class_defs.get(cls.__name__)) is not None:
             cls.__ast__ = class_def
             _assign_declarator_ast(cls, class_def)
+        # Resolve forward references and validate type roles.
         _backfill_annotation_types(cls, module)
         _validate_type_role(cls)
+    # Mark module as finalized to avoid rework.
     setattr(module, "__finalized__", True)
 
 # endregion

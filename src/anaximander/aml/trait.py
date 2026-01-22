@@ -24,6 +24,6 @@ def trait(cls: prototype) -> Trait:
     # Traits cannot declare protodescriptors
     metacharacters = cls.metacharacters("merged")
     if any(metacharacters[ns] for ns in ("field", "schema", "construction", "data")):
-        raise TypeError("Traits cannot declare protodescriptors.")
+        raise TypeError("Traits cannot declare or inherit protodescriptors.")
     cls.__role__ = TypeRole.TRAIT
     return cast(Trait, cls)

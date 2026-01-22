@@ -7,24 +7,17 @@
 
 
 from enum import Enum
-from types import NoneType
-from typing import (
-    Any,
-    ClassVar,
-    Literal,
-    Protocol,
-    TypeGuard,
-    cast,
-    get_args,
-    get_origin,
-)
+from typing import Any, ClassVar, Literal, Protocol, TypeGuard, cast
 
 from annotationlib import Format, get_annotations
 
-from anaximander.utils.funcs import type_name_to_collection_name
+from anaximander.utils.funcs import (
+    type_name_to_collection_name,
+    unwrap_classvar_type,
+    unwrap_optional_type,
+)
 
 from .declarative import (
-    MISSING,
     AnnotatableDeclarator,
     DeclarativeNamespace,
     EnumerationCallableDeclarator,
@@ -432,25 +425,12 @@ class prototype(declarative):
     @staticmethod
     def __unwrap_optional_type__(type_hint: Any) -> tuple[Any, bool]:
         """Detect optional annotations and return base type with a nullable flag."""
-        if type_hint is None:
-            return None, False
-        if type_hint is NoneType:
-            return None, True
-        args = get_args(type_hint)
-        if args and any(arg is NoneType for arg in args):
-            non_none_args = [arg for arg in args if arg is not NoneType]
-            base_type = non_none_args[0] if non_none_args else None
-            return base_type, True
-        return type_hint, False
+        return unwrap_optional_type(type_hint)
 
     @staticmethod
     def __unwrap_classvar_type__(type_hint: Any) -> tuple[Any, bool]:
         """Detect ClassVar annotations and return base type with a classvar flag."""
-        if get_origin(type_hint) is ClassVar:
-            args = get_args(type_hint)
-            base_type = args[0] if args else None
-            return base_type, True
-        return type_hint, False
+        return unwrap_classvar_type(type_hint)
 
     def __set_type_annotations__(cls):
         """Sets type annotations on typed protodescriptors."""

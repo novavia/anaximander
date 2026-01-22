@@ -4,6 +4,11 @@ Provides KwargMap for contextual kwarg resolution and ordering, and Config
 for attrs-based structured configurations compatible with OmegaConf.
 """
 
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
+
 import functools
 import inspect
 from collections import UserDict
@@ -12,9 +17,16 @@ from pathlib import Path
 from typing import Any, Callable, dataclass_transform
 
 import attrs
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from .meta import AutoDecoratedType
+
+# endregion
+
+# =============================================================================
+# Kwarg map utilities
+# =============================================================================
+# region Kwarg map utilities
 
 
 class KwargMap(UserDict[str, Any]):
@@ -193,6 +205,13 @@ class KwargMap(UserDict[str, Any]):
     def __str__(self):
         return ", ".join(f"{k}={v}" for k, v in self.items())
 
+# endregion
+
+# =============================================================================
+# Configuration utilities
+# =============================================================================
+# region Configuration utilities
+
 
 _config_decorator = functools.partial(attrs.define, auto_attribs=True)
 
@@ -247,3 +266,5 @@ class Config(metaclass=ConfigType):
 
 
 private_field = functools.partial(attrs.field, init=False, repr=False, eq=False, order=False)
+
+# endregion
