@@ -192,8 +192,34 @@ class Declarator(ABC):
             raise RuntimeError(f"{self.__class__.__name__}.{attr} is already set.")
         object.__setattr__(self, attr, value)
 
+    def _validate_value_type(
+        self,
+        attr: str,
+        value: Any,
+        expected: type | tuple[type, ...],
+        *,
+        allow_none: bool = False,
+        allow_missing: bool = False,
+    ) -> None:
+        """Validate a value against its expected runtime type."""
+        if allow_missing and value is MISSING:
+            return
+        if allow_none and value is None:
+            return
+        if not isinstance(value, expected):
+            if isinstance(expected, tuple):
+                expected_name = " | ".join(t.__name__ for t in expected)
+            else:
+                expected_name = expected.__name__
+            raise TypeError(
+                f"{self.__class__.__name__}.{attr} must be {expected_name}, "
+                + f"got {type(value).__name__}."
+            )
+
     def __set_name__(self, owner: type, name: str):
         """Attach the name and owner class to this declarator."""
+        self._validate_value_type("name", name, str)
+        self._validate_value_type("owner", owner, type)
         forbidden_names = {
             pattern for pattern in self.__reserved_patterns__ if isinstance(pattern, str)
         }
@@ -211,6 +237,7 @@ class Declarator(ABC):
 
     def __set_ast__(self, node: ast.AST | None) -> None:
         """Attach the AST node that declared this declarator (if any)."""
+        self._validate_value_type("__ast__", node, ast.AST, allow_none=True)
         self._set_once("__ast__", node)
 
     def __validate__(self) -> None:
@@ -222,7 +249,13 @@ class Declarator(ABC):
         absent any context. Subclasses can override this method to implement custom
         validation logic.
         """
-        pass
+        self._validate_value_type("doc", self.doc, str, allow_none=True)
+        self._validate_value_type("config", self.config, Mapping)
+        self._validate_value_type("name", self.name, str)
+        self._validate_value_type("owner", self.owner, type)
+        self._validate_value_type("ordinal", self.ordinal, int)
+        if self.__ast__ is not None:
+            self._validate_value_type("__ast__", self.__ast__, ast.AST)
 
     @abstractmethod
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
@@ -282,20 +315,27 @@ class AnnotatableDeclarator(Declarator):
                 )
 
     @abstractmethod
-    def __validate_type__(self, type: Any) -> bool:
+    def __validate_type__(self, type_: type) -> bool:
         if not self.__types__:
             return True
-        return issubclass(type, self.__types__)
+        try:
+            return issubclass(type_, self.__types__)
+        except TypeError:
+            return False
 
     def __set_type__(
         self,
         annotation: str | None,
-        type: Any | None,
+        type_: Any | None,
         nullable: bool | None,
         classvar: bool | None = None,
     ):
         """Sets the type by supplying annotation, evaluated type, nullability and classvar."""
-        if type is not None and not self.__validate_type__(type):
+        self._validate_value_type("annotation", annotation, str, allow_none=True)
+        self._validate_value_type("type", type_, type, allow_none=True)
+        self._validate_value_type("nullable", nullable, bool, allow_none=True)
+        self._validate_value_type("classvar", classvar, bool, allow_none=True)
+        if type_ is not None and not self.__validate_type__(type_):
             declarator = self.name
             owner_name = self.owner.__name__
             msg = (
@@ -304,7 +344,7 @@ class AnnotatableDeclarator(Declarator):
             )
             raise TypeError(msg)
         self._set_once("annotation", annotation)
-        self._set_once("type", type)
+        self._set_once("type", type_)
         self._set_once("nullable", nullable)
         self._set_once("classvar", classvar)
 
@@ -315,6 +355,7 @@ class IdentifiableDeclarator(AnnotatableDeclarator):
     unique: bool = field(default=None)
 
     def __set_unique__(self, unique: bool):
+        self._validate_value_type("unique", unique, bool)
         self._set_once("unique", unique)
 
 

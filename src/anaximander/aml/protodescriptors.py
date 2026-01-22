@@ -7,8 +7,9 @@
 
 
 import re
+from collections.abc import Callable
 from numbers import Real
-from typing import Any, Callable, Literal, cast
+from typing import Any, Literal, cast
 
 from attrs import field
 
@@ -59,6 +60,11 @@ class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
     __handle__ = "field"
     load: str | None = field(default=None)
     repr: bool | Callable | str | None = field(default=None)
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("load", self.load, str, allow_none=True)
+        self._validate_value_type("repr", self.repr, (bool, Callable, str), allow_none=True)  # type: ignore[arg-type]
 
 
 @declarator
@@ -129,6 +135,17 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
     max_length: int | None = field(default=None)
     pattern: str | None = field(default=None)
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        for attr in ("index", "required", "typekey", "key", "sequence", "timestamp",
+                     "start_time", "end_time", "period", "location", "geom"):
+            self._validate_value_type(attr, getattr(self, attr), bool, allow_none=True)
+        for attr in ("gt", "ge", "lt", "le"):
+            self._validate_value_type(attr, getattr(self, attr), Real, allow_none=True)
+        self._validate_value_type("min_length", self.min_length, int, allow_none=True)
+        self._validate_value_type("max_length", self.max_length, int, allow_none=True)
+        self._validate_value_type("pattern", self.pattern, str, allow_none=True)
+
 
 @declarator
 class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescriptor):
@@ -137,6 +154,11 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
     key: bool | None = field(default=None)
     __handle__ = "link"
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("on_delete", self.on_delete, str)
+        self._validate_value_type("key", self.key, bool, allow_none=True)
+
 
 @declarator
 class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
@@ -144,6 +166,11 @@ class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
     __handle__ = "backlink"
     via: type | None = field(default=None)
     limit: int | None = field(default=None)
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("via", self.via, type, allow_none=True)
+        self._validate_value_type("limit", self.limit, int, allow_none=True)
 
 
 @declarator
@@ -162,6 +189,20 @@ class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator):
     sort: str | list[str] | None = field(default=None)
     limit: int | None = field(default=None)
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("kind", self.kind, str, allow_none=True)
+        self._validate_value_type("sql", self.sql, Callable, allow_none=True)  # type: ignore[arg-type]
+        self._validate_value_type("ibis", self.ibis, Callable, allow_none=True)  # type: ignore[arg-type]
+        self._validate_value_type("fx", self.fx, (Callable, str), allow_none=True)  # type: ignore[arg-type]
+        if self.sort is not None:
+            if isinstance(self.sort, list):
+                if any(not isinstance(item, str) for item in self.sort):
+                    raise TypeError("SelectionProtodescriptor.sort must contain only strings.")
+            elif not isinstance(self.sort, str):
+                raise TypeError("SelectionProtodescriptor.sort must be a string or list of strings.")  # noqa
+        self._validate_value_type("limit", self.limit, int, allow_none=True)
+
 
 @declarator
 class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
@@ -170,6 +211,11 @@ class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     path: str | Any | None = field(default=None)
     format: str | None = field(default=None)
     compression: str | None = field(default=None)
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("format", self.format, str, allow_none=True)
+        self._validate_value_type("compression", self.compression, str, allow_none=True)
 
 
 @declarator
@@ -188,12 +234,21 @@ class StateProtodescriptor(RelationProtodescriptor, CallableDeclarator):
     max_lag: str | Any | None = field(default=None)
     min_observations: int | None = field(default=None)
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("reducer", self.reducer, (Callable, str), allow_none=True)  # type: ignore[arg-type]
+        self._validate_value_type("min_observations", self.min_observations, int, allow_none=True)
+
 
 @declarator
 class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator):
     """The protodescriptor class for field expressions."""
     __handle__ = "fx"
     ref: str | None = field(default=None)
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("ref", self.ref, str, allow_none=True)
 
 
 @declarator
@@ -220,12 +275,20 @@ class ParserDeclarator(ConstructionDeclarator, FieldEnumeration):
     __handle__ = "parser"
     element_wise: bool | None = field(default=None)
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("element_wise", self.element_wise, bool, allow_none=True)
+
 
 @declarator
 class ValidatorDeclarator(ConstructionDeclarator, FieldEnumeration):
     """The declarator class for field validators."""
     __handle__ = "validator"
     element_wise: bool | None = field(default=None)
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("element_wise", self.element_wise, bool, allow_none=True)
 
 
 @declarator
@@ -252,6 +315,10 @@ class IndexDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
     __handle__ = "index"
     kind: str | None = field(default=None)
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("kind", self.kind, str, allow_none=True)
+
 
 @declarator
 class PartitionDeclarator(SchemaDeclarator):
@@ -261,6 +328,10 @@ class PartitionDeclarator(SchemaDeclarator):
     scheme: str | None = field(default=None)
     buckets: Any | None = field(default=None)
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("scheme", self.scheme, str, allow_none=True)
+
 
 @declarator
 class PathDeclarator(SchemaDeclarator):
@@ -268,12 +339,26 @@ class PathDeclarator(SchemaDeclarator):
     __handle__ = "path"
     template: str | None = field(default=None)
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("template", self.template, str, allow_none=True)
+
 
 @declarator
 class SortDeclarator(FieldEnumeration, SchemaDeclarator):
     """The declarator class for schema sort orders."""
     __handle__ = "sort"
     sort_directions: list[Literal["asc", "desc"]] | None = field(default=None)
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        if self.sort_directions is None:
+            return
+        if not isinstance(self.sort_directions, list):
+            raise TypeError("SortDeclarator.sort_directions must be a list of 'asc'/'desc'.")
+        invalid = [v for v in self.sort_directions if v not in {"asc", "desc"}]
+        if invalid:
+            raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc'.")
 
 # endregion
 

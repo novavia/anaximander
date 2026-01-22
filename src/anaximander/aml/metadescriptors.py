@@ -7,7 +7,8 @@
 
 
 import re
-from typing import Any, Callable, cast
+from collections.abc import Callable
+from typing import Any, cast
 
 from attrs import field
 
@@ -43,6 +44,10 @@ class MetadataDeclarator(AssignableDeclarator, Metadescriptor):
     __handle__ = "metadata"
     domain: bool = field(default=None)  # Whether this metadata is part of the domain schema  # noqa
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("domain", self.domain, bool, allow_none=True)
+
 
 @declarator
 class OptionDeclarator(AssignableDeclarator, Metadescriptor):
@@ -56,11 +61,19 @@ class NxFieldDeclarator(AssignableDeclarator, Metadescriptor):
     __handle__ = "nxfield"
     fieldtype: type = field()
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("fieldtype", self.fieldtype, type)
+
 
 @declarator
 class PrototypeValidator(CallableDeclarator[Callable[[declarative], bool]], Metadescriptor):
     """The metadescriptor class for prototype validators."""
     __handle__ = "prototype_validator"
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
 
 @declarator
@@ -69,6 +82,10 @@ class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any
     __handle__ = "metadata_validator"
     callable: Callable[[declarative, Any], bool] = field()
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
+
 
 @declarator
 class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
@@ -76,12 +93,20 @@ class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any],
     __handle__ = "option_validator"
     callable: Callable[[declarative, Any], bool] = field()
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
+
 
 @declarator
 class NxFieldValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
     """The metadescriptor class for nxfield validators."""
     __handle__ = "nxfield_validator"
     callable: Callable[[declarative, Any], bool] = field()
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
 
 # endregion
