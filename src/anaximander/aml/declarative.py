@@ -142,6 +142,11 @@ class Declarator(ABC):
         """A message-friendly shorthand for the declarator's type."""
         return cls.__handle__ or cls.__name__
 
+    @property
+    def bindable(self) -> bool:
+        """Whether this declarator instance supports binding to values in the domain namespace."""
+        return False
+
     def __attrs_post_init__(self) -> None:
         """Post-initialization processing for the declarator."""
         dns = DECLARATIVE_NAMESPACE.get()

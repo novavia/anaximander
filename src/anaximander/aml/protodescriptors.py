@@ -61,6 +61,11 @@ class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
     load: str | None = field(default=None)
     repr: bool | Callable | str | None = field(default=None)
 
+    @property
+    def bindable(self) -> bool:
+        """Whether this declarator instance supports binding to values."""
+        return bool(self.classvar)
+
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("load", self.load, str, allow_none=True)

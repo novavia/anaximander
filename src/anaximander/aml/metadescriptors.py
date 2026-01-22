@@ -44,6 +44,11 @@ class MetadataDeclarator(AssignableDeclarator, Metadescriptor):
     __handle__ = "metadata"
     domain: bool = field(default=None)  # Whether this metadata is part of the domain schema  # noqa
 
+    @property
+    def bindable(self) -> bool:
+        """Whether this declarator instance supports binding to values."""
+        return self.domain
+
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("domain", self.domain, bool, allow_none=True)

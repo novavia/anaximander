@@ -270,6 +270,24 @@ class prototype(declarative):
         # Provisionally, new types are assigned the prototype role, but this may be overridden in decorators # noqa
         cls.__role__ = TypeRole.PROTOTYPE
 
+    @property
+    def _bindable_names_(cls) -> set[str]:
+        """Returns the set of names that subclasses can bind within the domain namespace.
+
+        These include domain metadata and fields that are class variables.
+        """
+        bindable_names = set()
+        # Domain metadata
+        for md in cls.__merged_metadescriptors__.metadata.values():
+            if md.bindable:
+                bindable_names.add(md.name)
+        # Class variable protodescriptors
+        for registry in cls.__merged_metacharacters__.declarator_registries.values():
+            for name, declarator in registry.items():
+                if declarator.bindable:
+                    bindable_names.add(name)
+        return bindable_names
+
     def __call__(cls, *args, **kwargs):
         raise TypeError("Archetypes, traits and prototypes cannot be instantiated directly.")
 
