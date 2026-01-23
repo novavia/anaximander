@@ -77,7 +77,7 @@ class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
             if self.load not in {"eager", "lazy"}:
                 raise TypeError("Field protodescriptor's load attribute must be 'eager' or 'lazy'.")  # noqa
         if is_not_missing(self.repr):
-            self._validate_value_type("repr", self.repr, (bool, Callable, str), allow_none=True)  # type: ignore[arg-type]
+            self._validate_value_type("repr", self.repr, (bool, Callable, str))  # type: ignore[arg-type]
 
 
 @declarator
