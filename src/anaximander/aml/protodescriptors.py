@@ -124,8 +124,6 @@ class AssignableFieldEnumeration(EnumerationDeclarator):
         super().__validate__()
         if not self.members:
             raise ValueError("AssignableFieldEnumeration must have at least one member.")
-        if any(not isinstance(m, str) for m in self.members):
-            raise TypeError("AssignableFieldEnumeration members must be field names (strings).")
 
 # endregion
 
@@ -376,8 +374,6 @@ class FieldGroupProtodescriptor(FieldProtodescriptor, FieldEnumeration):
         super().__validate__()
         if not self.members:
             raise ValueError("FieldGroupProtodescriptor must have at least one member.")
-        if any(not isinstance(m, str) for m in self.members):
-            raise TypeError("FieldGroupProtodescriptor members must be field names (strings).")
 
 
 @declarator
@@ -488,8 +484,6 @@ class SortDeclarator(FieldEnumeration, SchemaDeclarator):
         super().__validate__()
         if not self.members:
             raise ValueError("SortDeclarator must have at least one member.")
-        if any(not isinstance(m, str) for m in self.members):
-            raise TypeError("SortDeclarator members must be field names (strings).")
         if is_not_missing(self.sort_directions):
             if not isinstance(self.sort_directions, (str, list)):
                 raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc' or a list thereof.")  # noqa

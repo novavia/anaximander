@@ -425,12 +425,23 @@ class CallableDeclarator[C: Callable](Declarator):
     """A mixin class for declarators that wrap callables."""
     callable: C | Missing = field(default=MISSING)
 
+    def __validate__(self) -> None:
+        if is_not_missing(self.callable):
+            self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
+        return super().__validate__()
+
 
 @declarator
 class EnumerationDeclarator(Declarator):
     """A mixin class for declarators that reference a list of declarators by name."""
     members: tuple[str, ...] = field(factory=tuple)
     __member_types__: ClassVar[tuple[type[Declarator], ...]] = ()  # Admissible member types
+
+    def __validate__(self) -> None:
+        self._validate_value_type("members", self.members, tuple)
+        if any(not isinstance(member, str) for member in self.members):
+            raise TypeError("EnumerationDeclarator.members must be a tuple of strings.")
+        return super().__validate__()
 
     def __init_subclass__(cls):
         super().__init_subclass__()
