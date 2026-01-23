@@ -8,6 +8,7 @@
 
 import re
 from collections.abc import Callable
+from datetime import timedelta
 from numbers import Real
 from typing import Any, Literal, cast
 
@@ -21,6 +22,7 @@ from anaximander.aml.metadescriptors import (
 )
 
 from .declarative import (
+    MISSING,
     AnnotatableDeclarator,
     AssignableDeclarator,
     BindingRegistry,
@@ -29,9 +31,12 @@ from .declarative import (
     DeclaratorRegistry,
     EnumerationDeclarator,
     IdentifiableDeclarator,
+    Missing,
     MultiRegistry,
     declarative,
     declarator,
+    is_missing,
+    is_not_missing,
 )
 
 # endregion
@@ -58,22 +63,25 @@ class Protodescriptor(Declarator):
 class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
     """Base class for descriptors that represent individual fields."""
     __handle__ = "field"
-    load: str | None = field(default=None)
-    repr: bool | Callable | str | None = field(default=None)
+    load: Literal["eager", "lazy"] | Missing = field(default=MISSING)
+    repr: bool | Callable | str | Missing = field(default=MISSING)
 
     @property
-    def bindable(self) -> bool:
+    def domain_bindable(self) -> bool:
         """Whether this declarator instance supports binding to values."""
         return bool(self.classvar)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("load", self.load, str, allow_none=True)
-        self._validate_value_type("repr", self.repr, (bool, Callable, str), allow_none=True)  # type: ignore[arg-type]
+        if is_not_missing(self.load):
+            if self.load not in {"eager", "lazy"}:
+                raise TypeError("Field protodescriptor's load attribute must be 'eager' or 'lazy'.")  # noqa
+        if is_not_missing(self.repr):
+            self._validate_value_type("repr", self.repr, (bool, Callable, str), allow_none=True)  # type: ignore[arg-type]
 
 
 @declarator
-class AssignableFieldProtodescriptor(AssignableDeclarator, FieldProtodescriptor):
+class AssignableFieldProtodescriptor(AssignableDeclarator, IdentifiableDeclarator, FieldProtodescriptor):  # noqa
     """Abstract base class for assignable field descriptors ('data' and 'link')."""
     pass
 
@@ -88,7 +96,10 @@ class RelationProtodescriptor(FieldProtodescriptor):
 class ConstructionDeclarator(CallableDeclarator[Callable[[declarative, Any], bool]], Protodescriptor):  # noqa
     """Base class for construction method descriptors."""
     __handle__ = "construction"
-    callable: Callable[[declarative, Any], bool] = field()
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
 
 @declarator
@@ -121,139 +132,231 @@ class AssignableFieldEnumeration(EnumerationDeclarator):
 class DataProtodescriptor(AssignableFieldProtodescriptor):
     """The protodescriptor class for data fields."""
     __handle__ = "data"
-    index: bool | None = field(default=None)
-    required: bool | None = field(default=False)
-    typekey: bool | None = field(default=False)
-    key: bool | None = field(default=None)
-    sequence: bool | None = field(default=None)
-    timestamp: bool | None = field(default=None)
-    start_time: bool | None = field(default=None)
-    end_time: bool | None = field(default=None)
-    period: bool | None = field(default=None)
-    location: bool | None = field(default=None)
-    geom: bool | None = field(default=None)
-    gt: Real | None = field(default=None)
-    ge: Real | None = field(default=None)
-    lt: Real | None = field(default=None)
-    le: Real | None = field(default=None)
-    min_length: int | None = field(default=None)
-    max_length: int | None = field(default=None)
-    pattern: str | None = field(default=None)
+    index: bool = field(default=False)
+    required: bool = field(default=False)
+    typekey: bool = field(default=False)
+    key: bool = field(default=False)
+    sequence: bool = field(default=False)
+    timestamp: bool = field(default=False)
+    start_time: bool = field(default=False)
+    end_time: bool = field(default=False)
+    period: bool = field(default=False)
+    location: bool = field(default=False)
+    geom: bool = field(default=False)
+    gt: Real | Missing = field(default=MISSING)
+    ge: Real | Missing = field(default=MISSING)
+    lt: Real | Missing = field(default=MISSING)
+    le: Real | Missing = field(default=MISSING)
+    min_length: int | Missing = field(default=MISSING)
+    max_length: int | Missing = field(default=MISSING)
+    pattern: str | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
         for attr in ("index", "required", "typekey", "key", "sequence", "timestamp",
                      "start_time", "end_time", "period", "location", "geom"):
-            self._validate_value_type(attr, getattr(self, attr), bool, allow_none=True)
+            self._validate_value_type(attr, getattr(self, attr), bool)
         for attr in ("gt", "ge", "lt", "le"):
-            self._validate_value_type(attr, getattr(self, attr), Real, allow_none=True)
-        self._validate_value_type("min_length", self.min_length, int, allow_none=True)
-        self._validate_value_type("max_length", self.max_length, int, allow_none=True)
-        self._validate_value_type("pattern", self.pattern, str, allow_none=True)
-
+            if is_not_missing(value := getattr(self, attr)):
+                self._validate_value_type(attr, value, Real)
+        if is_not_missing(self.min_length):
+            self._validate_value_type("min_length", self.min_length, int)
+        if is_not_missing(self.max_length):
+            self._validate_value_type("max_length", self.max_length, int)
+        if is_not_missing(self.pattern):
+            self._validate_value_type("pattern", self.pattern, str)
 
 @declarator
 class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescriptor):
     """The protodescriptor class for link fields."""
-    on_delete: Literal["restrict", "set_null", "cascade"] = field(default="restrict")
-    key: bool | None = field(default=None)
     __handle__ = "link"
+    on_delete: Literal["restrict", "set_null", "cascade"] = field(default="restrict")
+    key: bool = field(default=False)
 
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("on_delete", self.on_delete, str)
-        self._validate_value_type("key", self.key, bool, allow_none=True)
+        self._validate_value_type("key", self.key, bool)
 
 
 @declarator
 class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
     """The protodescriptor class for backlink fields."""
     __handle__ = "backlink"
-    via: type | None = field(default=None)
-    limit: int | None = field(default=None)
+    via: type | Missing = field(default=MISSING)
+    limit: int | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("via", self.via, type, allow_none=True)
-        self._validate_value_type("limit", self.limit, int, allow_none=True)
+        if is_not_missing(self.via):
+            self._validate_value_type("via", self.via, type)
+        if is_not_missing(self.limit):
+            self._validate_value_type("limit", self.limit, int)
 
 
 @declarator
-class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator):
-    """The protodescriptor class for selection relations."""
+class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator[Callable]):
+    """Protodescriptor for selection relations."""
     __handle__ = "selection"
-    kind: str | None = field(default=None)
-    sql: Callable | None = field(default=None)
-    ibis: Callable | None = field(default=None)
-    fx: Callable | str | None = field(default=None)
-    source: Any | None = field(default=None)
-    key: Any | list[Any] | None = field(default=None)
-    time: Any | None = field(default=None)
-    space: Any | None = field(default=None)
-    filter: Callable | Any | None = field(default=None)
-    sort: str | list[str] | None = field(default=None)
-    limit: int | None = field(default=None)
+    kind: Literal["sql", "ibis"] | Missing = field(default=MISSING)
+    # Syntactic sugar for callable-based forms
+    sql: Callable | Missing = field(default=MISSING)
+    ibis: Callable | Missing = field(default=MISSING)
+    # Field-expression-based form
+    fx: Callable | str | Missing = field(default=MISSING)
+    # Frame-based form
+    source: Any | Missing = field(default=MISSING)
+    key: Any | list[Any] | Missing = field(default=MISSING)
+    time: Any | Missing = field(default=MISSING)
+    space: Any | Missing = field(default=MISSING)
+    filter: Callable | Any | Missing = field(default=MISSING)
+    sort: str | list[str] | Missing = field(default=MISSING)
+    limit: int | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("kind", self.kind, str, allow_none=True)
-        self._validate_value_type("sql", self.sql, Callable, allow_none=True)  # type: ignore[arg-type]
-        self._validate_value_type("ibis", self.ibis, Callable, allow_none=True)  # type: ignore[arg-type]
-        self._validate_value_type("fx", self.fx, (Callable, str), allow_none=True)  # type: ignore[arg-type]
-        if self.sort is not None:
-            if isinstance(self.sort, list):
-                if any(not isinstance(item, str) for item in self.sort):
-                    raise TypeError("SelectionProtodescriptor.sort must contain only strings.")
-            elif not isinstance(self.sort, str):
-                raise TypeError("SelectionProtodescriptor.sort must be a string or list of strings.")  # noqa
-        self._validate_value_type("limit", self.limit, int, allow_none=True)
+
+        # Step 1: normalize callable forms
+        callable_sources = {
+            "callable": self.callable,
+            "sql": self.sql,
+            "ibis": self.ibis,
+        }
+        present_callables = {
+            name: value
+            for name, value in callable_sources.items()
+            if is_not_missing(value)
+        }
+
+        if len(present_callables) > 1:
+            raise TypeError(
+                "SelectionProtodescriptor: callable, sql, and ibis are mutually exclusive."
+            )
+
+        if "sql" in present_callables:
+            object.__setattr__(self, "callable", self.sql)
+            object.__setattr__(self, "kind", "sql")
+            object.__setattr__(self, "sql", MISSING)
+
+        if "ibis" in present_callables:
+            object.__setattr__(self, "callable", self.ibis)
+            object.__setattr__(self, "kind", "ibis")
+            object.__setattr__(self, "ibis", MISSING)
+
+        if is_not_missing(self.callable):
+            self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
+            if is_not_missing(self.kind):
+                self._validate_value_type("kind", self.kind, str)
+        else:
+            if is_not_missing(self.kind):
+                raise TypeError(
+                    "SelectionProtodescriptor.kind is only valid when a callable is supplied."
+                )
+
+        # Step 2: detect which selection form is used
+        has_callable = is_not_missing(self.callable)
+        has_fx = is_not_missing(self.fx)
+        has_frame = any(
+            is_not_missing(v)
+            for v in (
+                self.source,
+                self.key,
+                self.time,
+                self.space,
+                self.filter,
+                self.sort,
+                self.limit,
+            )
+        )
+        forms_used = sum((has_callable, has_fx, has_frame))
+        if forms_used != 1:
+            raise TypeError(
+                "SelectionProtodescriptor must declare exactly one selection form: "
+                "callable-based, fx-based, or frame-based."
+            )
+
+        # Step 3: validate per-form constraints
+        if has_fx:
+            self._validate_value_type("fx", self.fx, (Callable, str))  # type: ignore[arg-type]
+        if has_frame:
+            if is_not_missing(self.sort):
+                if isinstance(self.sort, list):
+                    if any(not isinstance(s, str) for s in self.sort):
+                        raise TypeError("SelectionProtodescriptor.sort must be strings.")
+                else:
+                    self._validate_value_type("sort", self.sort, str)
+            if is_not_missing(self.limit):
+                self._validate_value_type("limit", self.limit, int)
 
 
 @declarator
 class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     """The protodescriptor class for document fields."""
     __handle__ = "document"
-    path: str | Any | None = field(default=None)
-    format: str | None = field(default=None)
-    compression: str | None = field(default=None)
+    path: str | Missing = field(default=MISSING)
+    format: str | Missing = field(default=MISSING)
+    compression: str | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("format", self.format, str, allow_none=True)
-        self._validate_value_type("compression", self.compression, str, allow_none=True)
+        if is_not_missing(self.path):
+            self._validate_value_type("path", self.path, str)
+        if is_not_missing(self.format):
+            self._validate_value_type("format", self.format, str)
+        if is_not_missing(self.compression):
+            self._validate_value_type("compression", self.compression, str)
 
 
 @declarator
 class FolderProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     """The protodescriptor class for folder fields."""
     __handle__ = "folder"
-    path: str | Any | None = field(default=None)
-
-
-@declarator
-class StateProtodescriptor(RelationProtodescriptor, CallableDeclarator):
-    """The protodescriptor class for state fields."""
-    __handle__ = "state"
-    source: Any | None = field(default=None)
-    reducer: str | Callable | None = field(default=None)
-    max_lag: str | Any | None = field(default=None)
-    min_observations: int | None = field(default=None)
+    path: str | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("reducer", self.reducer, (Callable, str), allow_none=True)  # type: ignore[arg-type]
-        self._validate_value_type("min_observations", self.min_observations, int, allow_none=True)
+        if is_not_missing(self.path):
+            self._validate_value_type("path", self.path, str)
 
 
 @declarator
-class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator):
+class StateProtodescriptor(RelationProtodescriptor):
+    """Protodescriptor for dynamic state values."""
+    __handle__ = "state"
+    # Underlying time series
+    source: declarative | Protodescriptor | Missing = field(default=MISSING)
+    # Reduction policy
+    reducer: str | Callable | Missing = field(default=MISSING)
+    # Constraints
+    max_lag: str | timedelta | Missing = field(default=MISSING)
+    min_observations: int | Missing = field(default=MISSING)
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        if is_not_missing(self.reducer):
+            self._validate_value_type("reducer", self.reducer, (str, Callable))  # type: ignore[arg-type]
+        if is_not_missing(self.max_lag):
+            self._validate_value_type("max_lag", self.max_lag, (str, timedelta))  # type: ignore[arg-type]
+        if is_not_missing(self.min_observations):
+            self._validate_value_type("min_observations", self.min_observations, int)
+            if self.min_observations < 1:
+                raise ValueError("state.min_observations must be >= 1.")
+
+
+@declarator
+class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[declarative], Any]]):  # noqa
     """The protodescriptor class for field expressions."""
     __handle__ = "fx"
-    ref: str | None = field(default=None)
+    ref: str | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("ref", self.ref, str, allow_none=True)
+        if is_missing(self.callable) and is_missing(self.ref):
+            raise TypeError("FieldExpressionProtodescriptor requires either a 'callable' or 'ref' attribute.")  # noqa
+        if is_not_missing(self.ref):
+            self._validate_value_type("ref", self.ref, str)
+        if is_not_missing(self.callable):
+            self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
 
 @declarator
@@ -278,22 +381,22 @@ class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator):
 class ParserDeclarator(ConstructionDeclarator, FieldEnumeration):
     """The declarator class for field parsers."""
     __handle__ = "parser"
-    element_wise: bool | None = field(default=None)
+    element_wise: bool = field(default=False)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("element_wise", self.element_wise, bool, allow_none=True)
+        self._validate_value_type("element_wise", self.element_wise, bool)
 
 
 @declarator
 class ValidatorDeclarator(ConstructionDeclarator, FieldEnumeration):
     """The declarator class for field validators."""
     __handle__ = "validator"
-    element_wise: bool | None = field(default=None)
+    element_wise: bool = field(default=False)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("element_wise", self.element_wise, bool, allow_none=True)
+        self._validate_value_type("element_wise", self.element_wise, bool)
 
 
 @declarator
@@ -318,52 +421,58 @@ class UnicityDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
 class IndexDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
     """The declarator class for schema indexes."""
     __handle__ = "index"
-    kind: str | None = field(default=None)
+    kind: str | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("kind", self.kind, str, allow_none=True)
+        if is_not_missing(self.kind):
+            self._validate_value_type("kind", self.kind, str)
 
 
 @declarator
 class PartitionDeclarator(SchemaDeclarator):
     """The declarator class for schema partitions."""
     __handle__ = "partition"
-    key: Any | None = field(default=None)
-    scheme: str | None = field(default=None)
-    buckets: Any | None = field(default=None)
+    key: FieldProtodescriptor = field()
+    scheme: Literal["range", "categorical", "hash", "time"] = field()
+    # MISSING → not specified (inherit / infer)
+    # None → scheme-defined implicit bucketing (categorical, hash)
+    buckets: None | int | tuple | list | str | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("scheme", self.scheme, str, allow_none=True)
+        self._validate_value_type("key", self.key, FieldProtodescriptor)
+        self._validate_value_type("scheme", self.scheme, str)
+        if is_not_missing(self.buckets):
+            self._validate_value_type("buckets", self.buckets, (type(None), int, tuple, list, str))  # type: ignore[arg-type]
 
 
 @declarator
 class PathDeclarator(SchemaDeclarator):
     """The declarator class for traversal paths."""
     __handle__ = "path"
-    template: str | None = field(default=None)
+    template: str | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("template", self.template, str, allow_none=True)
+        if is_not_missing(self.template):
+            self._validate_value_type("template", self.template, str)
 
 
 @declarator
 class SortDeclarator(FieldEnumeration, SchemaDeclarator):
     """The declarator class for schema sort orders."""
     __handle__ = "sort"
-    sort_directions: list[Literal["asc", "desc"]] | None = field(default=None)
+    sort_directions: list[Literal["asc", "desc"]] | Missing = field(default=MISSING)
 
     def __validate__(self) -> None:
         super().__validate__()
-        if self.sort_directions is None:
-            return
-        if not isinstance(self.sort_directions, list):
-            raise TypeError("SortDeclarator.sort_directions must be a list of 'asc'/'desc'.")
-        invalid = [v for v in self.sort_directions if v not in {"asc", "desc"}]
-        if invalid:
-            raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc'.")
+        if is_not_missing(self.sort_directions):
+            if not isinstance(self.sort_directions, list):
+                raise TypeError("SortDeclarator.sort_directions must be a list of 'asc'/'desc'.")
+            invalid = [v for v in self.sort_directions if v not in {"asc", "desc"}]
+            if invalid:
+                raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc'.")
 
 # endregion
 

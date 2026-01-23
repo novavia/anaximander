@@ -13,6 +13,7 @@ from typing import Any, cast
 from attrs import field
 
 from .declarative import (
+    MISSING,
     AssignableDeclarator,
     CallableDeclarator,
     Declarator,
@@ -21,6 +22,7 @@ from .declarative import (
     MultiRegistry,
     declarative,
     declarator,
+    is_not_missing,
 )
 
 # endregion
@@ -42,16 +44,29 @@ class Metadescriptor(Declarator):
 class MetadataDeclarator(AssignableDeclarator, Metadescriptor):
     """The metadescriptor class for metadata fields."""
     __handle__ = "metadata"
-    domain: bool = field(default=None)  # Whether this metadata is part of the domain schema  # noqa
+    domain: bool = field(default=False)  # Whether this metadata is part of the domain schema  # noqa
 
     @property
-    def bindable(self) -> bool:
+    def domain_bindable(self) -> bool:
         """Whether this declarator instance supports binding to values."""
         return self.domain
 
     def __validate__(self) -> None:
         super().__validate__()
-        self._validate_value_type("domain", self.domain, bool, allow_none=True)
+        self._validate_value_type("domain", self.domain, bool)
+
+    def __bind__(self, value: Any, previous: Any = MISSING) -> None:
+        validator = self.validator
+        if is_not_missing(validator):
+            if not validator(value):
+                raise ValueError(f"Inline validation failed for metadata '{self.name}' with value: {value}")  # noqa
+        return value
+
+    def __override__(self, override: Declarator) -> None:
+        return super().__override__(override)
+
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        return super().__validate_binding__(host, value)
 
 
 @declarator
@@ -85,7 +100,6 @@ class PrototypeValidator(CallableDeclarator[Callable[[declarative], bool]], Meta
 class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
     """The metadescriptor class for metadata validators."""
     __handle__ = "metadata_validator"
-    callable: Callable[[declarative, Any], bool] = field()
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -96,7 +110,6 @@ class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any
 class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
     """The metadescriptor class for option validators."""
     __handle__ = "option_validator"
-    callable: Callable[[declarative, Any], bool] = field()
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -107,7 +120,6 @@ class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any],
 class NxFieldValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
     """The metadescriptor class for nxfield validators."""
     __handle__ = "nxfield_validator"
-    callable: Callable[[declarative, Any], bool] = field()
 
     def __validate__(self) -> None:
         super().__validate__()

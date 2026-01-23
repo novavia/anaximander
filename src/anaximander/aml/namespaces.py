@@ -12,6 +12,7 @@ from anaximander.utils.meta import Singleton
 
 from .declarative import (
     DECLARATIVE_NAMESPACE,
+    MISSING,
     DeclarativeNamespace,
     Declarator,
     EnumerationCallableDeclarator,
@@ -103,6 +104,10 @@ class MetadataNamespace(DeclaratorNamespace):
     __declarator_type__ = MetadataDeclarator
     __validator_type__ = MetadataValidator
     __namespace_name__ = "metadata"
+
+    def __call__(self, default: Any = MISSING, factory: Any = MISSING, validator: ) -> MetadataDeclarator:
+        """Create a declarator instance for use in class assignments."""
+        return self.declarator_type(**kwargs)
 
     def declare(self, name: str, *, domain: bool = False, **kwargs: Any) -> Declarator:
         """Declare a named metadata declarator without binding it as a class attribute."""

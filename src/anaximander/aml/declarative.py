@@ -23,6 +23,8 @@ from typing import (
     Optional,
     Protocol,
     Self,
+    TypeAlias,
+    TypeGuard,
     TypeVar,
     dataclass_transform,
     get_args,
@@ -42,6 +44,7 @@ from ..utils.meta import classproperty
 
 
 DT = TypeVar("DT", bound=type)  # Declarator-type type variable
+T = TypeVar("T")
 
 
 @dataclass_transform(kw_only_default=True, field_specifiers=(field,))
@@ -53,13 +56,48 @@ DECLARATIVE_NAMESPACE: ContextVar[Optional["DeclarativeNamespace"]] = ContextVar
 
 type Assignment = ast.Assign | ast.AnnAssign
 
-# Sentinel value for unspecified defaults
+
 class _MissingSentinel:
-    """Unique sentinel for unspecified defaults."""
+    """Sentinel object representing the absence of a declarative value.
+
+    This is distinct from None, False, 0, or empty containers.
+    It is used to indicate that an attribute was not declared.
+    """
+
+    __slots__ = ()
+
     def __repr__(self) -> str:
         return "MISSING"
 
-MISSING: _MissingSentinel = _MissingSentinel()
+    def __bool__(self) -> bool:
+        raise TypeError("MISSING has no truth value")
+
+    def __eq__(self, other: object) -> bool:
+        return self is other
+
+    def __ne__(self, other: object) -> bool:
+        return self is not other
+
+    def __hash__(self) -> int:
+        return id(self)
+
+    def __reduce__(self):
+        # Ensures singleton behavior across pickling
+        return "MISSING"
+
+Missing: TypeAlias = _MissingSentinel
+
+# The one and only instance
+MISSING = _MissingSentinel()
+
+def is_missing(value: object) -> TypeGuard[Missing]:
+    """Whether a value is the MISSING sentinel."""
+    return value is MISSING
+
+def is_not_missing(value: T | Missing) -> TypeGuard[T]:
+    """Whether a value is not the MISSING sentinel."""
+    return value is not MISSING
+
 
 # endregion
 
@@ -114,8 +152,8 @@ class Declarator(ABC):
     __ast__: ast.AST | None = field(init=False, default=None)  # AST node that declared this declarator # noqa
 
     # Init-time fields (immutable)
-    doc: str | None = field(default=None)  # Optional documentation string
-    config: Mapping[str, ConfigValue] = field(factory=dict)  # Extraneous declarator configuration
+    doc: str | None | Missing = field(default=MISSING)  # Optional documentation string # noqa
+    config: Mapping[str, ConfigValue] | None | Missing= field(factory=dict)  # Extraneous declarator configuration # noqa
 
     @property
     def __key__(self) -> DeclaratorKey:
@@ -143,7 +181,7 @@ class Declarator(ABC):
         return cls.__handle__ or cls.__name__
 
     @property
-    def bindable(self) -> bool:
+    def domain_bindable(self) -> bool:
         """Whether this declarator instance supports binding to values in the domain namespace."""
         return False
 
@@ -153,7 +191,8 @@ class Declarator(ABC):
         if dns is not None:
             dns.register_declaration(self)
         # Freeze config to prevent accidental mutation.
-        object.__setattr__(self, "config", MappingProxyType(dict(self.config)))
+        if isinstance(self.config, Mapping):
+            object.__setattr__(self, "config", MappingProxyType(dict(self.config)))
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -187,14 +226,17 @@ class Declarator(ABC):
                 handles.append(base.__handle__)
         cls._handles = tuple(handles)
 
-    def _set_once(self, attr: str, value: Any, *, treat_none_as_unset: bool = True) -> None:
+    def _set_once(self, attr: str, value: Any) -> None:
         """Internal backdoor: set a frozen attribute once (or idempotently)."""
         current = getattr(self, attr)
-        if current is MISSING or (treat_none_as_unset and current is None):
+        if is_missing(current):
             object.__setattr__(self, attr, value)
             return
         if current != value:
-            raise RuntimeError(f"{self.__class__.__name__}.{attr} is already set.")
+            raise RuntimeError(
+                f"{self.__class__.__name__}.{attr} is already set."
+            )
+        # idempotent re-set
         object.__setattr__(self, attr, value)
 
     def _validate_value_type(
@@ -202,15 +244,13 @@ class Declarator(ABC):
         attr: str,
         value: Any,
         expected: type | tuple[type, ...],
-        *,
-        allow_none: bool = False,
-        allow_missing: bool = False,
     ) -> None:
         """Validate a value against its expected runtime type."""
-        if allow_missing and value is MISSING:
-            return
-        if allow_none and value is None:
-            return
+        if is_missing(value):
+            raise TypeError(
+                f"{self.__class__.__name__}.{attr} is missing."
+            )
+
         if not isinstance(value, expected):
             if isinstance(expected, tuple):
                 expected_name = " | ".join(t.__name__ for t in expected)
@@ -218,7 +258,7 @@ class Declarator(ABC):
                 expected_name = expected.__name__
             raise TypeError(
                 f"{self.__class__.__name__}.{attr} must be {expected_name}, "
-                + f"got {type(value).__name__}."
+                f"got {type(value).__name__}."
             )
 
     def __set_name__(self, owner: type, name: str):
@@ -242,7 +282,7 @@ class Declarator(ABC):
 
     def __set_ast__(self, node: ast.AST | None) -> None:
         """Attach the AST node that declared this declarator (if any)."""
-        self._validate_value_type("__ast__", node, ast.AST, allow_none=True)
+        self._validate_value_type("__ast__", node, (ast.AST , type(None)))
         self._set_once("__ast__", node)
 
     def __validate__(self) -> None:
@@ -254,13 +294,13 @@ class Declarator(ABC):
         absent any context. Subclasses can override this method to implement custom
         validation logic.
         """
-        self._validate_value_type("doc", self.doc, str, allow_none=True)
-        self._validate_value_type("config", self.config, Mapping)
+        if is_not_missing(self.doc):
+            self._validate_value_type("doc", self.doc, (str, type(None)))
+        if is_not_missing(self.config):
+            self._validate_value_type("config", self.config, (Mapping, type(None)))
         self._validate_value_type("name", self.name, str)
         self._validate_value_type("owner", self.owner, type)
         self._validate_value_type("ordinal", self.ordinal, int)
-        if self.__ast__ is not None:
-            self._validate_value_type("__ast__", self.__ast__, ast.AST)
 
     @abstractmethod
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
@@ -319,7 +359,6 @@ class AnnotatableDeclarator(Declarator):
                     + "admissible types from base classes."
                 )
 
-    @abstractmethod
     def __validate_type__(self, type_: type) -> bool:
         if not self.__types__:
             return True
@@ -336,10 +375,10 @@ class AnnotatableDeclarator(Declarator):
         classvar: bool | None = None,
     ):
         """Sets the type by supplying annotation, evaluated type, nullability and classvar."""
-        self._validate_value_type("annotation", annotation, str, allow_none=True)
-        self._validate_value_type("type", type_, type, allow_none=True)
-        self._validate_value_type("nullable", nullable, bool, allow_none=True)
-        self._validate_value_type("classvar", classvar, bool, allow_none=True)
+        self._validate_value_type("annotation", annotation, (str, type(None)))
+        self._validate_value_type("type", type_, (type, type(None)))
+        self._validate_value_type("nullable", nullable, (bool, type(None)))
+        self._validate_value_type("classvar", classvar, (bool, type(None)))
         if type_ is not None and not self.__validate_type__(type_):
             declarator = self.name
             owner_name = self.owner.__name__
@@ -357,27 +396,34 @@ class AnnotatableDeclarator(Declarator):
 @declarator
 class IdentifiableDeclarator(AnnotatableDeclarator):
     """Base class for declarators of attributes that can uniquely identify an instance."""
-    unique: bool = field(default=None)
+    unique: bool = field(default=False)  # Whether this declarator uniquely identifies an instance  # noqa
 
-    def __set_unique__(self, unique: bool):
-        self._validate_value_type("unique", unique, bool)
-        self._set_once("unique", unique)
+    def __validate__(self) -> None:
+        self._validate_value_type("unique", self.unique, bool)
+        return super().__validate__()
 
 
 @declarator
-class AssignableDeclarator(IdentifiableDeclarator):
+class AssignableDeclarator(AnnotatableDeclarator):
     """Base class for declarators of attributes that receive their value through assignment."""
     default: Any = field(default=MISSING)
-    factory: Callable[[], Any] | _MissingSentinel = field(default=MISSING)
+    factory: Callable[[], Any] | Missing = field(default=MISSING)
     # This is a fail-quick optional inline validator that takes a value as its only argument
     # It is intended to be called in the __bind__ hook to validate assigned values
-    validator: Callable[[Any], bool] | None = field(default=None)
+    validator: Callable[[Any], bool] | Missing = field(default=MISSING)
+
+    def __validate__(self) -> None:
+        if is_not_missing(self.factory):
+            self._validate_value_type("factory", self.factory, Callable)  # type: ignore[arg-type]
+        if is_not_missing(self.validator):
+            self._validate_value_type("validator", self.validator, Callable)  # type: ignore[arg-type]
+        return super().__validate__()
 
 
 @declarator
-class CallableDeclarator[C: Callable | None](Declarator):
+class CallableDeclarator[C: Callable](Declarator):
     """A mixin class for declarators that wrap callables."""
-    callable: C = field()
+    callable: C | Missing = field(default=MISSING)
 
 
 @declarator
@@ -403,7 +449,7 @@ class EnumerationDeclarator(Declarator):
 
 
 @declarator
-class EnumerationCallableDeclarator[C: Callable | None](CallableDeclarator[C], EnumerationDeclarator):  # noqa
+class EnumerationCallableDeclarator[C: Callable](CallableDeclarator[C], EnumerationDeclarator):  # noqa
     """A mixin class for callable declarators that reference a list of declarators by name."""
     pass
 
@@ -427,16 +473,16 @@ class DeclarativeNamespace(dict[str, Any]):
     """Collects class body declarations for a declarative type."""
     context_token: Token
 
-    def __init__(self, *, strict: bool = True, bindable_names: list[str] | None = None):
+    def __init__(self, *, strict: bool = True, bindable_domain_names: list[str] | None = None):
         super().__init__(__declarations__=dict(), __bindings__=dict())
         self.strict = strict
-        self.bindable_names = bindable_names or []
+        self.bindable_domain_names = bindable_domain_names or []
         self.declaration_index = count(start=1)
 
     def __set_item__(self, key: str, value: Any) -> None:
         if key in self:
             raise RuntimeError(f"Cannot redefine name '{key}' in declarative namespace.")
-        if key in self.bindable_names:
+        if key in self.bindable_domain_names:
             self.register_binding(key, value)
         super().__setitem__(key, value)
 
@@ -531,18 +577,18 @@ class declarative(type):
 
     @property
     @abstractmethod
-    def _bindable_names(cls) -> list[str]:
-        """Names that can be bound in this declarative type's subclasses."""
+    def _bindable_domain_names(cls) -> list[str]:
+        """Names that can be bound in the body of this declarative type's subclasses."""
         return []
 
     @classmethod
     def __prepare__(mcls, name, bases, **kwargs) -> DeclarativeNamespace:
         """Collects declarations, assignments and containers in the class body."""
         declarative_parents = [b for b in bases if isinstance(b, declarative)]
-        bindable_names = [*chain(*(b._bindable_names for b in declarative_parents))]
+        bindable_domain_names = [*chain(*(b._bindable_domain_names for b in declarative_parents))]
         namespace = DeclarativeNamespace(
             strict=mcls.__strict__,
-            bindable_names=bindable_names,
+            bindable_domain_names=bindable_domain_names,
         )
         token = DECLARATIVE_NAMESPACE.set(namespace)
         namespace.context_token = token
