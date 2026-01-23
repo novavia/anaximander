@@ -6,6 +6,7 @@
 # region Imports
 
 
+from collections.abc import Mapping
 from typing import Any, Callable
 
 from anaximander.utils.meta import Singleton
@@ -16,6 +17,7 @@ from .declarative import (
     DeclarativeNamespace,
     Declarator,
     EnumerationCallableDeclarator,
+    Missing,
 )
 from .metadescriptors import (
     MetadataDeclarator,
@@ -105,9 +107,23 @@ class MetadataNamespace(DeclaratorNamespace):
     __validator_type__ = MetadataValidator
     __namespace_name__ = "metadata"
 
-    def __call__(self, default: Any = MISSING, factory: Any = MISSING, validator: ) -> MetadataDeclarator:
+    def __call__(
+            self,
+            default: Any = MISSING,
+            factory: Callable[[], Any] | Missing = MISSING,
+            validator: Callable[[Any], bool] | Missing = MISSING,
+            doc: str | Missing = MISSING,
+            config: Mapping[str, Any] | Missing = MISSING,
+    ) -> MetadataDeclarator:
         """Create a declarator instance for use in class assignments."""
-        return self.declarator_type(**kwargs)
+        return MetadataDeclarator(
+            domain=True,
+            default=default,
+            factory=factory,
+            validator=validator,
+            doc=doc,
+            config=config,
+        )
 
     def declare(self, name: str, *, domain: bool = False, **kwargs: Any) -> Declarator:
         """Declare a named metadata declarator without binding it as a class attribute."""

@@ -264,7 +264,7 @@ class prototype(declarative):
         cls.__role__ = TypeRole.PROTOTYPE
 
     @property
-    def _bindable_domain_names_(cls) -> set[str]:
+    def _bindable_domain_names(cls) -> set[str]:
         """Returns the set of names that subclasses can bind within the domain namespace.
 
         These include domain metadata and fields that are class variables.

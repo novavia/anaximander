@@ -20,6 +20,7 @@ from anaximander.aml.metadescriptors import (
     NxFieldDeclarator,
     OptionDeclarator,
 )
+from anaximander.aml.prototype import Arche
 
 from .declarative import (
     MISSING,
@@ -93,7 +94,7 @@ class RelationProtodescriptor(FieldProtodescriptor):
 
 
 @declarator
-class ConstructionDeclarator(CallableDeclarator[Callable[[declarative, Any], bool]], Protodescriptor):  # noqa
+class ConstructionDeclarator(CallableDeclarator[Callable[[Arche, Any], bool]], Protodescriptor):  # noqa
     """Base class for construction method descriptors."""
     __handle__ = "construction"
 
@@ -119,6 +120,12 @@ class AssignableFieldEnumeration(EnumerationDeclarator):
     """Base class for enumerations of assignable field protodescriptors."""
     __member_types__ = (AssignableFieldProtodescriptor,)
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        if not self.members:
+            raise ValueError("AssignableFieldEnumeration must have at least one member.")
+        if any(not isinstance(m, str) for m in self.members):
+            raise TypeError("AssignableFieldEnumeration members must be field names (strings).")
 
 # endregion
 
@@ -165,6 +172,7 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
             self._validate_value_type("max_length", self.max_length, int)
         if is_not_missing(self.pattern):
             self._validate_value_type("pattern", self.pattern, str)
+
 
 @declarator
 class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescriptor):
@@ -364,17 +372,28 @@ class FieldGroupProtodescriptor(FieldProtodescriptor, FieldEnumeration):
     """The protodescriptor class for field groups."""
     __handle__ = "fieldgroup"
 
+    def __validate__(self) -> None:
+        super().__validate__()
+        if not self.members:
+            raise ValueError("FieldGroupProtodescriptor must have at least one member.")
+        if any(not isinstance(m, str) for m in self.members):
+            raise TypeError("FieldGroupProtodescriptor members must be field names (strings).")
+
 
 @declarator
-class FieldBlockProtodescriptor(FieldProtodescriptor, FieldEnumeration):
+class FieldBlockProtodescriptor(FieldProtodescriptor):
     """The protodescriptor class for field blocks."""
     __handle__ = "fieldblock"
 
 
 @declarator
-class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator):
+class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[Arche], Any]]):  # noqa
     """The protodescriptor class for metric fields."""
     __handle__ = "metric"
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
 
 @declarator
@@ -463,16 +482,26 @@ class PathDeclarator(SchemaDeclarator):
 class SortDeclarator(FieldEnumeration, SchemaDeclarator):
     """The declarator class for schema sort orders."""
     __handle__ = "sort"
-    sort_directions: list[Literal["asc", "desc"]] | Missing = field(default=MISSING)
+    sort_directions: Literal["asc", "desc"] | list[Literal["asc", "desc"]] | Missing = field(default=MISSING)  # noqa
 
     def __validate__(self) -> None:
         super().__validate__()
+        if not self.members:
+            raise ValueError("SortDeclarator must have at least one member.")
+        if any(not isinstance(m, str) for m in self.members):
+            raise TypeError("SortDeclarator members must be field names (strings).")
         if is_not_missing(self.sort_directions):
-            if not isinstance(self.sort_directions, list):
-                raise TypeError("SortDeclarator.sort_directions must be a list of 'asc'/'desc'.")
-            invalid = [v for v in self.sort_directions if v not in {"asc", "desc"}]
-            if invalid:
-                raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc'.")
+            if not isinstance(self.sort_directions, (str, list)):
+                raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc' or a list thereof.")  # noqa
+            if isinstance(self.sort_directions, str):
+                if self.sort_directions not in {"asc", "desc"}:
+                    raise ValueError("SortDeclarator.sort_directions must be 'asc' or 'desc'.")
+            else:
+                invalid = [v for v in self.sort_directions if v not in {"asc", "desc"}]
+                if invalid:
+                    raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc'.")
+                if not len(self.sort_directions) == len(self.members):
+                    raise ValueError("SortDeclarator.sort_directions length must match members length.")  # noqa
 
 # endregion
 

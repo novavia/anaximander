@@ -153,7 +153,7 @@ class Declarator(ABC):
 
     # Init-time fields (immutable)
     doc: str | None | Missing = field(default=MISSING)  # Optional documentation string # noqa
-    config: Mapping[str, ConfigValue] | None | Missing= field(factory=dict)  # Extraneous declarator configuration # noqa
+    config: Mapping[str, ConfigValue] | None | Missing = field(factory=dict)  # Extraneous declarator configuration # noqa
 
     @property
     def __key__(self) -> DeclaratorKey:
@@ -473,13 +473,13 @@ class DeclarativeNamespace(dict[str, Any]):
     """Collects class body declarations for a declarative type."""
     context_token: Token
 
-    def __init__(self, *, strict: bool = True, bindable_domain_names: list[str] | None = None):
+    def __init__(self, *, strict: bool = True, bindable_domain_names: set[str] | None = None):
         super().__init__(__declarations__=dict(), __bindings__=dict())
         self.strict = strict
-        self.bindable_domain_names = bindable_domain_names or []
+        self.bindable_domain_names = bindable_domain_names or set()
         self.declaration_index = count(start=1)
 
-    def __set_item__(self, key: str, value: Any) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in self:
             raise RuntimeError(f"Cannot redefine name '{key}' in declarative namespace.")
         if key in self.bindable_domain_names:
@@ -577,15 +577,15 @@ class declarative(type):
 
     @property
     @abstractmethod
-    def _bindable_domain_names(cls) -> list[str]:
+    def _bindable_domain_names(cls) -> set[str]:
         """Names that can be bound in the body of this declarative type's subclasses."""
-        return []
+        return set()
 
     @classmethod
     def __prepare__(mcls, name, bases, **kwargs) -> DeclarativeNamespace:
         """Collects declarations, assignments and containers in the class body."""
         declarative_parents = [b for b in bases if isinstance(b, declarative)]
-        bindable_domain_names = [*chain(*(b._bindable_domain_names for b in declarative_parents))]
+        bindable_domain_names = set(chain(*(b._bindable_domain_names for b in declarative_parents)))
         namespace = DeclarativeNamespace(
             strict=mcls.__strict__,
             bindable_domain_names=bindable_domain_names,
