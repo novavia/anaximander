@@ -6,6 +6,7 @@ from .archetype import archetype
 from .trait import trait
 from .object import Object
 from .namespaces import metadata, option, nxfield, meta
+from .constructors import data, link, backlink
 
 
 __all__ = [
@@ -20,5 +21,8 @@ __all__ = [
     "option",
     "nxfield",
     "meta",
+    "data",
+    "link",
+    "backlink",
     "finalize_module",
 ]

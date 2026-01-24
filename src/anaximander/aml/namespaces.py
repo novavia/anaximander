@@ -7,6 +7,7 @@
 
 
 from collections.abc import Mapping
+from functools import update_wrapper
 from typing import Any, Callable
 
 from anaximander.utils.meta import Singleton
@@ -112,13 +113,15 @@ class DeclaratorNamespace[DT: AssignableMetadescriptor](metaclass=Singleton):
         dns = self._require_namespace()
         dns.register_binding(name, value, handle=self.name)
 
-    def validator(self, *members: str, **kwargs: Any) -> Callable[[Callable], Declarator]:
+    def validator(self, *members: str) -> Callable[[Callable], Declarator]:
         """Create a validation declarator as a decorator."""
         if self.validator_type is None:
             raise TypeError(f"{self.name} namespace does not support validators.")
 
         def decorator(fn: Callable) -> Declarator:
-            return self.validator_type(callable=fn, members=members, **kwargs)
+            declarator = self.validator_type(callable=fn, members=members, doc=fn.__doc__)
+            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
+            return declarator
 
         return decorator
 

@@ -7,7 +7,8 @@
 
 
 from enum import Enum
-from typing import Any, ClassVar, Literal, Protocol, TypeGuard, cast
+from functools import update_wrapper
+from typing import Any, Callable, ClassVar, Literal, Protocol, TypeGuard, cast
 
 from annotationlib import Format, get_annotations
 
@@ -22,7 +23,6 @@ from .declarative import (
     DeclarativeNamespace,
     EnumerationCallableDeclarator,
     declarative,
-    is_missing,
     is_not_missing,
 )
 from .metadescriptors import Metadescriptor, MetadescriptorRegistry, PrototypeValidator
@@ -270,6 +270,16 @@ class prototype(declarative):
         cls.__ast__ = None
         # Provisionally, new types are assigned the prototype role, but this may be overridden in decorators # noqa
         cls.__role__ = TypeRole.PROTOTYPE
+
+    @staticmethod
+    def validator():
+        """Create a prototype validator as a decorator."""
+        def decorator(fn: Callable) -> PrototypeValidator:
+            declarator = PrototypeValidator(callable=fn, doc=fn.__doc__)  # type: ignore[abstract]
+            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
+            return declarator
+
+        return decorator
 
     @property
     def _bindable_domain_names(cls) -> set[str]:

@@ -150,7 +150,11 @@ class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
 @declarator
 class AssignableFieldProtodescriptor(AssignableDeclarator, IdentifiableDeclarator, FieldProtodescriptor):  # noqa
     """Abstract base class for assignable field descriptors ('data' and 'link')."""
-    pass
+    required: bool = field(default=False)
+
+    def __validate__(self) -> None:
+        super().__validate__()
+        self._validate_value_type("required", self.required, bool)
 
 
 @declarator
@@ -204,7 +208,6 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
     """The protodescriptor class for data fields."""
     __handle__ = "data"
     index: bool = field(default=False)
-    required: bool = field(default=False)
     typekey: bool = field(default=False)
     key: bool = field(default=False)
     sequence: bool = field(default=False)
@@ -224,7 +227,7 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
 
     def __validate__(self) -> None:
         super().__validate__()
-        for attr in ("index", "required", "typekey", "key", "sequence", "timestamp",
+        for attr in ("index", "typekey", "key", "sequence", "timestamp",
                      "start_time", "end_time", "period", "location", "geom"):
             self._validate_value_type(attr, getattr(self, attr), bool)
         for attr in ("gt", "ge", "lt", "le"):
@@ -320,7 +323,7 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
         if override == self:
             return
         self._validate_override_common(override)
-        for attr in ("key", "unique"):
+        for attr in ("required", "key", "unique"):
             if not _tighten_bool(getattr(self, attr), getattr(override, attr)):
                 raise AttributeError(f"Link protodescriptor '{attr}' cannot be loosened.")
         order = {"cascade": 0, "set_null": 1, "restrict": 2}
