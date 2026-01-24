@@ -20,6 +20,10 @@ from .declarative import (
     DeclaratorRegistry,
     EnumerationCallableDeclarator,
     MultiRegistry,
+    _tighten_bound_value,
+    _tighten_classvar,
+    _tighten_nullable,
+    _tighten_type,
     declarative,
     declarator,
     is_not_missing,
@@ -62,17 +66,43 @@ class MetadataDeclarator(AssignableMetadescriptor):
         self._validate_value_type("domain", self.domain, bool)
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
+        """Bind a metadata value, enforcing monotone tightening and inline validation."""
+        if is_not_missing(previous) and value != previous:
+            if not _tighten_bound_value(value, previous):
+                raise AttributeError(
+                    f"Metadata '{self.name}' cannot be reassigned with a looser value."
+                )
         validator = self.validator
-        if is_not_missing(validator):
-            if not validator(value):
-                raise ValueError(f"Inline validation failed for metadata '{self.name}' with value: {value}")  # noqa
+        if is_not_missing(validator) and not validator(value):
+            raise ValueError(
+                f"Inline validation failed for metadata '{self.name}' with value: {value}"
+            )
         return value
 
     def __override__(self, override: Declarator) -> None:
-        return super().__override__(override)
+        """Allow overrides that tighten type constraints only."""
+        if type(override) is not type(self):
+            raise AttributeError("Metadata declarators can only be overridden by the same class.")
+        if override == self:
+            return
+        if self.domain != override.domain:
+            raise AttributeError("Metadata declarator 'domain' cannot be overridden.")
+        if not _tighten_type(self.type, override.type):
+            raise AttributeError("Metadata declarator type cannot be loosened.")
+        if not _tighten_nullable(self.nullable, override.nullable):
+            raise AttributeError("Metadata declarator nullability cannot be loosened.")
+        if not _tighten_classvar(self.classvar, override.classvar):
+            raise AttributeError("Metadata declarator classvar cannot be overridden.")
 
     def __validate_binding__(self, host: type, value: Any) -> bool:
-        return super().__validate_binding__(host, value)
+        """Validate a metadata binding in the context of a host type."""
+        if value is None and self.nullable is False:
+            return False
+        if self.type is not None and value is not None:
+            if not isinstance(value, self.type):
+                if not (isinstance(value, type) and issubclass(value, self.type)):
+                    return False
+        return True
 
 
 @declarator
@@ -90,6 +120,36 @@ class NxFieldDeclarator(AssignableMetadescriptor):
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("fieldtype", self.fieldtype, type)
+
+    def __bind__(self, value: Any, previous: Any = MISSING) -> None:
+        """Bind an nxfield value, disallowing reassignment in derived prototypes."""
+        if is_not_missing(previous) and value != previous:
+            raise AttributeError(f"NxField '{self.name}' cannot be reassigned.")
+        validator = self.validator
+        if is_not_missing(validator) and not validator(value):
+            raise ValueError(
+                f"Inline validation failed for nxfield '{self.name}' with value: {value}"
+            )
+        return value
+
+    def __override__(self, override: Declarator) -> None:
+        """Allow overrides that tighten fieldtype/type constraints only."""
+        if type(override) is not type(self):
+            raise AttributeError("NxField declarators can only be overridden by the same class.")
+        if override == self:
+            return
+        if not _tighten_type(self.fieldtype, override.fieldtype):
+            raise AttributeError("NxField declarator fieldtype cannot be loosened.")
+        if not _tighten_type(self.type, override.type):
+            raise AttributeError("NxField declarator type cannot be loosened.")
+        if not _tighten_nullable(self.nullable, override.nullable):
+            raise AttributeError("NxField declarator nullability cannot be loosened.")
+        if not _tighten_classvar(self.classvar, override.classvar):
+            raise AttributeError("NxField declarator classvar cannot be overridden.")
+
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        """Validate an nxfield binding in the context of a host type."""
+        return True
 
 
 @declarator

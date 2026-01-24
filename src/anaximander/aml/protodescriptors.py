@@ -34,6 +34,10 @@ from .declarative import (
     IdentifiableDeclarator,
     Missing,
     MultiRegistry,
+    _tighten_bool,
+    _tighten_classvar,
+    _tighten_nullable,
+    _tighten_type,
     declarative,
     declarator,
     is_missing,
@@ -46,6 +50,56 @@ from .declarative import (
 # Base Protodescriptor classes
 # =============================================================================
 # region Base Protodescriptor classes
+
+
+def _lower_bound(gt: Real | Missing, ge: Real | Missing) -> tuple[Real, bool] | None:
+    """Resolve lower-bound value and strictness from gt/ge constraints."""
+    if is_not_missing(gt):
+        return gt, True
+    if is_not_missing(ge):
+        return ge, False
+    return None
+
+
+def _upper_bound(lt: Real | Missing, le: Real | Missing) -> tuple[Real, bool] | None:
+    """Resolve upper-bound value and strictness from lt/le constraints."""
+    if is_not_missing(lt):
+        return lt, True
+    if is_not_missing(le):
+        return le, False
+    return None
+
+
+def _tighten_lower(base_gt: Real | Missing, base_ge: Real | Missing,
+                   new_gt: Real | Missing, new_ge: Real | Missing) -> bool:
+    """Whether the lower-bound constraint is monotonically tightened."""
+    base = _lower_bound(base_gt, base_ge)
+    new = _lower_bound(new_gt, new_ge)
+    if base is None or new is None:
+        return True
+    bval, bstrict = base
+    nval, nstrict = new
+    if nval < bval:
+        return False
+    if nval == bval and bstrict and not nstrict:
+        return False
+    return True
+
+
+def _tighten_upper(base_lt: Real | Missing, base_le: Real | Missing,
+                   new_lt: Real | Missing, new_le: Real | Missing) -> bool:
+    """Whether the upper-bound constraint is monotonically tightened."""
+    base = _upper_bound(base_lt, base_le)
+    new = _upper_bound(new_lt, new_le)
+    if base is None or new is None:
+        return True
+    bval, bstrict = base
+    nval, nstrict = new
+    if nval > bval:
+        return False
+    if nval == bval and bstrict and not nstrict:
+        return False
+    return True
 
 
 @declarator
@@ -79,6 +133,18 @@ class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
                 raise TypeError("Field protodescriptor's load attribute must be 'eager' or 'lazy'.")  # noqa
         if is_not_missing(self.repr):
             self._validate_value_type("repr", self.repr, (bool, Callable, str))  # type: ignore[arg-type]
+
+    def _validate_override_common(self, override: "FieldProtodescriptor") -> None:
+        """Validate shared tightening rules for field protodescriptors."""
+        if not _tighten_type(self.type, override.type):
+            raise AttributeError("Field protodescriptor type cannot be loosened.")
+        if not _tighten_nullable(self.nullable, override.nullable):
+            raise AttributeError("Field protodescriptor nullability cannot be loosened.")
+        if not _tighten_classvar(self.classvar, override.classvar):
+            raise AttributeError("Field protodescriptor classvar cannot be overridden.")
+        if is_not_missing(self.load) and is_not_missing(override.load):
+            if self.load == "eager" and override.load != "eager":
+                raise AttributeError("Field protodescriptor load cannot be loosened.")
 
 
 @declarator
@@ -171,6 +237,56 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
         if is_not_missing(self.pattern):
             self._validate_value_type("pattern", self.pattern, str)
 
+    def __bind__(self, value: Any, previous: Any = MISSING) -> None:
+        """Bind a classvar data value, disallowing reassignment in subclasses."""
+        if not self.classvar:
+            raise AttributeError(f"Data field '{self.name}' is not classvar-bindable.")
+        if is_not_missing(previous) and value != previous:
+            raise AttributeError(f"Data field '{self.name}' cannot be reassigned.")
+        validator = self.validator
+        if is_not_missing(validator) and not validator(value):
+            raise ValueError(
+                f"Inline validation failed for data '{self.name}' with value: {value}"
+            )
+        return value
+
+    def __override__(self, override: Declarator) -> None:
+        """Allow overrides that tighten data constraints only."""
+        if type(override) is not type(self):
+            raise AttributeError("Data protodescriptors can only be overridden by the same class.")
+        if override == self:
+            return
+        self._validate_override_common(override)
+        for attr in ("index", "required", "typekey", "key", "sequence", "timestamp",
+                     "start_time", "end_time", "period", "location", "geom", "unique"):
+            if not _tighten_bool(getattr(self, attr), getattr(override, attr)):
+                raise AttributeError(f"Data protodescriptor '{attr}' cannot be loosened.")
+        if not _tighten_lower(self.gt, self.ge, override.gt, override.ge):
+            raise AttributeError("Data protodescriptor lower bound cannot be loosened.")
+        if not _tighten_upper(self.lt, self.le, override.lt, override.le):
+            raise AttributeError("Data protodescriptor upper bound cannot be loosened.")
+        if is_not_missing(self.min_length) and is_not_missing(override.min_length):
+            if override.min_length < self.min_length:
+                raise AttributeError("Data protodescriptor min_length cannot be loosened.")
+        if is_not_missing(self.max_length) and is_not_missing(override.max_length):
+            if override.max_length > self.max_length:
+                raise AttributeError("Data protodescriptor max_length cannot be loosened.")
+        if is_not_missing(self.pattern) and is_not_missing(override.pattern):
+            if override.pattern != self.pattern:
+                raise AttributeError("Data protodescriptor pattern cannot be overridden.")
+
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        """Validate a data binding in the context of a host type."""
+        if not self.classvar:
+            return False
+        if value is None and self.nullable is False:
+            return False
+        if self.type is not None and value is not None:
+            if not isinstance(value, self.type):
+                if not (isinstance(value, type) and issubclass(value, self.type)):
+                    return False
+        return True
+
 
 @declarator
 class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescriptor):
@@ -183,6 +299,45 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
         super().__validate__()
         self._validate_value_type("on_delete", self.on_delete, str)
         self._validate_value_type("key", self.key, bool)
+
+    def __bind__(self, value: Any, previous: Any = MISSING) -> None:
+        """Bind a classvar link value, disallowing reassignment in subclasses."""
+        if not self.classvar:
+            raise AttributeError(f"Link field '{self.name}' is not classvar-bindable.")
+        if is_not_missing(previous) and value != previous:
+            raise AttributeError(f"Link field '{self.name}' cannot be reassigned.")
+        validator = self.validator
+        if is_not_missing(validator) and not validator(value):
+            raise ValueError(
+                f"Inline validation failed for link '{self.name}' with value: {value}"
+            )
+        return value
+
+    def __override__(self, override: Declarator) -> None:
+        """Allow overrides that tighten link constraints only."""
+        if type(override) is not type(self):
+            raise AttributeError("Link protodescriptors can only be overridden by the same class.")
+        if override == self:
+            return
+        self._validate_override_common(override)
+        for attr in ("key", "unique"):
+            if not _tighten_bool(getattr(self, attr), getattr(override, attr)):
+                raise AttributeError(f"Link protodescriptor '{attr}' cannot be loosened.")
+        order = {"cascade": 0, "set_null": 1, "restrict": 2}
+        if order.get(override.on_delete, 0) < order.get(self.on_delete, 0):
+            raise AttributeError("Link protodescriptor on_delete cannot be loosened.")
+
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        """Validate a link binding in the context of a host type."""
+        if not self.classvar:
+            return False
+        if value is None and self.nullable is False:
+            return False
+        if self.type is not None and value is not None:
+            if not isinstance(value, self.type):
+                if not (isinstance(value, type) and issubclass(value, self.type)):
+                    return False
+        return True
 
 
 @declarator
@@ -198,6 +353,44 @@ class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
             self._validate_value_type("via", self.via, type)
         if is_not_missing(self.limit):
             self._validate_value_type("limit", self.limit, int)
+
+    def __bind__(self, value: Any, previous: Any = MISSING) -> None:
+        """Bind a classvar backlink value, disallowing reassignment in subclasses."""
+        if not self.classvar:
+            raise AttributeError(f"Backlink field '{self.name}' is not classvar-bindable.")
+        if is_not_missing(previous) and value != previous:
+            raise AttributeError(f"Backlink field '{self.name}' cannot be reassigned.")
+        return value
+
+    def __override__(self, override: Declarator) -> None:
+        """Allow overrides that tighten backlink constraints only."""
+        if type(override) is not type(self):
+            raise AttributeError(
+                "Backlink protodescriptors can only be overridden by the same class."
+            )
+        if override == self:
+            return
+        self._validate_override_common(override)
+        if not _tighten_bool(self.unique, override.unique):
+            raise AttributeError("Backlink protodescriptor 'unique' cannot be loosened.")
+        if is_not_missing(self.via) and is_not_missing(override.via):
+            if override.via != self.via:
+                raise AttributeError("Backlink protodescriptor 'via' cannot be overridden.")
+        if is_not_missing(self.limit) and is_not_missing(override.limit):
+            if override.limit > self.limit:
+                raise AttributeError("Backlink protodescriptor limit cannot be loosened.")
+
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        """Validate a backlink binding in the context of a host type."""
+        if not self.classvar:
+            return False
+        if value is None and self.nullable is False:
+            return False
+        if self.type is not None and value is not None:
+            if not isinstance(value, self.type):
+                if not (isinstance(value, type) and issubclass(value, self.type)):
+                    return False
+        return True
 
 
 @declarator

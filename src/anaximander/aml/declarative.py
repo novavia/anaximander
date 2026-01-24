@@ -99,6 +99,42 @@ def is_not_missing(value: T | Missing) -> TypeGuard[T]:
     return value is not MISSING
 
 
+def _tighten_type(base: type | None, override: type | None) -> bool:
+    """Whether a type override is a monotone tightening."""
+    if base is None or override is None:
+        return True
+    try:
+        return issubclass(override, base)
+    except TypeError:
+        return False
+
+
+def _tighten_nullable(base: bool | None, override: bool | None) -> bool:
+    """Whether a nullable override is monotone tightening."""
+    if base is None or override is None:
+        return True
+    return not (base is False and override is True)
+
+
+def _tighten_classvar(base: bool | None, override: bool | None) -> bool:
+    """Whether a classvar override preserves classvar semantics."""
+    if base is None or override is None:
+        return True
+    return base == override
+
+
+def _tighten_bool(base: bool, override: bool) -> bool:
+    """Whether a boolean override is monotone tightening."""
+    return not base or override
+
+
+def _tighten_bound_value(value: Any, previous: Any) -> bool:
+    """Whether a bound value is a monotone tightening of its predecessor."""
+    if isinstance(previous, type) and isinstance(value, type):
+        return _tighten_type(previous, value)
+    return value == previous
+
+
 # endregion
 
 # =============================================================================
@@ -596,7 +632,9 @@ class declarative(type):
     def __prepare__(mcls, name, bases, **kwargs) -> DeclarativeNamespace:
         """Collects declarations, assignments and containers in the class body."""
         declarative_parents = [b for b in bases if isinstance(b, declarative)]
-        bindable_domain_names = set(chain(*(b._bindable_domain_names for b in declarative_parents)))
+        bindable_domain_names = set(
+            chain(*(b._bindable_domain_names for b in declarative_parents))
+        )
         namespace = DeclarativeNamespace(
             strict=mcls.__strict__,
             bindable_domain_names=bindable_domain_names,
