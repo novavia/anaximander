@@ -22,6 +22,8 @@ from .declarative import (
     DeclarativeNamespace,
     EnumerationCallableDeclarator,
     declarative,
+    is_missing,
+    is_not_missing,
 )
 from .metadescriptors import Metadescriptor, MetadescriptorRegistry, PrototypeValidator
 from .protodescriptors import ProtodescriptorRegistry
@@ -208,6 +210,14 @@ class prototype(declarative):
                 cls.__metacharacters__.register(binding_name, value, namespace=handle)
             else:
                 cls.__metacharacters__.register(name, value)
+        # And additionaly set metadata passed in the class header
+        # Only non-domain metadata can be set this way
+        for name, value in metadata.items():
+            declarator = merged_metadescriptors.metadata.get(name)
+            if declarator is not None and declarator.domain is True:
+                msg = f"Cannot set domain metadata '{name}' in class header of prototype '{cls.__name__}'."  # noqa
+                raise TypeError(msg)
+            cls.__metacharacters__.register(name, value, namespace="metadata")
         # Merge inherited metacharacters
         merged_metacharacters = ProtodescriptorRegistry(cls.__merged_metadescriptors__)
         base_metacharacters = base.metacharacters("merged")
@@ -239,24 +249,22 @@ class prototype(declarative):
         validators = merged_metadescriptors.validation.values()
         attribute_validators = [v for v in validators if isinstance(v, EnumerationCallableDeclarator)]  # noqa
         for validator in attribute_validators:
-            if validator.callable is None:
-                continue
-            target_handle = validator.__handle__.removesuffix("_validator")
-            registry = merged_metacharacters.get_registry(target_handle)
-            for member in validator.members:
-                if member in registry:
-                    value = registry[member]
-                    if not validator.callable(cls, value):
-                        msg = (f"Binding '{member}' with value '{value}' failed validation by "
-                               f"'{validator}' in prototype '{cls.__name__}'.")
-                        raise ValueError(msg)
+            if is_not_missing(validator.callable):
+                target_handle = validator.__handle__.removesuffix("_validator")
+                registry = merged_metacharacters.get_registry(target_handle)
+                for member in validator.members:
+                    if member in registry:
+                        value = registry[member]
+                        if not validator.callable(cls, value):
+                            msg = (f"Binding '{member}' with value '{value}' failed validation by "
+                                f"'{validator}' in prototype '{cls.__name__}'.")
+                            raise ValueError(msg)
         prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]
         for validator in prototype_validators:
-            if validator.callable is None:
-                continue
-            if not validator.callable(cls):
-                msg = f"Prototype '{cls.__name__}' failed validation by '{validator}'."
-                raise ValueError(msg)
+            if is_not_missing(validator.callable):
+                if not validator.callable(cls):
+                    msg = f"Prototype '{cls.__name__}' failed validation by '{validator}'."
+                    raise ValueError(msg)
         # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler  # noqa
         cls.__compilations__: dict[str, dict] = {}
         cls.__ast__ = None

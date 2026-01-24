@@ -20,6 +20,7 @@ from .declarative import (
     Missing,
 )
 from .metadescriptors import (
+    AssignableMetadescriptor,
     MetadataDeclarator,
     MetadataValidator,
     NxFieldDeclarator,
@@ -36,19 +37,19 @@ from .metadescriptors import (
 # region Namespace classes
 
 
-class DeclaratorNamespace(metaclass=Singleton):
+class DeclaratorNamespace[DT: AssignableMetadescriptor](metaclass=Singleton):
     """Base class for AML declarator namespaces.
 
     Instances act as lightweight facades for creating declarators and registering
     declarations or bindings in the active declarative class body.
     """
 
-    __declarator_type__: type[Declarator]
+    __declarator_type__: type[DT]
     __validator_type__: type[EnumerationCallableDeclarator]
     __namespace_name__: str
 
     @property
-    def declarator_type(self) -> type[Declarator]:
+    def declarator_type(self) -> type[DT]:
         """The declarator type for this namespace."""
         return self.__class__.__declarator_type__
 
@@ -62,10 +63,6 @@ class DeclaratorNamespace(metaclass=Singleton):
         """The namespace display name."""
         return self.__class__.__namespace_name__
 
-    def __call__(self, **kwargs: Any) -> Declarator:
-        """Create a declarator instance for use in class assignments."""
-        return self.declarator_type(**kwargs)
-
     def __setattr__(self, name: str, value: Any) -> None:
         if name.startswith("_") or name in {"declarator_type", "validator_type", "name"}:
             object.__setattr__(self, name, value)
@@ -78,10 +75,35 @@ class DeclaratorNamespace(metaclass=Singleton):
             raise RuntimeError(f"{self.name} namespace can only be used in declarative bodies.")
         return dns
 
-    def declare(self, name: str, **kwargs: Any) -> Declarator:
-        """Declare a named declarator without binding it as a class attribute."""
+    def declare(
+            self,
+            name: str, *,
+            type: type,
+            nullable: bool = False,
+            default: Any = MISSING,
+            factory: Callable[[], Any] | Missing = MISSING,
+            validator: Callable[[Any], bool] | Missing = MISSING,
+            doc: str | Missing = MISSING,
+            config: Mapping[str, Any] | Missing = MISSING
+    ) -> DT:
+        """Declare a named metadata declarator without binding it as a class attribute."""
         dns = self._require_namespace()
-        declarator = self.declarator_type(**kwargs)
+        declarator = self.__declarator_type__(
+            default=default,
+            factory=factory,
+            validator=validator,
+            doc=doc,
+            config=config,
+        )
+        if isinstance(declarator, MetadataDeclarator):
+            declarator._set_once("domain", False)
+        classvar = True
+        annotation = (
+            f"ClassVar[{type.__name__} | None]" if nullable else f"ClassVar[{type.__name__}]"
+        )
+        declarator.__set_type__(
+            annotation=annotation, type_=type, classvar=classvar, nullable=nullable
+        )
         dns.register_declaration(declarator, name=name)
         return declarator
 
@@ -101,7 +123,7 @@ class DeclaratorNamespace(metaclass=Singleton):
         return decorator
 
 
-class MetadataNamespace(DeclaratorNamespace):
+class MetadataNamespace(DeclaratorNamespace[MetadataDeclarator]):
     """Namespace for metadata declarators and bindings."""
     __declarator_type__ = MetadataDeclarator
     __validator_type__ = MetadataValidator
@@ -115,7 +137,7 @@ class MetadataNamespace(DeclaratorNamespace):
             doc: str | Missing = MISSING,
             config: Mapping[str, Any] | Missing = MISSING,
     ) -> MetadataDeclarator:
-        """Create a declarator instance for use in class assignments."""
+        """Declares domain metadata for use in class assignments."""
         return MetadataDeclarator(
             domain=True,
             default=default,
@@ -125,21 +147,15 @@ class MetadataNamespace(DeclaratorNamespace):
             config=config,
         )
 
-    def declare(self, name: str, *, domain: bool = False, **kwargs: Any) -> Declarator:
-        """Declare a named metadata declarator without binding it as a class attribute."""
-        kwargs["domain"] = domain
-        declarator = super().declare(name, **kwargs)
-        return declarator
 
-
-class OptionNamespace(DeclaratorNamespace):
+class OptionNamespace(DeclaratorNamespace[OptionDeclarator]):
     """Namespace for option declarators and bindings."""
     __declarator_type__ = OptionDeclarator
     __validator_type__ = OptionValidator
     __namespace_name__ = "option"
 
 
-class NxFieldNamespace(DeclaratorNamespace):
+class NxFieldNamespace(DeclaratorNamespace[NxFieldDeclarator]):
     """Namespace for nxfield declarators and bindings."""
     __declarator_type__ = NxFieldDeclarator
     __validator_type__ = NxFieldValidator

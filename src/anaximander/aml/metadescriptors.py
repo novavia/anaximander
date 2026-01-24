@@ -41,7 +41,13 @@ class Metadescriptor(Declarator):
 
 
 @declarator
-class MetadataDeclarator(AssignableDeclarator, Metadescriptor):
+class AssignableMetadescriptor(AssignableDeclarator, Metadescriptor):
+    """Base class for assignable prototype-level descriptors declared in archetypes and traits."""
+    pass
+
+
+@declarator
+class MetadataDeclarator(AssignableMetadescriptor):
     """The metadescriptor class for metadata fields."""
     __handle__ = "metadata"
     domain: bool = field(default=False)  # Whether this metadata is part of the domain schema  # noqa
@@ -70,13 +76,13 @@ class MetadataDeclarator(AssignableDeclarator, Metadescriptor):
 
 
 @declarator
-class OptionDeclarator(AssignableDeclarator, Metadescriptor):
+class OptionDeclarator(AssignableMetadescriptor):
     """The metadescriptor class for option fields."""
     __handle__ = "option"
 
 
 @declarator
-class NxFieldDeclarator(AssignableDeclarator, Metadescriptor):
+class NxFieldDeclarator(AssignableMetadescriptor):
     """The metadescriptor class for nxfield, i.e. abstract semantic fields."""
     __handle__ = "nxfield"
     fieldtype: type = field()
