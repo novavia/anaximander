@@ -164,9 +164,9 @@ class RelationProtodescriptor(FieldProtodescriptor):
 
 
 @declarator
-class ConstructionDeclarator(CallableDeclarator[Callable[[Arche, Any], bool]], Protodescriptor):  # noqa
+class ConstructorDeclarator(CallableDeclarator[Callable[[Arche, Any], bool]], Protodescriptor):  # noqa
     """Base class for construction method descriptors."""
-    __handle__ = "construction"
+    __handle__ = "constructor"
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -589,7 +589,7 @@ class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[A
 
 
 @declarator
-class ParserDeclarator(ConstructionDeclarator, FieldEnumeration):
+class ParserDeclarator(ConstructorDeclarator, FieldEnumeration):
     """The declarator class for field parsers."""
     __handle__ = "parser"
     element_wise: bool = field(default=False)
@@ -600,7 +600,7 @@ class ParserDeclarator(ConstructionDeclarator, FieldEnumeration):
 
 
 @declarator
-class ValidatorDeclarator(ConstructionDeclarator, FieldEnumeration):
+class ValidatorDeclarator(ConstructorDeclarator, FieldEnumeration):
     """The declarator class for field validators."""
     __handle__ = "validator"
     element_wise: bool = field(default=False)
@@ -704,7 +704,7 @@ class SortDeclarator(FieldEnumeration, SchemaDeclarator):
 class ProtodescriptorRegistry(MultiRegistry):
     """Registry for meta bindings and protodescriptors."""
 
-    __handles__ = {"metadata", "nxfield", "option", "field", "schema", "construction", "data"}
+    __handles__ = {"metadata", "nxfield", "option", "field", "schema", "constructor", "data"}
 
     def __init__(self, metadescriptors: MetadescriptorRegistry):
         metadata = BindingRegistry(_declarators=metadescriptors.metadata)
@@ -712,7 +712,7 @@ class ProtodescriptorRegistry(MultiRegistry):
         option = BindingRegistry(_declarators=metadescriptors.option)
         field = DeclaratorRegistry[FieldProtodescriptor]()
         schema = DeclaratorRegistry[SchemaDeclarator]()
-        construction = DeclaratorRegistry[ConstructionDeclarator]()
+        constructor = DeclaratorRegistry[ConstructorDeclarator]()
         data = BindingRegistry(_declarators=field)
         super().__init__(
             metadata=metadata,
@@ -720,7 +720,7 @@ class ProtodescriptorRegistry(MultiRegistry):
             option=option,
             field=field,
             schema=schema,
-            construction=construction,
+            constructor=constructor,
             data=data,
         )
         self._metadescriptors = metadescriptors
@@ -756,42 +756,39 @@ class ProtodescriptorRegistry(MultiRegistry):
         return cast(DeclaratorRegistry[SchemaDeclarator], self._data["schema"])
 
     @property
-    def construction(self) -> DeclaratorRegistry[ConstructionDeclarator]:
-        """Returns the construction declarator registry."""
-        return cast(DeclaratorRegistry[ConstructionDeclarator], self._data["construction"])
+    def constructor(self) -> DeclaratorRegistry[ConstructorDeclarator]:
+        """Returns the constructor declarator registry."""
+        return cast(DeclaratorRegistry[ConstructorDeclarator], self._data["constructor"])
 
     @property
     def data(self) -> BindingRegistry[DataProtodescriptor]:
         """Returns the data binding registry."""
         return cast(BindingRegistry[DataProtodescriptor], self._data["data"])
 
-    def register(self, key, item: Any, *, handle: str | None = None) -> None:
-        """Registers a declarator or binding in the appropriate registry."""
-        # If the handle is specified, use it directly
-        if handle is not None:
-            registry = self.get_registry(handle)
-            registry.register(key, item)
-            return
-        # If the item is a declarator, route to the appropriate registry
-        match = True
-        match item:
+    @classmethod
+    def handle(cls, declarator: Declarator) -> str | None:
+        """Returns the registry handle for the given declarator, or None if not found."""
+        match declarator:
             case FieldProtodescriptor():
-                self.field.register(key, item)
+                return "field"
             case SchemaDeclarator():
-                self.schema.register(key, item)
-            case ConstructionDeclarator():
-                self.construction.register(key, item)
+                return "schema"
+            case ConstructorDeclarator():
+                return "constructor"
             case _:
-                match = False
-        if match:
-            return
+                return None
+
+    def register(self, name: str, item: Any, *, handle: str | None = None) -> None:
+        """Registers a declarator or binding in the appropriate registry."""
+        if isinstance(item, Declarator):
+            return super().register(name, item, handle=handle)
         # If the item is a binding, try to register in each binding registry
         for binding_registry in (self.metadata, self.nxfield, self.option, self.data):
             try:
-                binding_registry.register(key, item)
+                binding_registry.register(name, item)
                 return
             except KeyError:
                 continue
-        raise KeyError(f"Cannot register item {item} with key {key} in any registry.")
+        raise KeyError(f"Cannot register item {item} with name {name} in any registry.")
 
 # endregion

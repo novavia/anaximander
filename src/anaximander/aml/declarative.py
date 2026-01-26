@@ -11,7 +11,7 @@ These artifacts form the foundation for declarative type definitions in AML.
 
 import ast
 import re
-from abc import ABC, abstractmethod
+from abc import ABC, abstractclassmethod, abstractmethod
 from collections.abc import Iterable, Mapping
 from contextvars import ContextVar, Token
 from itertools import chain, count
@@ -865,12 +865,13 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
     def __init__(self, data: Mapping[str, Registry[Any]] | Iterable[tuple[str, Registry[Any]]] | None = None, **kwargs: Registry[Any]):  # noqa
         """Initialize the multi-registry with an optional mapping or iterable of pairs."""
         self._data: dict[str, Registry[Any]] = dict(data or {}, **kwargs)
+        self._names = self._data.keys())  # The unified name registry, mapping to handles
 
-    def __getitem__(self, key: str) -> Registry[Any]:
+    def __getitem__(self, handle: str) -> Registry[Any]:
         try:
-            return self._data[key]
+            return self._data[handle]
         except KeyError:
-            raise KeyError(f"Registry '{key}' not found.") from None
+            raise KeyError(f"Registry '{handle}' not found.") from None
 
     def __iter__(self):
         return iter(self._data)
@@ -893,7 +894,17 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
         if handle not in self.__handles__:
             msg = f"Unknown registration handle {handle!r}."
             raise ValueError(msg)
-        return getattr(self, handle)
+        return self._data[handle]
+
+    @property
+    def names(self) -> set[str]:
+        """Returns the set of all registered names across all registries."""
+        return self._names.copy()
+
+    @classmethod
+    def handle(cls, declarator: Declarator) -> str | None:
+        """This customizable method maps declarators to handles."""
+        return declarator.handle
 
     @property
     def declarator_registries(self) -> dict[str, DeclaratorRegistry[Declarator]]:
@@ -915,13 +926,33 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
                 registries[handle] = registry
         return registries
 
+    def _register_declarator(self, name: str, item: Declarator, *, handle: str | None = None) -> None:  # noqa
+        """Register a declarator in the appropriate registry."""
+        if handle is None:
+            handle = self.handle(item)
+            if handle is None:
+                msg = f"Cannot determine registration handle for item of type {type(item).__name__}."  # noqa
+                raise TypeError(msg)
+        # Check that the handle corresponds to a declarator registry
+        registry = self.get_registry(handle)
+        # Prevent name clashes across registries
+        if name in self._names:
+            # If the name is registered under a different handle, raise an error
+            if name not in self._data.get(handle, {}):
+                msg = f"""Cannot register {name!r} with handle {handle!r}
+                    because it is already registered with a different handle."""
+                raise KeyError(msg)
+            # Otherwise we can proceed and override rule will be applied in the registry
+        self._names.add(name)
+        registry.register(name, item)
+
     @abstractmethod
-    def register(self, key: str, item: Any, *, handle: str | None = None) -> None:
-        if handle is not None:
-            registry = self.get_registry(handle)
-            registry.register(key, item)
-            return
-        raise NotImplementedError
+    def register(self, name: str, item: Any, *, handle: str | None = None) -> None:
+        """Register an item in the appropriate registry."""
+        if isinstance(item, Declarator):
+            self._register_declarator(name, item, handle=handle)
+        else:
+            raise NotImplementedError
 
     def update(self, other: Mapping[str, Registry[Any]]) -> None:
         """Update the multi-registry with items from another mapping."""
@@ -941,7 +972,8 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
         # Declarators get updated first, since bindings may depend on them.
         for handle, registry in self.declarator_registries.items():
             declarator_updates = declarators.get(handle, {})
-            registry.update(declarator_updates)
+            for name, declarator in declarator_updates.items():
+                self._register_declarator(name, declarator, handle=handle)
         # In the case of bindings, even extant bindings must be updated,
         # since they may refer to new declarators.
         for handle, registry in self.binding_registries.items():
@@ -949,7 +981,8 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
             binding_updates = bindings.get(handle, {})
             self_bindings.update(binding_updates)
             new_registry = BindingRegistry(_declarators=registry.declarators, **self_bindings)
-            self._data[handle] = new_registry
+            for name, item in new_registry.items():
+                registry.register(name, item)
 
     def to_dict(self) -> dict[str, dict[str, Any]]:
         """Convert to a plain nested dict suitable for serialization."""

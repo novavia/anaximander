@@ -207,7 +207,7 @@ class prototype(declarative):
         for name, value in cls.__bindings__.items():
             if "." in name:
                 handle, binding_name = name.split(".", 1)
-                cls.__metacharacters__.register(binding_name, value, namespace=handle)
+                cls.__metacharacters__.register(binding_name, value, handle=handle)
             else:
                 cls.__metacharacters__.register(name, value)
         # And additionaly set metadata passed in the class header
@@ -217,7 +217,7 @@ class prototype(declarative):
             if declarator is not None and declarator.domain is True:
                 msg = f"Cannot set domain metadata '{name}' in class header of prototype '{cls.__name__}'."  # noqa
                 raise TypeError(msg)
-            cls.__metacharacters__.register(name, value, namespace="metadata")
+            cls.__metacharacters__.register(name, value, handle="metadata")
         # Merge inherited metacharacters
         merged_metacharacters = ProtodescriptorRegistry(cls.__merged_metadescriptors__)
         base_metacharacters = base.metacharacters("merged")
@@ -230,8 +230,7 @@ class prototype(declarative):
         # Next we check for possible naming conflicts between domain metadata and protodescriptors
         domain_metadata_names = (md.name for md in merged_metadescriptors.metadata.values()
                                  if md.domain is True)
-        if any(name in registry for registry in merged_metacharacters.declarator_registries.values()  # noqa
-               for name in domain_metadata_names):
+        if any(name in merged_metacharacters.names for name in domain_metadata_names):
             msg = (f"Prototype '{cls.__name__}' has naming conflicts between domain metadata "
                    "and protodescriptors.")
             raise ValueError(msg)
@@ -246,7 +245,7 @@ class prototype(declarative):
                     raise ValueError(msg)
         # Next, registered validators are run, starting with attribute validators,
         # and followed by prototype-wide validators
-        validators = merged_metadescriptors.validation.values()
+        validators = merged_metadescriptors.metavalidator.values()
         attribute_validators = [v for v in validators if isinstance(v, EnumerationCallableDeclarator)]  # noqa
         for validator in attribute_validators:
             if is_not_missing(validator.callable):

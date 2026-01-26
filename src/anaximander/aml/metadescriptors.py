@@ -20,6 +20,7 @@ from .declarative import (
     DeclaratorRegistry,
     EnumerationCallableDeclarator,
     MultiRegistry,
+    Registry,
     _tighten_bound_value,
     _tighten_classvar,
     _tighten_nullable,
@@ -152,8 +153,16 @@ class NxFieldDeclarator(AssignableMetadescriptor):
         return True
 
 
+# Metavalidators
+
 @declarator
-class PrototypeValidator(CallableDeclarator[Callable[[declarative], bool]], Metadescriptor):
+class MetaValidator(Metadescriptor):
+    """A common base class for metadescriptor validators."""
+    __handle__ = "metavalidator"
+
+
+@declarator
+class PrototypeValidator(CallableDeclarator[Callable[[declarative], bool]], MetaValidator):
     """The metadescriptor class for prototype validators."""
     __handle__ = "prototype_validator"
 
@@ -163,7 +172,7 @@ class PrototypeValidator(CallableDeclarator[Callable[[declarative], bool]], Meta
 
 
 @declarator
-class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
+class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], MetaValidator):  # noqa
     """The metadescriptor class for metadata validators."""
     __handle__ = "metadata_validator"
 
@@ -173,7 +182,7 @@ class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any
 
 
 @declarator
-class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
+class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], MetaValidator):  # noqa
     """The metadescriptor class for option validators."""
     __handle__ = "option_validator"
 
@@ -183,7 +192,7 @@ class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any],
 
 
 @declarator
-class NxFieldValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], Metadescriptor):  # noqa
+class NxFieldValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], MetaValidator):  # noqa
     """The metadescriptor class for nxfield validators."""
     __handle__ = "nxfield_validator"
 
@@ -203,14 +212,16 @@ class NxFieldValidator(EnumerationCallableDeclarator[Callable[[declarative, Any]
 class MetadescriptorRegistry(MultiRegistry):
     """Registry for metadescriptors."""
 
-    __handles__ = {"metadata", "nxfield", "option", "validation"}
+    __handles__ = {"metadata", "nxfield", "option", "metavalidator"}
 
     def __init__(self):
         metadata = DeclaratorRegistry[MetadataDeclarator]()
         nxfield = DeclaratorRegistry[NxFieldDeclarator]()
         option = DeclaratorRegistry[OptionDeclarator]()
-        validation = DeclaratorRegistry[CallableDeclarator]()
-        super().__init__(metadata=metadata, nxfield=nxfield, option=option, validation=validation)
+        metavalidator = DeclaratorRegistry[CallableDeclarator]()
+        super().__init__(
+            metadata=metadata, nxfield=nxfield, option=option, metavalidator=metavalidator
+        )
 
     @property
     def metadata(self) -> DeclaratorRegistry[MetadataDeclarator]:
@@ -228,24 +239,27 @@ class MetadescriptorRegistry(MultiRegistry):
         return cast(DeclaratorRegistry[OptionDeclarator], self._data["option"])
 
     @property
-    def validation(self) -> DeclaratorRegistry[CallableDeclarator]:
-        """Returns the validation metadescriptor registry."""
-        return cast(DeclaratorRegistry[CallableDeclarator], self._data["validation"])
+    def metavalidator(self) -> DeclaratorRegistry[CallableDeclarator]:
+        """Returns the metavalidator metadescriptor registry."""
+        return cast(DeclaratorRegistry[CallableDeclarator], self._data["metavalidator"])
 
-    def register(self, key, item: Metadescriptor, *, handle: str | None = None) -> None:
-        """Registers a metadescriptor in the appropriate registry."""
-        if handle is not None:
-            registry = self.get_registry(handle)
-            registry.register(key, item)
-            return
-        match item:
+    @classmethod
+    def handle(cls, declarator: Declarator) -> str | None:
+        """Returns the registry handle for the given declarator, or None if not found."""
+        match declarator:
             case MetadataDeclarator():
-                self.metadata.register(key, item)
+                return "metadata"
             case NxFieldDeclarator():
-                self.nxfield.register(key, item)
+                return "nxfield"
             case OptionDeclarator():
-                self.option.register(key, item)
+                return "option"
             case PrototypeValidator() | MetadataValidator() | OptionValidator() | NxFieldValidator():  # noqa
-                self.validation.register(key, item)
+                return "metavalidator"
+            case _:
+                return None
+
+    def register(self, name: str, item: Any, *, handle: str | None = None) -> None:
+        """This mutlti-registry only deals with declarator, not bindings."""
+        return super().register(name, item, handle=handle)
 
 # endregion
