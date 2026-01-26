@@ -44,7 +44,7 @@ class Motor(nx.Entity):
     serial_number: str = nx.data(key=True)
     
     # The nickname can serve as an alternate retrieval key
-	# This is indicated by the 'unique' flag. At the same time, the field is nullable.
+    # This is indicated by the 'unique' flag. At the same time, the field is nullable.
     # As a result, uniqueness is understood to apply across non-null values only
     nickname: str | None = nx.data(unique=True)
     
@@ -145,9 +145,9 @@ class BetaProbe(VibrationProbe):
 # options can be supplied for individual instances at runtime, but types can still
 # set a default value, as is done here. Further, the option could be frozen by using
 # the `Final` keyword from the typing library.
-# The syntax for setting options leverages a special namespace nx.option where options
+# The syntax for setting options leverages a special interface nx.option where options
 # get globally registered -though of course the metaclass will make sure that the assignment
-# makes sense. That same syntax can also be used for metacharacters by using the nx.meta namespace.
+# makes sense. That same syntax can also be used for metadata.
 class Acceleration(nx.Measurement, unit="m/s^2"):
     nx.option.fspec = ".3f"
     
@@ -403,7 +403,7 @@ In the same way that archetypes are defined with the `nx.archetype` decorator, t
 
 ### Built-in Functions
 
-The framework offers a set of built-in, specialized functions accessed through dedicated namespaces for temporal, math, string, and geometric operations. These functions can be used both in AML or at runtime, but their primary intent is the former, where they serve as symbolic expressions that can be compiled to the various backend libraries.
+The framework offers a set of built-in, specialized functions accessed through dedicated interfaces for temporal, math, string, and geometric operations. These functions can be used both in AML or at runtime, but their primary intent is the former, where they serve as symbolic expressions that can be compiled to the various backend libraries.
 
 #### `nx.dt` — Temporal Functions
 
@@ -1027,7 +1027,7 @@ class Baz(Foo):
     nx.meta.bar = "baz"      
 ```
 
-As can be seen the `bar` metacharacter is declared with `bar = nx.meta()`, and the concrete prototype `Baz` sets a value for it with `nx.meta.bar = "baz"`. In practice, these functions are a special class of callable objects that also act as a namespace. nxdescriptors are registered as attributes of that namespace, and these attributes have a special setter that uses the current context to make a targeted assignment whose scope is limited to the class in which the assignment takes place, here `Baz`.
+As can be seen the `bar` metacharacter is declared with `bar = nx.meta()`, and the concrete prototype `Baz` sets a value for it with `nx.meta.bar = "baz"`. In practice, these functions are a special class of callable objects acting as declarator interfaces. nxdescriptors are registered as attributes of that interface, and these attributes have a special setter that uses the current context to make a targeted assignment whose scope is limited to the class in which the assignment takes place, here `Baz`.
 
 ### FieldDescriptor
 
@@ -2134,9 +2134,6 @@ The core package contains the fundamental building blocks of the Anaximander Mod
 - The body of prototypes consists of protodescriptor statements. Protodescriptors declare attributes much like Python descriptors, but they do not implement the descriptor protocol since prototypes are not instantiated directly. Instead, protodescriptors serve to collect metadata about the attributes they declare, which gets compiled into attribute definitions in system code libraries.
 
 - Archetypes and traits are declared using decorators. These decorators relax inheritance constraints in order to allow injection of built-in or library classes in the inheritance hierarchy. The purpose of doing so is to instruct type checkers to treat derived prototypes as instances of those built-in or library classes, which greatly facilitates domain model development by providing the benefits of static type checking and IDE auto-completion. The core package provides the `archetype` and `trait` decorators for that purpose. The body of archetypes and traits is populated with metadescriptors. Like protodescriptors, these are declarator classes that do not implement the descriptor protocol, but instead collect metadata about the attributes they declare. Archetypes can create declarator registries, which de facto bind the type of declarators that can be declared in their derived prototypes. Both archetypes and traits can define prototype validation methods for new prototypes that inherit from them, using the `@prototype.validator` decorator.
-
-- Declarators can optionally be organized into hierarchical namespaces. Namespaces serve to group related declarators together and isolate subdomains to avoid naming conflicts. In the Anaximander framework, the key namespace is `nx`, which serves as the interface between the application domain and the system domain. To establish consistency with Python syntax, namespace declarators must be defined and collected in an inner class or a nested
-collection attribute. Further, if these declarators are to be bound in prototype declarations (as is the case for class-level metadata), the value assignments must also be nested. This may be done using a collection-typed class variable to serve as the declarative container, or, as with metacharacters, set values in the class header. The core package provides basic namespace management functionality to facilitate the definition and usage of namespaces.
 
 - The core package also provides compilation infrastructure that allows prototypes to be transformed into runtime classes. This includes collection of declarators by the `prototype` metaclass, as well as filtered and structured AST representations of prototype bodies. However, the actual compilation process is left to the specific language implementation, since it is highly domain-specific.
 

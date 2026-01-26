@@ -177,5 +177,5 @@ As of this version, the sequence of implementation focuses on the first mileston
 - Create the `Archetype` metaclass and the `archetype` decorator
 - Add traits and the the `trait` decorator
 - Implement the base `Object` archetype
-- Develop dedicated namespaces for functions (`dt`, `math`, `str` and `geo`), and for metadescriptors (`meta`, `option`, and `nxfield`)
+- Develop interfaces for functions (`dt`, `math`, `str` and `geo`), and for metadescriptors (`meta`, `option`, and `nxfield`)
 - Populate the protodescriptor and archetype hierarchies
