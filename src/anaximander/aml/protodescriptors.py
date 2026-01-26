@@ -704,7 +704,7 @@ class SortDeclarator(FieldEnumeration, SchemaDeclarator):
 class ProtodescriptorRegistry(MultiRegistry):
     """Registry for meta bindings and protodescriptors."""
 
-    __namespaces__ = {"metadata", "nxfield", "option", "field", "schema", "construction", "data"}
+    __handles__ = {"metadata", "nxfield", "option", "field", "schema", "construction", "data"}
 
     def __init__(self, metadescriptors: MetadescriptorRegistry):
         metadata = BindingRegistry(_declarators=metadescriptors.metadata)
@@ -765,11 +765,11 @@ class ProtodescriptorRegistry(MultiRegistry):
         """Returns the data binding registry."""
         return cast(BindingRegistry[DataProtodescriptor], self._data["data"])
 
-    def register(self, key, item: Any, *, namespace: str | None = None) -> None:
+    def register(self, key, item: Any, *, handle: str | None = None) -> None:
         """Registers a declarator or binding in the appropriate registry."""
-        # If the namespace is specified, use it directly
-        if namespace is not None:
-            registry = self.get_registry(namespace)
+        # If the handle is specified, use it directly
+        if handle is not None:
+            registry = self.get_registry(handle)
             registry.register(key, item)
             return
         # If the item is a declarator, route to the appropriate registry

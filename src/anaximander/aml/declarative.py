@@ -322,7 +322,7 @@ class Declarator(ABC):
         self._set_once("__ast__", node)
 
     def __validate__(self) -> None:
-        """Validate this declarator after it has been bound to a namespace.
+        """Validate this declarator after it has been bound to a class namespace.
 
         This method is called by the declarative metaclass after the declarator
         has been assigned to a class attribute, but before the class is finalized.
@@ -539,9 +539,9 @@ class DeclarativeNamespace(dict[str, Any]):
     def register_declaration(self, declarator: Declarator, *, name: str | None = None) -> None:
         """Register a declarator in this namespace.
 
-        name is optional and only used when the declarator is registered through a namespace
-        with a .declare() method. Otherwise the declarator is not given a name yet as it is
-        set by the __set_name__ hook after the class body is executed.
+        name is optional and only used when the declarator is registered through a declarative
+        interface with a .declare() method. Otherwise the declarator is not given a name yet as
+        it is set by the __set_name__ hook after the class body is executed.
         """
         declarations: dict[int, Declarator] = self["__declarations__"]
         if declarator in declarations.values():
@@ -570,18 +570,16 @@ class DeclarativeNamespace(dict[str, Any]):
     def register_binding(self, key: str, value: Any, *, handle: str | None= None) -> None:
         """Register a binding in this namespace.
 
-        The handle parameter specifies the namespace handle under which the binding is registered.
-        It is optional and defaults to None, which indicates the declarative namespace itself.
-        The handle is passed when the binding is registered through a declarator namespace
-        using the .bind() method. If it belongs to one of the metadescriptor namespaces,
-        specifically "metadata", "option", or "nxfield", the binding key is prefixed with
-        the handle and a dot, reflecting the namespace context.
+        The handle parameter optionally specifies the handle under which the binding is registered.
+        In that case, the binding key is prefixed with the handle and a dot. This allows bindings
+        to be namespaced under different declarator types. The default is no prefix, and applies
+        to bindings registered directly in the namespace.
         """
         bindings: dict[str, Any] = self["__bindings__"]
-        if handle in {"metadata", "option", "nxfield"}:
+        if handle is not None:
             binding_key = f"{handle}.{key}"
             if binding_key in bindings:
-                raise KeyError(f"Binding '{key}' is already registered in namespace '{handle}'.")
+                raise KeyError(f"Binding '{key}' is already registered in with handle '{handle}'.")
         else:
             binding_key = key
             if binding_key in bindings:
@@ -860,9 +858,9 @@ class BindingRegistry[D: Declarator](Registry[Any]):
 
 
 class MultiRegistry(Mapping[str, Registry[Any]]):
-    """A mapping that organizes multiple registries by namespace or rubric."""
+    """A mapping that organizes multiple registries by handle."""
 
-    __namespaces__: ClassVar[set[str]] = set()  # Set of valid registry namespaces
+    __handles__: ClassVar[set[str]] = set()  # Set of registry handles
 
     def __init__(self, data: Mapping[str, Registry[Any]] | Iterable[tuple[str, Registry[Any]]] | None = None, **kwargs: Registry[Any]):  # noqa
         """Initialize the multi-registry with an optional mapping or iterable of pairs."""
@@ -890,37 +888,37 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
         """Create a shallow copy of the multi-registry."""
         return self.__copy__()
 
-    def get_registry(self, namespace: str) -> Registry[Any]:
-        """Returns the registry for the given namespace."""
-        if namespace not in self.__namespaces__:
-            msg = f"Unknown registration namespace {namespace!r}."
+    def get_registry(self, handle: str) -> Registry[Any]:
+        """Returns the registry for the given handle."""
+        if handle not in self.__handles__:
+            msg = f"Unknown registration handle {handle!r}."
             raise ValueError(msg)
-        return getattr(self, namespace)
+        return getattr(self, handle)
 
     @property
     def declarator_registries(self) -> dict[str, DeclaratorRegistry[Declarator]]:
-        """Returns a mapping of namespace to declarator registries."""
+        """Returns a mapping of handle to declarator registries."""
         registries: dict[str, DeclaratorRegistry] = {}
-        for namespace in self.__namespaces__:
-            registry = self.get_registry(namespace)
+        for handle in self.__handles__:
+            registry = self.get_registry(handle)
             if isinstance(registry, DeclaratorRegistry):
-                registries[namespace] = registry
+                registries[handle] = registry
         return registries
 
     @property
     def binding_registries(self) -> dict[str, BindingRegistry[Declarator]]:
-        """Returns a mapping of namespace to binding registries."""
+        """Returns a mapping of handle to binding registries."""
         registries: dict[str, BindingRegistry] = {}
-        for namespace in self.__namespaces__:
-            registry = self.get_registry(namespace)
+        for handle in self.__handles__:
+            registry = self.get_registry(handle)
             if isinstance(registry, BindingRegistry):
-                registries[namespace] = registry
+                registries[handle] = registry
         return registries
 
     @abstractmethod
-    def register(self, key: str, item: Any, *, namespace: str | None = None) -> None:
-        if namespace is not None:
-            registry = self.get_registry(namespace)
+    def register(self, key: str, item: Any, *, handle: str | None = None) -> None:
+        if handle is not None:
+            registry = self.get_registry(handle)
             registry.register(key, item)
             return
         raise NotImplementedError
@@ -929,33 +927,33 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
         """Update the multi-registry with items from another mapping."""
         declarators: dict[str, DeclaratorRegistry] = {}
         bindings: dict[str, BindingRegistry] = {}
-        for namespace, registry in other.items():
-            if namespace not in self.__namespaces__:
-                msg = f"Unknown registration namespace {namespace!r}."
+        for handle, registry in other.items():
+            if handle not in self.__handles__:
+                msg = f"Unknown registration handle {handle!r}."
                 raise ValueError(msg)
             elif isinstance(registry, DeclaratorRegistry):
-                declarators[namespace] = registry
+                declarators[handle] = registry
             elif isinstance(registry, BindingRegistry):
-                bindings[namespace] = registry
+                bindings[handle] = registry
             else:
-                msg = f"Invalid registry type for namespace {namespace!r}."
+                msg = f"Invalid registry type for handle {handle!r}."
                 raise TypeError(msg)
         # Declarators get updated first, since bindings may depend on them.
-        for namespace, registry in self.declarator_registries.items():
-            declarator_updates = declarators.get(namespace, {})
+        for handle, registry in self.declarator_registries.items():
+            declarator_updates = declarators.get(handle, {})
             registry.update(declarator_updates)
         # In the case of bindings, even extant bindings must be updated,
         # since they may refer to new declarators.
-        for namespace, registry in self.binding_registries.items():
+        for handle, registry in self.binding_registries.items():
             self_bindings = registry.to_dict()
-            binding_updates = bindings.get(namespace, {})
+            binding_updates = bindings.get(handle, {})
             self_bindings.update(binding_updates)
             new_registry = BindingRegistry(_declarators=registry.declarators, **self_bindings)
-            self._data[namespace] = new_registry
+            self._data[handle] = new_registry
 
     def to_dict(self) -> dict[str, dict[str, Any]]:
         """Convert to a plain nested dict suitable for serialization."""
-        return {namespace: dict(registry) for namespace, registry in self._data.items() if registry}  # noqa
+        return {handle: dict(registry) for handle, registry in self._data.items() if registry}  # noqa
 
     def to_yaml(self) -> str:
         """YAML-style pretty print."""

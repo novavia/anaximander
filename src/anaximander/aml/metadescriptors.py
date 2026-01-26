@@ -203,7 +203,7 @@ class NxFieldValidator(EnumerationCallableDeclarator[Callable[[declarative, Any]
 class MetadescriptorRegistry(MultiRegistry):
     """Registry for metadescriptors."""
 
-    __namespaces__ = {"metadata", "nxfield", "option", "validation"}
+    __handles__ = {"metadata", "nxfield", "option", "validation"}
 
     def __init__(self):
         metadata = DeclaratorRegistry[MetadataDeclarator]()
@@ -232,10 +232,10 @@ class MetadescriptorRegistry(MultiRegistry):
         """Returns the validation metadescriptor registry."""
         return cast(DeclaratorRegistry[CallableDeclarator], self._data["validation"])
 
-    def register(self, key, item: Metadescriptor, *, namespace: str | None = None) -> None:
+    def register(self, key, item: Metadescriptor, *, handle: str | None = None) -> None:
         """Registers a metadescriptor in the appropriate registry."""
-        if namespace is not None:
-            registry = self.get_registry(namespace)
+        if handle is not None:
+            registry = self.get_registry(handle)
             registry.register(key, item)
             return
         match item:
