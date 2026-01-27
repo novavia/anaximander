@@ -18,7 +18,7 @@ from anaximander.utils.funcs import (
     unwrap_optional_type,
 )
 
-from .declarative import AnnotatableDeclarator, DeclarativeNamespace, declarative
+from .declarative import AnnotatableDeclarator, DeclarativeNamespace, Declarator, declarative
 from .metadescriptors import Metadescriptor, MetadescriptorRegistry, PrototypeValidator
 from .protodescriptors import ProtodescriptorRegistry
 
@@ -67,7 +67,7 @@ class prototypeProtocol(Protocol):
 class ArchetypeProtocol(prototypeProtocol):
     """Protocol for archetype classes."""
     __role__: ClassVar[Literal[TypeRole.ARCHETYPE]]
-    __declarator_types__: ClassVar[set[type[Metadescriptor]]]
+    __declarator_types__: ClassVar[set[type[Declarator]]]
 
 Archetype = type[ArchetypeProtocol]
 
@@ -116,7 +116,7 @@ class Arche(metaclass=declarative):
     __traits__: ClassVar[tuple[Trait, ...]] = ()
     _metadescriptors: ClassVar[MetadescriptorRegistry] = MetadescriptorRegistry()
     _metacharacters: ClassVar[ProtodescriptorRegistry] = ProtodescriptorRegistry(_metadescriptors)
-    __declarator_types__: ClassVar[set[type[Metadescriptor]]] = {Metadescriptor}
+    __declarator_types__: ClassVar[set[type[Declarator]]] = {Metadescriptor}
 
     def __new__(cls, *args, **kwargs):
         raise TypeError("Archetypes, traits and prototypes cannot be instantiated directly.")

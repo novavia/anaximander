@@ -5,6 +5,8 @@ from .modules import finalize_module
 from .archetype import archetype
 from .trait import trait
 from .object import Object
+from .data import Data, Scalar, Integer, Float, Bool, String, Measurement, MeasurementTrait
+from .model import Model
 from .interfaces import (
     metadata,
     option,
@@ -26,6 +28,15 @@ __all__ = [
     "archetype",
     "trait",
     "Object",
+    "Data",
+    "Scalar",
+    "Integer",
+    "Float",
+    "Bool",
+    "String",
+    "Measurement",
+    "MeasurementTrait",
+    "Model",
     "metadata",
     "option",
     "nxfield",
