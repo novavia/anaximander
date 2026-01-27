@@ -20,7 +20,7 @@ from anaximander.aml.metadescriptors import (
     NxFieldDeclarator,
     OptionDeclarator,
 )
-from anaximander.aml.prototype import Arche
+from anaximander.aml.prototype import Arche, prototype
 
 from .declarative import (
     MISSING,
@@ -164,13 +164,16 @@ class RelationProtodescriptor(FieldProtodescriptor):
 
 
 @declarator
-class ConstructorDeclarator(CallableDeclarator[Callable[[Arche, Any], bool]], Protodescriptor):  # noqa
+class ConstructorDeclarator[C](CallableDeclarator[Callable[[Arche | prototype, Any], Any]], Protodescriptor):  # noqa
     """Base class for construction method descriptors."""
     __handle__ = "constructor"
 
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
+
+    def __override__(self, override: Declarator) -> None:
+        return super().__override__(override)
 
 
 @declarator
@@ -554,7 +557,7 @@ class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[A
 
 
 @declarator
-class ParserDeclarator(ConstructorDeclarator, FieldEnumeration):
+class ParserDeclarator(ConstructorDeclarator[Callable[[Arche | prototype, Any], Any]], FieldEnumeration):  # noqa
     """The declarator class for field parsers."""
     __handle__ = "parser"
     element_wise: bool = field(default=False)
@@ -565,7 +568,7 @@ class ParserDeclarator(ConstructorDeclarator, FieldEnumeration):
 
 
 @declarator
-class ValidatorDeclarator(ConstructorDeclarator, FieldEnumeration):
+class ValidatorDeclarator(ConstructorDeclarator[Callable[[Arche | prototype, Any], bool]], FieldEnumeration):  # noqa
     """The declarator class for field validators."""
     __handle__ = "validator"
     element_wise: bool = field(default=False)

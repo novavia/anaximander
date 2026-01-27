@@ -338,7 +338,6 @@ class Declarator(ABC):
         self._validate_value_type("owner", self.owner, type)
         self._validate_value_type("ordinal", self.ordinal, int)
 
-    @abstractmethod
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
         """Hook called when this declarator is bound to a value.
 
@@ -364,7 +363,7 @@ class Declarator(ABC):
         """Hook called to validate a bound value in the context of a hosting class.
 
         Unlike __bind__, which is called when the binding occurs and does not use context,
-        this method is designed to be called when the host class is finalized.
+        this method is designed to be called at AML module finalization.
         This method can be overridden by subclasses to implement custom validation logic.
         The default implementation returns True.
         """

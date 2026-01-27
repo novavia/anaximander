@@ -18,7 +18,9 @@ from types import ModuleType
 from typing import get_type_hints
 
 from ..utils.funcs import unwrap_classvar_type, unwrap_optional_type
-from .declarative import AnnotatableDeclarator
+from .declarative import AnnotatableDeclarator, EnumerationCallableDeclarator, is_not_missing
+from .metadescriptors import PrototypeValidator
+from .protodescriptors import ParserDeclarator, ValidatorDeclarator
 from .prototype import TypeRole, is_archetype, is_prototype, is_trait, prototype
 
 # endregion
@@ -260,6 +262,68 @@ def _validate_type_role(cls: prototype) -> None:
         return
     raise TypeError(f"AML type {cls.__name__} is not a valid archetype, trait, or prototype.")
 
+
+def _validate_bindings(cls: prototype) -> None:
+    """Validate bound values, attribute validators, and data parsers for a prototype."""
+    merged_metacharacters = cls.__merged_metacharacters__
+    merged_metadescriptors = cls.__merged_metadescriptors__
+    # First, the __validate_binding__ method is run for each bound declarator.
+    for registry in merged_metacharacters.binding_registries.values():
+        for name, value in registry.items():
+            declarator = registry.declarators[name]
+            if not declarator.__validate_binding__(cls, value):
+                msg = (f"Binding '{name}' with value '{value}' is not valid for declarator "
+                       f"of type '{declarator.dtype}' in prototype '{cls.__name__}'.")
+                raise ValueError(msg)
+    # Next, registered validators are run for attributes.
+    validators = merged_metadescriptors.metavalidator.values()
+    attribute_validators = [v for v in validators if isinstance(v, EnumerationCallableDeclarator)]  # noqa
+    for validator in attribute_validators:
+        if is_not_missing(validator.callable):
+            target_handle = validator.__handle__.removesuffix("_validator")
+            registry = merged_metacharacters.get_registry(target_handle)
+            for member in validator.members:
+                if member in registry:
+                    value = registry[member]
+                    if not validator.callable(cls, value):
+                        msg = (f"Binding '{member}' with value '{value}' failed validation by "
+                               f"'{validator}' in prototype '{cls.__name__}'.")
+                        raise ValueError(msg)
+    # Finally, run parsers and validators for bound classvar data fields.
+    data_bindings = merged_metacharacters.data
+    constructor_registry = merged_metacharacters.constructor
+    parsers = [p for p in constructor_registry.values() if isinstance(p, ParserDeclarator)]
+    field_validators = [
+        v for v in constructor_registry.values() if isinstance(v, ValidatorDeclarator)
+    ]
+    if parsers or field_validators:
+        for name, value in data_bindings.items():
+            parsed = value
+            for parser in parsers:
+                if name in parser.members and is_not_missing(parser.callable):
+                    parsed = parser.callable(cls, parsed)
+            if parsed is not value:
+                data_bindings._data[name] = parsed
+            for validator in field_validators:
+                if name in validator.members and is_not_missing(validator.callable):
+                    if not validator.callable(cls, parsed):
+                        msg = (f"Binding '{name}' with value '{parsed}' failed validation by "
+                               f"'{validator}' in prototype '{cls.__name__}'.")
+                        raise ValueError(msg)
+
+
+def _validate_prototype(cls: prototype) -> None:
+    """Validate prototype role, bindings, and prototype-wide validators."""
+    _validate_type_role(cls)
+    _validate_bindings(cls)
+    validators = cls.__merged_metadescriptors__.metavalidator.values()
+    prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]
+    for validator in prototype_validators:
+        if is_not_missing(validator.callable):
+            if not validator.callable(cls):
+                msg = f"Prototype '{cls.__name__}' failed validation by '{validator}'."
+                raise ValueError(msg)
+
 # endregion
 
 # =============================================================================
@@ -302,9 +366,9 @@ def finalize_module(
         if (class_def := class_defs.get(cls.__name__)) is not None:
             cls.__ast__ = class_def
             _assign_declarator_ast(cls, class_def)
-        # Resolve forward references and validate type roles.
+        # Resolve forward references, validate type roles, and check bindings.
         _backfill_annotation_types(cls, module)
-        _validate_type_role(cls)
+        _validate_prototype(cls)
     # Mark module as finalized to avoid rework.
     setattr(module, "__finalized__", True)
 

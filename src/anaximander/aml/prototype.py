@@ -18,13 +18,7 @@ from anaximander.utils.funcs import (
     unwrap_optional_type,
 )
 
-from .declarative import (
-    AnnotatableDeclarator,
-    DeclarativeNamespace,
-    EnumerationCallableDeclarator,
-    declarative,
-    is_not_missing,
-)
+from .declarative import AnnotatableDeclarator, DeclarativeNamespace, declarative
 from .metadescriptors import Metadescriptor, MetadescriptorRegistry, PrototypeValidator
 from .protodescriptors import ProtodescriptorRegistry
 
@@ -234,36 +228,7 @@ class prototype(declarative):
             msg = (f"Prototype '{cls.__name__}' has naming conflicts between domain metadata "
                    "and protodescriptors.")
             raise ValueError(msg)
-        # Validate bindings in context of this class
-        # First, the __validate_binding__ method is run for each bound declarator
-        for registry in merged_metacharacters.binding_registries.values():
-            for name, value in registry.items():
-                declarator = registry.declarators[name]
-                if not declarator.__validate_binding__(cls, value):
-                    msg = (f"Binding '{name}' with value '{value}' is not valid for declarator "
-                           f"of type '{declarator.dtype}' in prototype '{cls.__name__}'.")
-                    raise ValueError(msg)
-        # Next, registered validators are run, starting with attribute validators,
-        # and followed by prototype-wide validators
-        validators = merged_metadescriptors.metavalidator.values()
-        attribute_validators = [v for v in validators if isinstance(v, EnumerationCallableDeclarator)]  # noqa
-        for validator in attribute_validators:
-            if is_not_missing(validator.callable):
-                target_handle = validator.__handle__.removesuffix("_validator")
-                registry = merged_metacharacters.get_registry(target_handle)
-                for member in validator.members:
-                    if member in registry:
-                        value = registry[member]
-                        if not validator.callable(cls, value):
-                            msg = (f"Binding '{member}' with value '{value}' failed validation by "
-                                f"'{validator}' in prototype '{cls.__name__}'.")
-                            raise ValueError(msg)
-        prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]
-        for validator in prototype_validators:
-            if is_not_missing(validator.callable):
-                if not validator.callable(cls):
-                    msg = f"Prototype '{cls.__name__}' failed validation by '{validator}'."
-                    raise ValueError(msg)
+        # Binding validation and registered validators run at module finalization.
         # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler  # noqa
         cls.__compilations__: dict[str, dict] = {}
         cls.__ast__ = None

@@ -5,7 +5,17 @@ from .modules import finalize_module
 from .archetype import archetype
 from .trait import trait
 from .object import Object
-from .interfaces import metadata, option, nxfield, meta, data, link, backlink
+from .interfaces import (
+    metadata,
+    option,
+    nxfield,
+    meta,
+    data,
+    link,
+    backlink,
+    parser,
+    validator,
+)
 
 
 __all__ = [
@@ -23,5 +33,7 @@ __all__ = [
     "data",
     "link",
     "backlink",
+    "parser",
+    "validator",
     "finalize_module",
 ]

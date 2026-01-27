@@ -11,6 +11,7 @@ from functools import update_wrapper
 from numbers import Real
 from typing import Any, Callable, Literal
 
+from anaximander.aml.prototype import Arche, prototype
 from anaximander.utils.meta import Singleton
 
 from .declarative import (
@@ -18,19 +19,27 @@ from .declarative import (
     MISSING,
     DeclarativeNamespace,
     Declarator,
-    EnumerationCallableDeclarator,
     Missing,
+    declarative,
 )
 from .metadescriptors import (
     AssignableMetadescriptor,
     MetadataDeclarator,
     MetadataValidator,
+    MetaValidator,
     NxFieldDeclarator,
     NxFieldValidator,
     OptionDeclarator,
     OptionValidator,
 )
-from .protodescriptors import BackLinkProtodescriptor, DataProtodescriptor, LinkProtodescriptor
+from .protodescriptors import (
+    BackLinkProtodescriptor,
+    DataProtodescriptor,
+    FieldProtodescriptor,
+    LinkProtodescriptor,
+    ParserDeclarator,
+    ValidatorDeclarator,
+)
 
 # endregion
 
@@ -49,11 +58,10 @@ class DeclaratorInterface[DT: Declarator](metaclass=Singleton):
 
     __handle__: str
     __declarator_type__: type[DT]
-    __validator_type__: type[EnumerationCallableDeclarator] | None = None
 
     def __init_subclass__(cls) -> None:
         try:
-            if "handle" in cls.__dict__:
+            if "__handle__" in cls.__dict__:
                 cls.__declarator_type__ = Declarator.__handles__[cls.__handle__]
         except KeyError:
             raise ValueError(f"Invalid handle '{cls.__handle__}' for declarator interface.")
@@ -62,11 +70,6 @@ class DeclaratorInterface[DT: Declarator](metaclass=Singleton):
     def declarator_type(self) -> type[DT]:
         """The declarator type for this interface."""
         return self.__class__.__declarator_type__
-
-    @property
-    def validator_type(self) -> type[EnumerationCallableDeclarator] | None:
-        """The validator declarator type for this interface, if any."""
-        return self.__validator_type__
 
     @property
     def handle(self) -> str:
@@ -90,21 +93,10 @@ class DeclaratorInterface[DT: Declarator](metaclass=Singleton):
         dns = self._require_namespace()
         dns.register_binding(name, value, handle=self.handle)
 
-    def validator(self, *members: str) -> Callable[[Callable], Declarator]:
-        """Create a validation declarator as a decorator."""
-        if (validator_type := self.validator_type) is None:
-            raise TypeError(f"{self.handle} interface does not support validators.")
-
-        def decorator(fn: Callable) -> Declarator:
-            declarator = validator_type(callable=fn, members=members, doc=fn.__doc__)
-            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
-            return declarator
-
-        return decorator
-
 
 class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetadescriptor]):
     """Interface for metadescriptor declarators and bindings."""
+    __validator_type__: type[MetadataValidator | OptionValidator | NxFieldValidator]
 
     def declare(
             self,
@@ -137,6 +129,24 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
         )
         dns.register_declaration(declarator, name=name)
         return declarator
+
+    @property
+    def validator_type(self) -> type[MetadataValidator | OptionValidator | NxFieldValidator]:
+        """The validator declarator type for this interface, if any."""
+        return self.__validator_type__
+
+    def validator(self, *members: str) -> Callable[[Callable[[declarative, Any], bool]], MetadataValidator | OptionValidator | NxFieldValidator]:  # noqa
+        """Create a validation declarator as a decorator."""
+        if (validator_type := self.validator_type) is None:
+            raise TypeError(f"{self.handle} interface does not support validators.")
+
+        def decorator(fn: Callable[[declarative, Any], bool]) -> MetadataValidator | OptionValidator | NxFieldValidator:  # noqa
+            declarator = validator_type(callable=fn, members=members, doc=fn.__doc__)
+            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
+            return declarator
+
+        return decorator
+
 
 class MetadataInterface(AssignableMetadescriptorInterface[MetadataDeclarator]):
     """Interface for metadata declarators and bindings."""
@@ -174,7 +184,29 @@ class NxFieldInterface(AssignableMetadescriptorInterface[NxFieldDeclarator]):
     __validator_type__ = NxFieldValidator
 
 
-class DataInterface(DeclaratorInterface[DataProtodescriptor]):
+class FieldInterface[DT](DeclaratorInterface[FieldProtodescriptor]):
+    """Abstract base class for field interfaces exposing validators."""
+    __validator_type__ = ValidatorDeclarator
+
+    @property
+    def validator_type(self) -> type[ValidatorDeclarator]:
+        """The validator declarator type for this interface, if any."""
+        return self.__validator_type__
+
+    def validator(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], bool]], ValidatorDeclarator]:  # noqa
+        """Create a validation declarator as a decorator."""
+        if (validator_type := self.validator_type) is None:
+            raise TypeError(f"{self.handle} interface does not support validators.")
+
+        def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ValidatorDeclarator:
+            declarator = validator_type(callable=fn, members=members, doc=fn.__doc__)
+            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
+            return declarator
+
+        return decorator
+
+
+class DataInterface(FieldInterface[DataProtodescriptor]):
     """Interface for data protodescriptor constructors."""
     __handle__ = "data"
 
@@ -238,8 +270,17 @@ class DataInterface(DeclaratorInterface[DataProtodescriptor]):
             config=config,
         )
 
+    def parser(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], bool]], ParserDeclarator]:  # noqa
+        """Create a field parser declarator as a decorator."""
+        def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ParserDeclarator:
+            declarator = ParserDeclarator(callable=fn, members=members, doc=fn.__doc__)
+            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
+            return declarator
 
-class LinkInterface(DeclaratorInterface[LinkProtodescriptor]):
+        return decorator
+
+
+class LinkInterface(FieldInterface[LinkProtodescriptor]):
     """Interface for link protodescriptor constructors."""
     __handle__ = "link"
 
@@ -294,6 +335,34 @@ class BacklinkInterface(DeclaratorInterface[BackLinkProtodescriptor]):
             config=config,
         )
 
+
+class ParserInterface(DeclaratorInterface[ParserDeclarator]):
+    """Interface for parser declarators."""
+    __handle__ = "parser"
+
+    def __call__(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], Any]], ParserDeclarator]:  # noqa
+        """Create a parser declarator as a decorator."""
+        def decorator(fn: Callable[[Arche | prototype, Any], Any]) -> ParserDeclarator:
+            declarator = ParserDeclarator(callable=fn, members=members, doc=fn.__doc__)
+            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
+            return declarator
+
+        return decorator
+
+
+class ValidatorInterface(DeclaratorInterface[ValidatorDeclarator]):
+    """Interface for validator declarators."""
+    __handle__ = "validator"
+
+    def __call__(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], bool]], ValidatorDeclarator]:  # noqa
+        """Create a validator declarator as a decorator."""
+        def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ValidatorDeclarator:
+            declarator = ValidatorDeclarator(callable=fn, members=members, doc=fn.__doc__)
+            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
+            return declarator
+
+        return decorator
+
 # endregion
 
 # =============================================================================
@@ -308,6 +377,8 @@ nxfield = NxFieldInterface()
 data = DataInterface()
 link = LinkInterface()
 backlink = BacklinkInterface()
+parser = ParserInterface()
+validator = ValidatorInterface()
 meta = metadata
 
 # endregion
