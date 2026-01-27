@@ -465,7 +465,7 @@ class prototype(declarative):
             if (name := declarator.name) is None:
                 raise TypeError("Annotatable declarators must be named before annotation binding.")
             # Then we distinguish between declarators that were declared through assignment vs
-            # those that relied on the DeclaratorNamespace.declare method
+            # those that relied on the DeclaratorInterface.declare method
             is_assigned = getattr(cls, name, None) is declarator
             if not is_assigned:
                 continue

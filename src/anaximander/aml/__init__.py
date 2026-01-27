@@ -5,8 +5,7 @@ from .modules import finalize_module
 from .archetype import archetype
 from .trait import trait
 from .object import Object
-from .namespaces import metadata, option, nxfield, meta
-from .constructors import data, link, backlink
+from .interfaces import metadata, option, nxfield, meta, data, link, backlink
 
 
 __all__ = [
