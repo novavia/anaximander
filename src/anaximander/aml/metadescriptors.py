@@ -27,6 +27,7 @@ from .declarative import (
     _tighten_type,
     declarative,
     declarator,
+    is_missing,
     is_not_missing,
 )
 
@@ -48,7 +49,22 @@ class Metadescriptor(Declarator):
 @declarator
 class AssignableMetadescriptor(AssignableDeclarator, Metadescriptor):
     """Base class for assignable prototype-level descriptors declared in archetypes and traits."""
-    pass
+
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        """Validate a metadata binding in the context of a host type."""
+        if is_missing(value):
+            if self.default is not MISSING:
+                return True
+            else:
+                raise ValueError("Metadata binding cannot be missing.")
+        elif value is None:
+            if not self.nullable:
+                raise ValueError("Non-nullable metadata cannot be bound to None.")
+        elif self.type is not None:
+            if not isinstance(value, self.type):
+                if not (isinstance(value, type) and issubclass(value, self.type)):
+                    raise TypeError("Cannot bind metadata of incompatible type.")
+        return True
 
 
 @declarator
@@ -95,16 +111,6 @@ class MetadataDeclarator(AssignableMetadescriptor):
         if not _tighten_classvar(self.classvar, override.classvar):
             raise AttributeError("Metadata declarator classvar cannot be overridden.")
 
-    def __validate_binding__(self, host: type, value: Any) -> bool:
-        """Validate a metadata binding in the context of a host type."""
-        if value is None and self.nullable is False:
-            return False
-        if self.type is not None and value is not None:
-            if not isinstance(value, self.type):
-                if not (isinstance(value, type) and issubclass(value, self.type)):
-                    return False
-        return True
-
 
 @declarator
 class OptionDeclarator(AssignableMetadescriptor):
@@ -150,6 +156,7 @@ class NxFieldDeclarator(AssignableMetadescriptor):
 
     def __validate_binding__(self, host: type, value: Any) -> bool:
         """Validate an nxfield binding in the context of a host type."""
+        # TODO: verify that value is a string that matches a field of host of type fieldtype
         return True
 
 

@@ -242,8 +242,6 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
         """Bind a classvar data value, disallowing reassignment in subclasses."""
-        if not self.classvar:
-            raise AttributeError(f"Data field '{self.name}' is not classvar-bindable.")
         if is_not_missing(previous) and value != previous:
             raise AttributeError(f"Data field '{self.name}' cannot be reassigned.")
         validator = self.validator
@@ -281,13 +279,19 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
     def __validate_binding__(self, host: type, value: Any) -> bool:
         """Validate a data binding in the context of a host type."""
         if not self.classvar:
-            return False
-        if value is None and self.nullable is False:
-            return False
-        if self.type is not None and value is not None:
+            raise AttributeError("Only data descriptors typed as class variables can be bound.")
+        if is_missing(value):
+            if self.default is not MISSING:
+                return True
+            else:
+                raise ValueError("Datad binding cannot be missing.")
+        elif value is None:
+            if not self.nullable:
+                raise ValueError("Non-nullable data field cannot be bound to None.")
+        elif self.type is not None:
             if not isinstance(value, self.type):
                 if not (isinstance(value, type) and issubclass(value, self.type)):
-                    return False
+                    raise TypeError("Cannot bind data field of incompatible type.")
         return True
 
 
@@ -304,17 +308,7 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
         self._validate_value_type("key", self.key, bool)
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
-        """Bind a classvar link value, disallowing reassignment in subclasses."""
-        if not self.classvar:
-            raise AttributeError(f"Link field '{self.name}' is not classvar-bindable.")
-        if is_not_missing(previous) and value != previous:
-            raise AttributeError(f"Link field '{self.name}' cannot be reassigned.")
-        validator = self.validator
-        if is_not_missing(validator) and not validator(value):
-            raise ValueError(
-                f"Inline validation failed for link '{self.name}' with value: {value}"
-            )
-        return value
+        raise AttributeError("Link fields are not prototype-bindable.")
 
     def __override__(self, override: Declarator) -> None:
         """Allow overrides that tighten link constraints only."""
@@ -329,18 +323,6 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
         order = {"cascade": 0, "set_null": 1, "restrict": 2}
         if order.get(override.on_delete, 0) < order.get(self.on_delete, 0):
             raise AttributeError("Link protodescriptor on_delete cannot be loosened.")
-
-    def __validate_binding__(self, host: type, value: Any) -> bool:
-        """Validate a link binding in the context of a host type."""
-        if not self.classvar:
-            return False
-        if value is None and self.nullable is False:
-            return False
-        if self.type is not None and value is not None:
-            if not isinstance(value, self.type):
-                if not (isinstance(value, type) and issubclass(value, self.type)):
-                    return False
-        return True
 
 
 @declarator
@@ -358,12 +340,7 @@ class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
             self._validate_value_type("limit", self.limit, int)
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
-        """Bind a classvar backlink value, disallowing reassignment in subclasses."""
-        if not self.classvar:
-            raise AttributeError(f"Backlink field '{self.name}' is not classvar-bindable.")
-        if is_not_missing(previous) and value != previous:
-            raise AttributeError(f"Backlink field '{self.name}' cannot be reassigned.")
-        return value
+        raise AttributeError("Backlink fields are not prototype-bindable.")
 
     def __override__(self, override: Declarator) -> None:
         """Allow overrides that tighten backlink constraints only."""
@@ -382,18 +359,6 @@ class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
         if is_not_missing(self.limit) and is_not_missing(override.limit):
             if override.limit > self.limit:
                 raise AttributeError("Backlink protodescriptor limit cannot be loosened.")
-
-    def __validate_binding__(self, host: type, value: Any) -> bool:
-        """Validate a backlink binding in the context of a host type."""
-        if not self.classvar:
-            return False
-        if value is None and self.nullable is False:
-            return False
-        if self.type is not None and value is not None:
-            if not isinstance(value, self.type):
-                if not (isinstance(value, type) and issubclass(value, self.type)):
-                    return False
-        return True
 
 
 @declarator
