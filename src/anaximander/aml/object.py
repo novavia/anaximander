@@ -4,8 +4,8 @@
 # Imports
 # =============================================================================
 
+
 from .archetype import archetype
-from .interfaces import metadata
 from .prototype import Arche, prototype
 
 # =============================================================================
@@ -16,4 +16,4 @@ from .prototype import Arche, prototype
 @archetype
 class Object(Arche, metaclass=prototype):
     """The base class for AML representation objects."""
-    metadata.declare("pytype", type=type, nullable=False)
+    pass

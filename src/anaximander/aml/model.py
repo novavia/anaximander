@@ -4,15 +4,17 @@
 # Imports
 # =============================================================================
 
-from anaximander.aml.archetype import archetype
-from anaximander.aml.metadescriptors import Metadescriptor
-from anaximander.aml.object import Object
-from anaximander.aml.protodescriptors import (
+from typing import dataclass_transform
+
+from .archetype import archetype
+from .metadescriptors import Metadescriptor
+from .object import Object
+from .protodescriptors import (
+    AssignableFieldProtodescriptor,
     ConstructorDeclarator,
     FieldProtodescriptor,
     SchemaDeclarator,
 )
-from anaximander.aml.prototype import prototype
 
 # =============================================================================
 # Model archetype
@@ -20,7 +22,8 @@ from anaximander.aml.prototype import prototype
 
 
 @archetype
-class Model(Object, metaclass=prototype):
+@dataclass_transform(field_specifiers=(AssignableFieldProtodescriptor,))
+class Model(Object):
     """Base archetype for AML models with fields and schema descriptors."""
 
     __declarator_types__ = {

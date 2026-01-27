@@ -26,7 +26,6 @@ from .metadescriptors import (
     AssignableMetadescriptor,
     MetadataDeclarator,
     MetadataValidator,
-    MetaValidator,
     NxFieldDeclarator,
     NxFieldValidator,
     OptionDeclarator,
@@ -141,7 +140,8 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
             raise TypeError(f"{self.handle} interface does not support validators.")
 
         def decorator(fn: Callable[[declarative, Any], bool]) -> MetadataValidator | OptionValidator | NxFieldValidator:  # noqa
-            declarator = validator_type(callable=fn, members=members, doc=fn.__doc__)
+            doc = MISSING if fn.__doc__ is None else fn.__doc__
+            declarator = validator_type(callable=fn, members=members, doc=doc)
             update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
             return declarator
 
@@ -160,7 +160,7 @@ class MetadataInterface(AssignableMetadescriptorInterface[MetadataDeclarator]):
             validator: Callable[[Any], bool] | Missing = MISSING,
             doc: str | Missing = MISSING,
             config: Mapping[str, Any] | Missing = MISSING,
-    ) -> MetadataDeclarator:
+    ) -> Any:
         """Declares domain metadata for use in class assignments."""
         return MetadataDeclarator(
             domain=True,
@@ -199,7 +199,8 @@ class FieldInterface[DT](DeclaratorInterface[FieldProtodescriptor]):
             raise TypeError(f"{self.handle} interface does not support validators.")
 
         def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ValidatorDeclarator:
-            declarator = validator_type(callable=fn, members=members, doc=fn.__doc__)
+            doc = MISSING if fn.__doc__ is None else fn.__doc__
+            declarator = validator_type(callable=fn, members=members, doc=doc)
             update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
             return declarator
 
@@ -238,8 +239,8 @@ class DataInterface(FieldInterface[DataProtodescriptor]):
         max_length: int | Missing = MISSING,
         pattern: str | Missing = MISSING,
         doc: str | Missing = MISSING,
-        config: Mapping[str, Any] | None | Missing = MISSING,
-    ) -> DataProtodescriptor:
+        config: Mapping[str, Any] | Missing = MISSING,
+    ) -> Any:
         """Construct a data protodescriptor with current AML field semantics."""
         return DataProtodescriptor(
             default=default,
@@ -273,7 +274,8 @@ class DataInterface(FieldInterface[DataProtodescriptor]):
     def parser(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], bool]], ParserDeclarator]:  # noqa
         """Create a field parser declarator as a decorator."""
         def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ParserDeclarator:
-            declarator = ParserDeclarator(callable=fn, members=members, doc=fn.__doc__)
+            doc = MISSING if fn.__doc__ is None else fn.__doc__
+            declarator = ParserDeclarator(callable=fn, members=members, doc=doc)
             update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
             return declarator
 
@@ -295,8 +297,8 @@ class LinkInterface(FieldInterface[LinkProtodescriptor]):
         repr: bool | Callable | str | Missing = MISSING,
         validator: Callable[[Any], bool] | Missing = MISSING,
         doc: str | Missing = MISSING,
-        config: Mapping[str, Any] | None | Missing = MISSING,
-    ) -> LinkProtodescriptor:
+        config: Mapping[str, Any] | Missing = MISSING,
+    ) -> Any:
         """Construct a link protodescriptor with current AML field semantics."""
         return LinkProtodescriptor(
             unique=unique,
@@ -323,8 +325,8 @@ class BacklinkInterface(DeclaratorInterface[BackLinkProtodescriptor]):
         load: Literal["eager", "lazy"] | Missing = MISSING,
         repr: bool | Callable | str | Missing = MISSING,
         doc: str | Missing = MISSING,
-        config: Mapping[str, Any] | None | Missing = MISSING,
-    ) -> BackLinkProtodescriptor:
+        config: Mapping[str, Any] | Missing = MISSING,
+    ) -> Any:
         """Construct a backlink protodescriptor with current AML field semantics."""
         return BackLinkProtodescriptor(
             via=via,
@@ -343,7 +345,8 @@ class ParserInterface(DeclaratorInterface[ParserDeclarator]):
     def __call__(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], Any]], ParserDeclarator]:  # noqa
         """Create a parser declarator as a decorator."""
         def decorator(fn: Callable[[Arche | prototype, Any], Any]) -> ParserDeclarator:
-            declarator = ParserDeclarator(callable=fn, members=members, doc=fn.__doc__)
+            doc = MISSING if fn.__doc__ is None else fn.__doc__
+            declarator = ParserDeclarator(callable=fn, members=members, doc=doc)
             update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
             return declarator
 
@@ -357,7 +360,8 @@ class ValidatorInterface(DeclaratorInterface[ValidatorDeclarator]):
     def __call__(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], bool]], ValidatorDeclarator]:  # noqa
         """Create a validator declarator as a decorator."""
         def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ValidatorDeclarator:
-            declarator = ValidatorDeclarator(callable=fn, members=members, doc=fn.__doc__)
+            doc = MISSING if fn.__doc__ is None else fn.__doc__
+            declarator = ValidatorDeclarator(callable=fn, members=members, doc=doc)
             update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
             return declarator
 

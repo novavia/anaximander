@@ -2,10 +2,10 @@
 
 from typing import cast
 
-from anaximander.aml.prototype import Trait, TypeRole, is_archetype, is_trait, prototype
+from anaximander.aml.prototype import Arche, TypeRole, is_archetype, is_trait, prototype
 
 
-def trait(cls: prototype) -> Trait:
+def trait[T: Arche](cls: type[T]) -> type[T]:
     """Declares a type as a trait.
 
     Only types that directly inherit from an archetype or trait can be declared as traits.
@@ -15,7 +15,7 @@ def trait(cls: prototype) -> Trait:
         cls (prototype): The type to declare as a trait.
 
     Returns:
-        Trait: The declared trait class.
+        type[T]: The declared trait class.
     """
     if not isinstance(cls, prototype):
         raise TypeError(f"Expected a prototype instance, got {cls}.")
@@ -25,5 +25,5 @@ def trait(cls: prototype) -> Trait:
     metacharacters = cls.metacharacters("merged")
     if any(metacharacters[ns] for ns in ("field", "schema", "constructor", "data")):
         raise TypeError("Traits cannot declare or inherit protodescriptors.")
-    cls.__role__ = TypeRole.TRAIT
-    return cast(Trait, cls)
+    cls.__role__ = TypeRole.TRAIT  # type: ignore[assignment]
+    return cast(type[T], cls)
