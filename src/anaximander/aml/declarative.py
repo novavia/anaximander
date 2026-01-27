@@ -188,8 +188,8 @@ class Declarator(ABC):
     __ast__: ast.AST | None = field(init=False, default=None)  # AST node that declared this declarator # noqa
 
     # Init-time fields (immutable)
-    doc: str | None | Missing = field(default=MISSING)  # Optional documentation string # noqa
-    config: Mapping[str, ConfigValue] | None | Missing = field(factory=dict)  # Extraneous declarator configuration # noqa
+    doc: str | Missing = field(default=MISSING)  # Optional documentation string # noqa
+    config: Mapping[str, ConfigValue] | Missing = field(factory=dict)  # Extraneous declarator configuration # noqa
 
     @property
     def __key__(self) -> DeclaratorKey:
