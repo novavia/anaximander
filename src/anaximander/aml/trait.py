@@ -23,7 +23,7 @@ def trait(cls: prototype) -> Trait:
         raise TypeError(f"Trait '{cls.__name__}' must directly inherit from an archetype or trait.")  # noqa
     # Traits cannot declare protodescriptors
     metacharacters = cls.metacharacters("merged")
-    if any(metacharacters[ns] for ns in ("field", "schema", "construction", "data")):
+    if any(metacharacters[ns] for ns in ("field", "schema", "constructor", "data")):
         raise TypeError("Traits cannot declare or inherit protodescriptors.")
     cls.__role__ = TypeRole.TRAIT
     return cast(Trait, cls)

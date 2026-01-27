@@ -864,7 +864,10 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
     def __init__(self, data: Mapping[str, Registry[Any]] | Iterable[tuple[str, Registry[Any]]] | None = None, **kwargs: Registry[Any]):  # noqa
         """Initialize the multi-registry with an optional mapping or iterable of pairs."""
         self._data: dict[str, Registry[Any]] = dict(data or {}, **kwargs)
-        self._names = self._data.keys())  # The unified name registry, mapping to handles
+        self._names: dict[str, str] = {}  # Mapping of registered names to handles
+        for handle, registry in self.declarator_registries.items():
+            for name in registry.keys():
+                self._register_name(name, handle)
 
     def __getitem__(self, handle: str) -> Registry[Any]:
         try:
@@ -896,8 +899,8 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
         return self._data[handle]
 
     @property
-    def names(self) -> set[str]:
-        """Returns the set of all registered names across all registries."""
+    def names(self) -> dict[str, str]:
+        """Mapping of registered names to their corresponding handles."""
         return self._names.copy()
 
     @classmethod
@@ -925,6 +928,19 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
                 registries[handle] = registry
         return registries
 
+    def _register_name(self, name: str, handle: str) -> None:
+        """Registers a name in the multi-registry."""
+        registered_handle = self._names.get(name)
+        if registered_handle is None:
+            self._names[name] = handle
+            return
+        elif registered_handle == handle:
+            return
+        else:
+            msg = f"""Cannot register {name!r} with handle {handle!r}
+                because it is already registered with {registered_handle!r}."""
+            raise KeyError(msg)
+
     def _register_declarator(self, name: str, item: Declarator, *, handle: str | None = None) -> None:  # noqa
         """Register a declarator in the appropriate registry."""
         if handle is None:
@@ -935,14 +951,7 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
         # Check that the handle corresponds to a declarator registry
         registry = self.get_registry(handle)
         # Prevent name clashes across registries
-        if name in self._names:
-            # If the name is registered under a different handle, raise an error
-            if name not in self._data.get(handle, {}):
-                msg = f"""Cannot register {name!r} with handle {handle!r}
-                    because it is already registered with a different handle."""
-                raise KeyError(msg)
-            # Otherwise we can proceed and override rule will be applied in the registry
-        self._names.add(name)
+        self._register_name(name, handle)
         registry.register(name, item)
 
     @abstractmethod
