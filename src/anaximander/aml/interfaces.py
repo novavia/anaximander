@@ -6,10 +6,10 @@
 # region Imports
 
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import update_wrapper
 from numbers import Real
-from typing import Any, Callable, Literal
+from typing import Any, Literal, TypeVar
 
 from ..utils.meta import Singleton
 from .declarative import (
@@ -17,6 +17,7 @@ from .declarative import (
     MISSING,
     DeclarativeNamespace,
     Declarator,
+    EnumerationCallableDeclarator,
     Missing,
     declarative,
 )
@@ -38,6 +39,38 @@ from .protodescriptors import (
     ValidatorDeclarator,
 )
 from .prototype import Arche, prototype
+
+# endregion
+
+# =============================================================================
+# Decorator helpers
+# =============================================================================
+# region Decorator helpers
+
+
+def _decorator_factory(
+    *members_or_fn: Any,
+    declarator_type: type[EnumerationCallableDeclarator[Callable[..., Any]]],
+    err_label: str,
+) -> Any:
+    """Build a declarator or decorator for enumeration callables."""
+    if members_or_fn and callable(members_or_fn[0]):
+        if len(members_or_fn) != 1:
+            raise TypeError(f"{err_label} decorator cannot mix members and callable.")
+        fn = members_or_fn[0]
+        doc = MISSING if fn.__doc__ is None else fn.__doc__
+        declarator = declarator_type(callable=fn, members=(), doc=doc)
+        update_wrapper(fn, declarator, updated=(), assigned=())  # type: ignore[arg-type]
+        return declarator
+    members = tuple(members_or_fn)
+
+    def decorator(fn: Callable) -> Declarator:
+        doc = MISSING if fn.__doc__ is None else fn.__doc__
+        declarator = declarator_type(callable=fn, members=members, doc=doc)
+        update_wrapper(fn, declarator, updated=(), assigned=())  # type: ignore[arg-type]
+        return declarator
+
+    return decorator
 
 # endregion
 
@@ -172,18 +205,13 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
         """The validator declarator type for this interface, if any."""
         return self.__validator_type__
 
-    def validator(self, *members: str) -> Callable[[Callable[[declarative, Any], bool]], MetadataValidator | OptionValidator | NxFieldValidator]:  # noqa
+    def validator(self, *members_or_fn):
         """Create a validation declarator as a decorator."""
         if (validator_type := self.validator_type) is None:
             raise TypeError(f"{self.handle} interface does not support validators.")
-
-        def decorator(fn: Callable[[declarative, Any], bool]) -> MetadataValidator | OptionValidator | NxFieldValidator:  # noqa
-            doc = MISSING if fn.__doc__ is None else fn.__doc__
-            declarator = validator_type(callable=fn, members=members, doc=doc)
-            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
-            return declarator
-
-        return decorator
+        return _decorator_factory(
+            *members_or_fn, declarator_type=validator_type, err_label="Validator"
+        )
 
 
 class MetadataInterface(AssignableMetadescriptorInterface[MetadataDeclarator]):
@@ -231,18 +259,13 @@ class FieldInterface[DT](DeclaratorInterface[FieldProtodescriptor]):
         """The validator declarator type for this interface, if any."""
         return self.__validator_type__
 
-    def validator(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], bool]], ValidatorDeclarator]:  # noqa
+    def validator(self, *members_or_fn):
         """Create a validation declarator as a decorator."""
         if (validator_type := self.validator_type) is None:
             raise TypeError(f"{self.handle} interface does not support validators.")
-
-        def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ValidatorDeclarator:
-            doc = MISSING if fn.__doc__ is None else fn.__doc__
-            declarator = validator_type(callable=fn, members=members, doc=doc)
-            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
-            return declarator
-
-        return decorator
+        return _decorator_factory(
+            *members_or_fn, declarator_type=validator_type, err_label="Validator"  # type: ignore
+        )
 
 
 class DataInterface(FieldInterface[DataProtodescriptor]):
@@ -309,15 +332,11 @@ class DataInterface(FieldInterface[DataProtodescriptor]):
             config=config,
         )
 
-    def parser(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], bool]], ParserDeclarator]:  # noqa
+    def parser(self, *members_or_fn):
         """Create a field parser declarator as a decorator."""
-        def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ParserDeclarator:
-            doc = MISSING if fn.__doc__ is None else fn.__doc__
-            declarator = ParserDeclarator(callable=fn, members=members, doc=doc)
-            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
-            return declarator
-
-        return decorator
+        return _decorator_factory(
+            *members_or_fn, declarator_type=ParserDeclarator, err_label="Parser"  # type: ignore
+        )
 
 
 class LinkInterface(FieldInterface[LinkProtodescriptor]):
@@ -380,30 +399,22 @@ class ParserInterface(DeclaratorInterface[ParserDeclarator]):
     """Interface for parser declarators."""
     __handle__ = "parser"
 
-    def __call__(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], Any]], ParserDeclarator]:  # noqa
+    def __call__(self, *members_or_fn):
         """Create a parser declarator as a decorator."""
-        def decorator(fn: Callable[[Arche | prototype, Any], Any]) -> ParserDeclarator:
-            doc = MISSING if fn.__doc__ is None else fn.__doc__
-            declarator = ParserDeclarator(callable=fn, members=members, doc=doc)
-            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
-            return declarator
-
-        return decorator
+        return _decorator_factory(
+            *members_or_fn, declarator_type=ParserDeclarator, err_label="Parser"  # type: ignore
+        )
 
 
 class ValidatorInterface(DeclaratorInterface[ValidatorDeclarator]):
     """Interface for validator declarators."""
     __handle__ = "validator"
 
-    def __call__(self, *members: str) -> Callable[[Callable[[Arche | prototype, Any], bool]], ValidatorDeclarator]:  # noqa
+    def __call__(self, *members_or_fn):
         """Create a validator declarator as a decorator."""
-        def decorator(fn: Callable[[Arche | prototype, Any], bool]) -> ValidatorDeclarator:
-            doc = MISSING if fn.__doc__ is None else fn.__doc__
-            declarator = ValidatorDeclarator(callable=fn, members=members, doc=doc)
-            update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
-            return declarator
-
-        return decorator
+        return _decorator_factory(
+            *members_or_fn, declarator_type=ValidatorDeclarator, err_label="Validator"  # type: ignore
+        )
 
 # endregion
 

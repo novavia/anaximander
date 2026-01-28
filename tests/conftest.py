@@ -10,11 +10,10 @@ buggers), configures markers, and provides tempdata utilities and DB-related fix
 # Imports and constants
 # =============================================================================
 
-import os
-import shutil
-
 # import sys
 import filecmp
+import os
+import shutil
 from pathlib import Path
 from typing import Callable, Generator, Protocol
 
@@ -23,8 +22,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from anaximander.api.sqlalchemy_ import connections
-# from anaximander.compilers import ProjectCompiler, ModuleCompiler
-# from anaximander.projects import Project
+
+# from anaximander.compilers import ModuleCompiler, ProjectCompiler
+from anaximander.projects import Project
 from anaximander.utils import KwargMap
 from anaximander.utils.funcs import boolean, offline  # noqa
 
@@ -295,6 +295,38 @@ def modpath() -> Generator[Callable[[Path], Path], None, None]:
 
     for tempdata_path in tempdata_paths:
         teardown_tempdata_path(tempdata_path)
+
+
+@pytest.fixture(scope="function")
+def aml_module(funcpath) -> Generator[Callable[[Path | str, str | None], object], None, None]:
+    """Load an AML test module from testdata via tempdata.
+
+    The module is imported from its copied path and finalized with AML.
+    """
+    import importlib.util
+    import sys
+
+    import anaximander.aml as nx
+
+    module_names = []
+
+    def _load(path: Path | str, name: str | None = None):
+        module_path = funcpath(path)
+        module_name = name or Path(module_path).stem
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Cannot load module from {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        module_names.append(module_name)
+        spec.loader.exec_module(module)
+        nx.finalize_module(module)
+        return module
+
+    yield _load
+
+    for module_name in module_names:
+        sys.modules.pop(module_name, None)
 
 
 # @pytest.fixture

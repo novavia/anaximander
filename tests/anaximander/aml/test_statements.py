@@ -10,3 +10,10 @@ def test_minimal_aml_declarations():
 
     assert Temperature.metacharacters("merged").metadata["unit"] == "C"
     assert "temperature" in Sensor.metacharacters("merged").field
+
+
+def test_interface_binding_syntaxes():
+    class Temperature(nx.Measurement):
+        nx.metadata["unit"] = "K"
+
+    assert Temperature.metacharacters("merged").metadata["unit"] == "K"
