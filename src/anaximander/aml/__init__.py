@@ -5,7 +5,7 @@ from .modules import finalize_module
 from .archetype import archetype
 from .trait import trait
 from .object import Object
-from .data import Data, Scalar, Integer, Float, Bool, String, Measurement, MeasurementTrait
+from .data import Data, Scalar, Integer, Float, Bool, String, Measurement, measurement
 from .model import Model
 from .interfaces import (
     metadata,
@@ -35,7 +35,7 @@ __all__ = [
     "Bool",
     "String",
     "Measurement",
-    "MeasurementTrait",
+    "measurement",
     "Model",
     "metadata",
     "option",

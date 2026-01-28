@@ -31,19 +31,16 @@ class Scalar[T](Data):
     pass
 
 
-@archetype
 class Integer(Scalar[int], int):
     """Integer scalar archetype."""
     pass
 
 
-@archetype
 class Float(Scalar[float], float):
     """Float scalar archetype."""
     pass
 
 
-@archetype
 class Bool(Scalar[bool]):
     """Boolean scalar archetype."""
     pass
@@ -52,7 +49,6 @@ if TYPE_CHECKING:
     Bool = bool  # type: ignore[assignment]
 
 
-@archetype
 class String(Scalar[str], str):
     """String scalar archetype."""
     pass
@@ -70,6 +66,6 @@ class measurement(Data):
 
 
 @archetype
-class Measurement(Float, traits=(measurement,)):
+class Measurement(Scalar[float], traits=(measurement,)):
     """Measurement archetype with unit metadata and float materialization."""
     pass

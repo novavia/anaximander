@@ -10,17 +10,9 @@ import re
 from collections.abc import Callable
 from datetime import timedelta
 from numbers import Real
-from typing import Any, Literal, cast
+from typing import Any, Literal, Self, cast
 
 from attrs import field
-
-from anaximander.aml.metadescriptors import (
-    MetadataDeclarator,
-    MetadescriptorRegistry,
-    NxFieldDeclarator,
-    OptionDeclarator,
-)
-from anaximander.aml.prototype import Arche, prototype
 
 from .declarative import (
     MISSING,
@@ -42,6 +34,12 @@ from .declarative import (
     declarator,
     is_missing,
     is_not_missing,
+)
+from .metadescriptors import (
+    MetadataDeclarator,
+    MetadescriptorRegistry,
+    NxFieldDeclarator,
+    OptionDeclarator,
 )
 
 # endregion
@@ -164,7 +162,7 @@ class RelationProtodescriptor(FieldProtodescriptor):
 
 
 @declarator
-class ConstructorDeclarator[C](CallableDeclarator[Callable[[Arche | prototype, Any], Any]], Protodescriptor):  # noqa
+class ConstructorDeclarator[C](CallableDeclarator[Callable[[type, Any], Any]], Protodescriptor):  # noqa
     """Base class for construction method descriptors."""
     __handle__ = "constructor"
 
@@ -547,7 +545,7 @@ class FieldBlockProtodescriptor(FieldProtodescriptor):
 
 
 @declarator
-class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[Arche], Any]]):  # noqa
+class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[type], Any]]):  # noqa
     """The protodescriptor class for metric fields."""
     __handle__ = "metric"
 
@@ -557,7 +555,7 @@ class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[A
 
 
 @declarator
-class ParserDeclarator(ConstructorDeclarator[Callable[[Arche | prototype, Any], Any]], FieldEnumeration):  # noqa
+class ParserDeclarator(ConstructorDeclarator[Callable[[type, Any], Any]], FieldEnumeration):  # noqa
     """The declarator class for field parsers."""
     __handle__ = "parser"
     element_wise: bool = field(default=False)
@@ -568,7 +566,7 @@ class ParserDeclarator(ConstructorDeclarator[Callable[[Arche | prototype, Any], 
 
 
 @declarator
-class ValidatorDeclarator(ConstructorDeclarator[Callable[[Arche | prototype, Any], bool]], FieldEnumeration):  # noqa
+class ValidatorDeclarator(ConstructorDeclarator[Callable[[type, Any], bool]], FieldEnumeration):  # noqa
     """The declarator class for field validators."""
     __handle__ = "validator"
     element_wise: bool = field(default=False)
@@ -698,40 +696,46 @@ class ProtodescriptorRegistry(MultiRegistry):
         """Returns the metadescriptor registry, or None if it has been garbage collected."""
         return self._metadescriptors
 
+    def __copy__(self) -> Self:
+        """Create a shallow copy of the multi-registry."""
+        new_registry = self.__class__(self._metadescriptors.copy())
+        new_registry.update(self)
+        return new_registry
+
     @property
     def metadata(self) -> BindingRegistry[MetadataDeclarator]:
         """Returns the metadata binding registry."""
-        return cast(BindingRegistry[MetadataDeclarator], self._data["metadata"])
+        return cast(BindingRegistry[MetadataDeclarator], self._registries["metadata"])
 
     @property
     def nxfield(self) -> BindingRegistry[NxFieldDeclarator]:
         """Returns the nxfield binding registry."""
-        return cast(BindingRegistry[NxFieldDeclarator], self._data["nxfield"])
+        return cast(BindingRegistry[NxFieldDeclarator], self._registries["nxfield"])
 
     @property
     def option(self) -> BindingRegistry[OptionDeclarator]:
         """Returns the option binding registry."""
-        return cast(BindingRegistry[OptionDeclarator], self._data["option"])
+        return cast(BindingRegistry[OptionDeclarator], self._registries["option"])
 
     @property
     def field(self) -> DeclaratorRegistry[FieldProtodescriptor]:
         """Returns the field protodescriptor registry."""
-        return cast(DeclaratorRegistry[FieldProtodescriptor], self._data["field"])
+        return cast(DeclaratorRegistry[FieldProtodescriptor], self._registries["field"])
 
     @property
     def schema(self) -> DeclaratorRegistry[SchemaDeclarator]:
         """Returns the schema declarator registry."""
-        return cast(DeclaratorRegistry[SchemaDeclarator], self._data["schema"])
+        return cast(DeclaratorRegistry[SchemaDeclarator], self._registries["schema"])
 
     @property
     def constructor(self) -> DeclaratorRegistry[ConstructorDeclarator]:
         """Returns the constructor declarator registry."""
-        return cast(DeclaratorRegistry[ConstructorDeclarator], self._data["constructor"])
+        return cast(DeclaratorRegistry[ConstructorDeclarator], self._registries["constructor"])
 
     @property
     def data(self) -> BindingRegistry[DataProtodescriptor]:
         """Returns the data binding registry."""
-        return cast(BindingRegistry[DataProtodescriptor], self._data["data"])
+        return cast(BindingRegistry[DataProtodescriptor], self._registries["data"])
 
     @classmethod
     def handle(cls, declarator: Declarator) -> str | None:

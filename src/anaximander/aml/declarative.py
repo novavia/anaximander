@@ -10,8 +10,9 @@ These artifacts form the foundation for declarative type definitions in AML.
 
 
 import ast
+import builtins
 import re
-from abc import ABC, abstractclassmethod, abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from contextvars import ContextVar, Token
 from itertools import chain, count
@@ -262,10 +263,10 @@ class Declarator(ABC):
                 handles.append(base.__handle__)
         cls._handles = tuple(handles)
 
-    def _set_once(self, attr: str, value: Any) -> None:
+    def _set_once(self, attr: str, value: Any, *, treat_none_as_unset: bool = False) -> None:
         """Internal backdoor: set a frozen attribute once (or idempotently)."""
         current = getattr(self, attr)
-        if is_missing(current):
+        if is_missing(current) or (treat_none_as_unset and current is None):
             object.__setattr__(self, attr, value)
             return
         if current != value:
@@ -313,13 +314,13 @@ class Declarator(ABC):
         if any(pattern.fullmatch(name) for pattern in forbidden_patterns):
             msg = f"Cannot use reserved name {name} for declarator or type {self.dtype}."
             raise ValueError(msg)
-        self._set_once("name", name)
-        self._set_once("owner", owner)
+        self._set_once("name", name, treat_none_as_unset=True)
+        self._set_once("owner", owner, treat_none_as_unset=True)
 
     def __set_ast__(self, node: ast.AST | None) -> None:
         """Attach the AST node that declared this declarator (if any)."""
         self._validate_value_type("__ast__", node, (ast.AST , type(None)))
-        self._set_once("__ast__", node)
+        self._set_once("__ast__", node, treat_none_as_unset=True)
 
     def __validate__(self) -> None:
         """Validate this declarator after it has been bound to a class namespace.
@@ -374,10 +375,10 @@ class Declarator(ABC):
 class AnnotatableDeclarator(Declarator):
     """Base class for declarators that can be annotated with type information."""
     annotation: str | None = field(init=False, default=None)  # Literal type annotation as a string  # noqa
-    type: type | None = field(init=False, default=None)  # Evaluated type annotation  # noqa
+    type: builtins.type | None = field(init=False, default=None)  # Evaluated type annotation  # noqa
     nullable: bool | None = field(init=False, default=None)  # Whether the type is nullable  # noqa
     classvar: bool | None = field(init=False, default=None)  # Whether the type is a ClassVar  # noqa
-    __types__: ClassVar[tuple[type, ...]] = ()  # Admissible types for this annotatable declarator
+    __types__: ClassVar[tuple[builtins.type, ...]] = ()  # Admissible types for this annotatable declarator  # noqa
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -422,10 +423,10 @@ class AnnotatableDeclarator(Declarator):
                 + f"of {owner_name}."
             )
             raise TypeError(msg)
-        self._set_once("annotation", annotation)
-        self._set_once("type", type_)
-        self._set_once("nullable", nullable)
-        self._set_once("classvar", classvar)
+        self._set_once("annotation", annotation, treat_none_as_unset=True)
+        self._set_once("type", type_, treat_none_as_unset=True)
+        self._set_once("nullable", nullable, treat_none_as_unset=True)
+        self._set_once("classvar", classvar, treat_none_as_unset=True)
 
 
 @declarator
@@ -561,10 +562,10 @@ class DeclarativeNamespace(dict[str, Any]):
                     if declarator_handle:
                         msg += f" and handle '{declarator_handle}'."
                     raise KeyError(msg)
-            declarator._set_once("name", name)
+            declarator._set_once("name", name, treat_none_as_unset=True)
         ordinal = next(self.declaration_index)
         declarations[ordinal] = declarator
-        declarator._set_once("ordinal", ordinal)
+        declarator._set_once("ordinal", ordinal, treat_none_as_unset=True)
 
     def register_binding(self, key: str, value: Any, *, handle: str | None= None) -> None:
         """Register a binding in this namespace.
@@ -723,13 +724,13 @@ class Registry[T](Mapping[str, T]):
 class DeclaratorRegistry[D: Declarator](Registry[D]):
     """A specialized registry for declarators."""
 
-    __types__: ClassVar[tuple[type[Declarator], ...]]  # Admissible declarator types
+    __types__: ClassVar[tuple[type[Declarator], ...]] = (Declarator,)  # Admissible declarator types
 
     def __init_subclass__(cls):
         """Assumes the first base is the base declarator registry."""
         super().__init_subclass__()
         base: type[DeclaratorRegistry]= cls.__bases__[0]
-        super_types = base.__types__
+        super_types = getattr(base, "__types__", (Declarator,))
         if "__types__" in cls.__dict__:
             types: tuple[type[Declarator], ...] = cls.__types__
         else:
@@ -861,9 +862,9 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
 
     __handles__: ClassVar[set[str]] = set()  # Set of registry handles
 
-    def __init__(self, data: Mapping[str, Registry[Any]] | Iterable[tuple[str, Registry[Any]]] | None = None, **kwargs: Registry[Any]):  # noqa
+    def __init__(self, registries: Mapping[str, Registry[Any]] | Iterable[tuple[str, Registry[Any]]] | None = None, **kwargs: Registry[Any]):  # noqa
         """Initialize the multi-registry with an optional mapping or iterable of pairs."""
-        self._data: dict[str, Registry[Any]] = dict(data or {}, **kwargs)
+        self._registries: dict[str, Registry[Any]] = dict(registries or {}, **kwargs)
         self._names: dict[str, str] = {}  # Mapping of registered names to handles
         for handle, registry in self.declarator_registries.items():
             for name in registry.keys():
@@ -871,15 +872,15 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
 
     def __getitem__(self, handle: str) -> Registry[Any]:
         try:
-            return self._data[handle]
+            return self._registries[handle]
         except KeyError:
             raise KeyError(f"Registry '{handle}' not found.") from None
 
     def __iter__(self):
-        return iter(self._data)
+        return iter(self._registries)
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self._registries)
 
     def __copy__(self) -> Self:
         """Create a shallow copy of the multi-registry."""
@@ -896,7 +897,7 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
         if handle not in self.__handles__:
             msg = f"Unknown registration handle {handle!r}."
             raise ValueError(msg)
-        return self._data[handle]
+        return self._registries[handle]
 
     @property
     def names(self) -> dict[str, str]:
@@ -994,7 +995,7 @@ class MultiRegistry(Mapping[str, Registry[Any]]):
 
     def to_dict(self) -> dict[str, dict[str, Any]]:
         """Convert to a plain nested dict suitable for serialization."""
-        return {handle: dict(registry) for handle, registry in self._data.items() if registry}  # noqa
+        return {handle: dict(registry) for handle, registry in self._registries.items() if registry}  # noqa
 
     def to_yaml(self) -> str:
         """YAML-style pretty print."""

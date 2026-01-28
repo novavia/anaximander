@@ -12,12 +12,11 @@ from typing import Any, Callable, ClassVar, Literal, Protocol, TypeGuard, cast
 
 from annotationlib import Format, get_annotations
 
-from anaximander.utils.funcs import (
+from ..utils.funcs import (
     type_name_to_collection_name,
     unwrap_classvar_type,
     unwrap_optional_type,
 )
-
 from .declarative import AnnotatableDeclarator, DeclarativeNamespace, Declarator, declarative
 from .metadescriptors import Metadescriptor, MetadescriptorRegistry, PrototypeValidator
 from .protodescriptors import ProtodescriptorRegistry
@@ -73,6 +72,8 @@ Archetype = type[ArchetypeProtocol]
 
 def is_archetype(cls: type[Any]) -> TypeGuard[Archetype]:
     """Type guard to check if a class is an Archetype."""
+    if cls is Arche:
+        return True
     return (isinstance(cls, prototype) and getattr(cls, "__role__", None) == TypeRole.ARCHETYPE)
 
 
@@ -124,16 +125,24 @@ class Arche(metaclass=declarative):
     @classmethod
     def traits(cls, view: Literal["local", "merged", "total"]) -> tuple[Trait, ...]:
         """The traits of this archetype."""
+        if isinstance(cls, prototype):
+            if view == "total":
+                view = "merged"
+            return prototype.traits(cls, view)
         return ()
 
     @classmethod
     def metadescriptors(cls, view: Literal["local", "merged", "resolved"]) -> MetadescriptorRegistry:  # noqa
         """The metadescriptors of this archetype."""
+        if isinstance(cls, prototype):
+            return prototype.metadescriptors(cls, view)
         return cls._metadescriptors.copy()
 
     @classmethod
     def metacharacters(cls, view: Literal["local", "merged", "resolved"]) -> ProtodescriptorRegistry:  # noqa
         """The metacharacters of this archetype."""
+        if isinstance(cls, prototype):
+            return prototype.metacharacters(cls, view)
         return cls._metacharacters.copy()
 
 Arche.__archetype__ = cast(Archetype, Arche)

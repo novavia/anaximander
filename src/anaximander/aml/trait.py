@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from anaximander.aml.prototype import Arche, TypeRole, is_archetype, is_trait, prototype
+from .prototype import Arche, TypeRole, is_archetype, is_trait, prototype
 
 
 def trait[T: Arche](cls: type[T]) -> type[T]:

@@ -233,22 +233,22 @@ class MetadescriptorRegistry(MultiRegistry):
     @property
     def metadata(self) -> DeclaratorRegistry[MetadataDeclarator]:
         """Returns the metadata metadescriptor registry."""
-        return cast(DeclaratorRegistry[MetadataDeclarator], self._data["metadata"])
+        return cast(DeclaratorRegistry[MetadataDeclarator], self._registries["metadata"])
 
     @property
     def nxfield(self) -> DeclaratorRegistry[NxFieldDeclarator]:
         """Returns the nxfield metadescriptor registry."""
-        return cast(DeclaratorRegistry[NxFieldDeclarator], self._data["nxfield"])
+        return cast(DeclaratorRegistry[NxFieldDeclarator], self._registries["nxfield"])
 
     @property
     def option(self) -> DeclaratorRegistry[OptionDeclarator]:
         """Returns the option metadescriptor registry."""
-        return cast(DeclaratorRegistry[OptionDeclarator], self._data["option"])
+        return cast(DeclaratorRegistry[OptionDeclarator], self._registries["option"])
 
     @property
     def metavalidator(self) -> DeclaratorRegistry[CallableDeclarator]:
         """Returns the metavalidator metadescriptor registry."""
-        return cast(DeclaratorRegistry[CallableDeclarator], self._data["metavalidator"])
+        return cast(DeclaratorRegistry[CallableDeclarator], self._registries["metavalidator"])
 
     @classmethod
     def handle(cls, declarator: Declarator) -> str | None:

@@ -11,8 +11,8 @@ from functools import update_wrapper
 from numbers import Real
 from typing import Any, Callable, Literal
 
-from anaximander.aml.prototype import Arche, prototype
-from anaximander.utils.meta import Singleton
+from .prototype import Arche, prototype
+from ..utils.meta import Singleton
 
 from .declarative import (
     DECLARATIVE_NAMESPACE,
