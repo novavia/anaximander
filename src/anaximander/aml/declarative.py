@@ -55,6 +55,26 @@ def declarator(cls: DT) -> DT:
 
 DECLARATIVE_NAMESPACE: ContextVar[Optional["DeclarativeNamespace"]] = ContextVar("DECLARATIVE_NAMESPACE", default=None)  # noqa
 
+# -----------------------------------------------------------------------------
+# Global metadescriptor name registry
+# -----------------------------------------------------------------------------
+# Used to expose declared names on metadata/option/nxfield interfaces for runtime
+# ergonomics (REPL/autocomplete), without auto-registering bindings.
+
+_GLOBAL_NAMES: dict[str, set[str]] = {"metadata": set(), "option": set(), "nxfield": set()}
+
+
+def register_global_name(handle: str, name: str) -> None:
+    """Register a globally known metadescriptor name for interface exposure."""
+    if handle in _GLOBAL_NAMES:
+        _GLOBAL_NAMES[handle].add(name)
+
+
+def global_names(handle: str) -> set[str]:
+    """Return globally known metadescriptor names for interface exposure."""
+    return set(_GLOBAL_NAMES.get(handle, set()))
+
+
 type Assignment = ast.Assign | ast.AnnAssign
 
 
@@ -563,6 +583,8 @@ class DeclarativeNamespace(dict[str, Any]):
                         msg += f" and handle '{declarator_handle}'."
                     raise KeyError(msg)
             declarator._set_once("name", name, treat_none_as_unset=True)
+            if declarator.handle in _GLOBAL_NAMES:
+                register_global_name(declarator.handle, name)
         ordinal = next(self.declaration_index)
         declarations[ordinal] = declarator
         declarator._set_once("ordinal", ordinal, treat_none_as_unset=True)
@@ -653,6 +675,8 @@ class declarative(type):
                 if name is None:
                     raise RuntimeError("Unnamed declarator registered outside class assignment.")
                 declarator.__set_name__(cls, name)
+                if declarator.handle in _GLOBAL_NAMES:
+                    register_global_name(declarator.handle, name)
         # Runs declarator validation hooks
         for declarator in cls.__declarations__.values():
             declarator.__validate__()
@@ -724,7 +748,7 @@ class Registry[T](Mapping[str, T]):
 class DeclaratorRegistry[D: Declarator](Registry[D]):
     """A specialized registry for declarators."""
 
-    __types__: ClassVar[tuple[type[Declarator], ...]] = (Declarator,)  # Admissible declarator types
+    __types__: ClassVar[tuple[type[Declarator], ...]] = (Declarator,)  # Admissible declarator types # noqa
 
     def __init_subclass__(cls):
         """Assumes the first base is the base declarator registry."""

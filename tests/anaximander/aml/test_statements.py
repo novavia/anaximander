@@ -3,7 +3,7 @@ import anaximander.aml as nx
 
 def test_minimal_aml_declarations():
     class Temperature(nx.Measurement):
-        unit = "C"
+        nx.metadata.unit = "C"
 
     class Sensor(nx.Model):
         temperature: Temperature = nx.data()
