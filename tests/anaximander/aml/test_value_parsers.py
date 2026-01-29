@@ -1,7 +1,6 @@
-import anaximander.aml as nx
+from tests.anaximander.aml.modules import value_parsers_module as vpm
 
 
-def test_classvar_data_parsers_and_validators(aml_module):
-    module = aml_module("aml/value_parsers_module.py", "aml_value_parsers_module")
-    sensor = module.Sensor
-    assert sensor.bindings("merged").data["label"] == "OK"
+def test_classvar_data_parsers_and_validators(aml_finalize):
+    aml_finalize(vpm)
+    assert vpm.Sensor.bindings("merged").data["label"] == "OK"
