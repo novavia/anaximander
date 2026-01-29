@@ -19,15 +19,15 @@ from typing import get_type_hints
 
 from ..utils.funcs import unwrap_classvar_type, unwrap_optional_type
 from .data import Data
-from .declarative import (
-    MISSING,
+from .declarators import (
     AnnotatableDeclarator,
+    Declarator,
     EnumerationCallableDeclarator,
-    EnumerationDeclarator,
+    ParserDeclarator,
+    PrototypeValidator,
+    ValidatorDeclarator,
     is_not_missing,
 )
-from .metadescriptors import PrototypeValidator
-from .protodescriptors import ParserDeclarator, ValidatorDeclarator
 from .prototype import TypeRole, is_archetype, is_prototype, is_trait, prototype
 
 # endregion
@@ -272,14 +272,14 @@ def _validate_type_role(cls: prototype) -> None:
 
 def _validate_bindings(cls: prototype) -> None:
     """Validate bound values, attribute validators, and data parsers for a prototype."""
-    merged_metacharacters = cls.__merged_metacharacters__
-    merged_metadescriptors = cls.__merged_metadescriptors__
+    declarators = cls.declarators("merged")
+    bindings = cls.bindings("merged")
     # -------------------------
     # 1) Validate each bound value against its declarator contract.
     # -------------------------
-    for registry in merged_metacharacters.binding_registries.values():
-        for name, value in registry.items():
-            declarator = registry.declarators[name]
+    for binding_registry in bindings.values():
+        for name, value in binding_registry.items():
+            declarator: Declarator = binding_registry.declarators[name]
             if not declarator.__validate_binding__(cls, value):
                 msg = (f"Binding '{name}' with value '{value}' is not valid for declarator "
                        f"of type '{declarator.dtype}' in prototype '{cls.__name__}'.")
@@ -287,15 +287,15 @@ def _validate_bindings(cls: prototype) -> None:
     # -------------------------
     # 2) Run attribute-level validators (metadata/option/nxfield validators).
     # -------------------------
-    validators = merged_metadescriptors.metavalidator.values()
+    validators = declarators.metavalidator.values()
     attribute_validators = [v for v in validators if isinstance(v, EnumerationCallableDeclarator)]  # noqa
     for validator in attribute_validators:
         if is_not_missing(validator.callable):
             target_handle = validator.__handle__.removesuffix("_validator")
-            registry = merged_metacharacters.get_registry(target_handle)
+            binding_registry = bindings.get_registry(target_handle)
             for member in validator.members:
-                if member in registry:
-                    value = registry[member]
+                if member in binding_registry:
+                    value = binding_registry[member]
                     if not validator.callable(cls, value):
                         msg = (f"Binding '{member}' with value '{value}' failed validation by "
                                f"'{validator}' in prototype '{cls.__name__}'.")
@@ -303,8 +303,8 @@ def _validate_bindings(cls: prototype) -> None:
     # -------------------------
     # 3) Run parsers/validators for classvar data fields.
     # -------------------------
-    data_bindings = merged_metacharacters.data
-    constructor_registry = merged_metacharacters.constructor
+    data_bindings = bindings.data
+    constructor_registry = declarators.constructor
     parsers = [p for p in constructor_registry.values() if isinstance(p, ParserDeclarator)]
     field_validators = [
         v for v in constructor_registry.values() if isinstance(v, ValidatorDeclarator)
@@ -325,7 +325,7 @@ def _validate_bindings(cls: prototype) -> None:
                 # In the edge case of a Data-typed classevar, apply its type-level parsers/validators. # noqa
                 # Type-level parsers/validators declared on a Data subclass apply to the value.
                 if isinstance(declarator.type, type) and issubclass(declarator.type, Data):
-                    constructors = declarator.type.metacharacters("merged").constructor.values()
+                    constructors = declarator.type.declarators("merged").constructor.values()
                     data_parsers = [
                         p for p in constructors if isinstance(p, ParserDeclarator) and not p.members  # noqa
                     ]
@@ -423,7 +423,7 @@ def finalize_module(
         _validate_enumerations(cls)
     for cls in prototypes:
         _validate_bindings(cls)
-        validators = cls.__merged_metadescriptors__.metavalidator.values()
+        validators = cls.declarators("merged").metavalidator.values()
         prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]
         for validator in prototype_validators:
             if is_not_missing(validator.callable):

@@ -153,7 +153,7 @@ class PrototypeBindingRegistry(MultiBindingRegistry):
     __handles__ = {"metadata", "nxfield", "option", "data"}
 
     def __init__(self, declarators: PrototypeDeclaratorRegistry):
-        self._declarators = declarators
+        super().__init__(declarators)
         metadata = BindingRegistry(_declarators=declarators.metadata)
         nxfield = BindingRegistry(_declarators=declarators.nxfield)
         option = BindingRegistry(_declarators=declarators.option)
@@ -368,7 +368,7 @@ class prototype(declarative):
         cls.__merged_declarators__ = merged_declarators
         # Set local bindings
         cls.__bindings__ = PrototypeBindingRegistry(declarators=cls.__merged_declarators__)
-        for name, value in cls.__bindings__.items():
+        for name, value in cls.__raw_bindings__.items():
             if "." in name:
                 handle, binding_name = name.split(".", 1)
                 cls.__bindings__.register(binding_name, value, handle=handle)

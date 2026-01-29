@@ -7,14 +7,14 @@
 from typing import dataclass_transform
 
 from .archetype import archetype
-from .metadescriptors import Metadescriptor
-from .object import Object
-from .protodescriptors import (
+from .declarators import (
     AssignableFieldProtodescriptor,
     ConstructorDeclarator,
     FieldProtodescriptor,
+    Metadescriptor,
     SchemaDeclarator,
 )
+from .object import Object
 
 # =============================================================================
 # Model archetype

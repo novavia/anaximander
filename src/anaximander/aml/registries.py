@@ -349,14 +349,39 @@ class MultiBindingRegistry(MultiRegistry[BindingRegistry]):
     """A multi-registry specialized for bindings."""
 
     _declarators: MultiDeclaratorRegistry  # Referenced declarator multi-registry
+    __auto_handles__: ClassVar[set[str]] = set()  # Handles that can be auto-detected
+
+    def __init__(self, declarators: MultiDeclaratorRegistry) -> None:
+        """Initialize the multi-binding registry with a declarator multi-registry."""
+        super().__init__()
+        self._declarators = declarators
+
+    @property
+    def declarators(self) -> MultiDeclaratorRegistry:
+        """Return the referenced declarator multi-registry."""
+        return self._declarators
+
+    def __copy__(self) -> Self:
+        """Create a shallow copy of the multi-registry."""
+        new_registry = self.__class__(self._declarators)
+        new_registry.update(self)
+        return new_registry
 
     def register(self, name: str, item: Any, *, handle: str | None = None, namespace: str | None = None) -> None:  # noqa
         """Register a binding in the appropriate registry."""
-        if handle is None:
-            msg = "Handle must be specified when registering bindings."
-            raise ValueError(msg)
-        registry = self.get_registry(handle)
-        registry.register(name, item)
+        if handle is not None:
+            registry = self.get_registry(handle)
+            registry.register(name, item)
+        else:
+            for handle in self.__auto_handles__:
+                registry = self.get_registry(handle)
+                try:
+                    registry.register(name, item)
+                    return
+                except KeyError:
+                    continue
+        msg = f"Cannot register binding '{name}': no matching declarator found."
+        raise KeyError(msg)
 
     def update(self, other: "MultiRegistry[BindingRegistry]", *, update_declarators: bool = False) -> None:  # noqa
         """Update the multi-registry with items from another mapping."""

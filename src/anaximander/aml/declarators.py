@@ -11,6 +11,7 @@ import builtins
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
+from datetime import timedelta
 from itertools import chain
 from numbers import Real
 from types import MappingProxyType
@@ -676,7 +677,7 @@ class MetaValidator(Metadescriptor):
 
 
 @declarator
-class PrototypeValidator(CallableDeclarator[Callable[[declarative], bool]], MetaValidator):
+class PrototypeValidator(CallableDeclarator[Callable[[type], bool]], MetaValidator):
     """The metadescriptor class for prototype validators."""
     __handle__ = "prototype_validator"
 
@@ -686,7 +687,7 @@ class PrototypeValidator(CallableDeclarator[Callable[[declarative], bool]], Meta
 
 
 @declarator
-class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], MetaValidator):  # noqa
+class MetadataValidator(EnumerationCallableDeclarator[Callable[[type, Any], bool]], MetaValidator):  # noqa
     """The metadescriptor class for metadata validators."""
     __handle__ = "metadata_validator"
 
@@ -696,7 +697,7 @@ class MetadataValidator(EnumerationCallableDeclarator[Callable[[declarative, Any
 
 
 @declarator
-class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], MetaValidator):  # noqa
+class OptionValidator(EnumerationCallableDeclarator[Callable[[type, Any], bool]], MetaValidator):  # noqa
     """The metadescriptor class for option validators."""
     __handle__ = "option_validator"
 
@@ -706,7 +707,7 @@ class OptionValidator(EnumerationCallableDeclarator[Callable[[declarative, Any],
 
 
 @declarator
-class NxFieldValidator(EnumerationCallableDeclarator[Callable[[declarative, Any], bool]], MetaValidator):  # noqa
+class NxFieldValidator(EnumerationCallableDeclarator[Callable[[type, Any], bool]], MetaValidator):  # noqa
     """The metadescriptor class for nxfield validators."""
     __handle__ = "nxfield_validator"
 
@@ -1115,7 +1116,7 @@ class StateProtodescriptor(RelationProtodescriptor):
     """Protodescriptor for dynamic state values."""
     __handle__ = "state"
     # Underlying time series
-    source: declarative | Protodescriptor | Missing = field(default=MISSING)
+    source: type | Protodescriptor | Missing = field(default=MISSING)
     # Reduction policy
     reducer: str | Callable | Missing = field(default=MISSING)
     # Constraints
@@ -1135,7 +1136,7 @@ class StateProtodescriptor(RelationProtodescriptor):
 
 
 @declarator
-class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[declarative], Any]]):  # noqa
+class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[type], Any]]):  # noqa
     """The protodescriptor class for field expressions."""
     __handle__ = "fx"
     ref: str | Missing = field(default=MISSING)

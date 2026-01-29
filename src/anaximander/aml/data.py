@@ -7,10 +7,9 @@
 from typing import TYPE_CHECKING, ClassVar
 
 from .archetype import archetype
+from .declarators import Metadescriptor, ParserDeclarator, ValidatorDeclarator
 from .interfaces import metadata
-from .metadescriptors import Metadescriptor
 from .object import Object
-from .protodescriptors import ParserDeclarator, ValidatorDeclarator
 from .trait import trait
 
 # =============================================================================

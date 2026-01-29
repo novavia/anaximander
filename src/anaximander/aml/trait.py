@@ -22,8 +22,8 @@ def trait[T: Arche](cls: type[T]) -> type[T]:
     if (base := cls.__base__) is None or not (is_archetype(base) or is_trait(base)):
         raise TypeError(f"Trait '{cls.__name__}' must directly inherit from an archetype or trait.")  # noqa
     # Traits cannot declare protodescriptors
-    metacharacters = cls.metacharacters("merged")
-    if any(metacharacters[ns] for ns in ("field", "schema", "constructor", "data")):
+    declarators = cls.declarators("local")
+    if any(declarators[ns] for ns in ("field", "schema", "constructor")):
         raise TypeError("Traits cannot declare or inherit protodescriptors.")
     cls.__role__ = TypeRole.TRAIT  # type: ignore[assignment]
     return cast(type[T], cls)
