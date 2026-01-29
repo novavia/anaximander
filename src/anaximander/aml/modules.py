@@ -209,7 +209,7 @@ def _collect_module_types(module: NxModuleType, module_ast: ast.Module) -> list[
 def _assign_declarator_ast(cls: prototype, class_def: ast.ClassDef) -> None:
     """Bind AST assignment nodes to declarators declared on a prototype."""
     assignments = _name_assignments(class_def)
-    for declarator in cls.__declarations__.values():
+    for declarator in cls.__raw_declarators__.values():
         if declarator.__ast__ is not None:
             continue
         if (name := declarator.name) is None:
@@ -231,7 +231,7 @@ def _backfill_annotation_types(cls: prototype, module: NxModuleType) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         raise TypeError(f"Failed to resolve type hints for {cls.__name__}: {exc}") from exc
-    for declarator in cls.__declarations__.values():
+    for declarator in cls.__raw_declarators__.values():
         if not isinstance(declarator, AnnotatableDeclarator):
             continue
         if declarator.type is not None:
@@ -263,7 +263,7 @@ def _validate_type_role(cls: prototype) -> None:
         if cls.__role__ is not TypeRole.PROTOTYPE:
             raise TypeError(f"Prototype {cls.__name__} must have role PROTOTYPE.")
         # Pure prototypes cannot declare metadescriptors locally.
-        metadescriptors = cls.metadescriptors("local")
+        metadescriptors = cls.declarators("local")
         if any(registry for registry in metadescriptors.values()):
             raise TypeError("Prototypes cannot declare metadescriptors.")
         return

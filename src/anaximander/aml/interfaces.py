@@ -9,36 +9,32 @@
 from collections.abc import Callable, Mapping
 from functools import update_wrapper
 from numbers import Real
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 from ..utils.meta import Singleton
 from .declarative import (
     DECLARATIVE_NAMESPACE,
-    MISSING,
     DeclarativeNamespace,
+)
+from .declarators import (
+    MISSING,
+    AssignableMetadescriptor,
+    BackLinkProtodescriptor,
+    DataProtodescriptor,
     Declarator,
     EnumerationCallableDeclarator,
-    Missing,
-    declarative,
-)
-from .metadescriptors import (
-    AssignableMetadescriptor,
+    FieldProtodescriptor,
+    LinkProtodescriptor,
     MetadataDeclarator,
     MetadataValidator,
+    Missing,
     NxFieldDeclarator,
     NxFieldValidator,
     OptionDeclarator,
     OptionValidator,
-)
-from .protodescriptors import (
-    BackLinkProtodescriptor,
-    DataProtodescriptor,
-    FieldProtodescriptor,
-    LinkProtodescriptor,
     ParserDeclarator,
     ValidatorDeclarator,
 )
-from .prototype import Arche, prototype
 
 # endregion
 
@@ -132,41 +128,13 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
     def __setattr__(self, name: str, value: Any) -> None:
         if name.startswith("__"):
             object.__setattr__(self, name, value)
-            return
-        if name in self._global_names():
+        else:
             self.bind(name, value)
-            return
-        super().__setattr__(name, value)
 
     def __setitem__(self, name: str, value: Any) -> None:
         if self.handle not in {"metadata", "option", "nxfield"}:
             raise KeyError(f"{self.handle} interface does not support item assignment.")
         self.bind(name, value)
-
-    def __getattr__(self, name: str) -> Any:
-        if name.startswith("__"):
-            raise AttributeError(name)
-        if name in self._global_names():
-            return name
-        raise AttributeError(f"{self.handle} interface has no attribute '{name}'.")
-
-    def __dir__(self) -> list[str]:
-        entries = set(super().__dir__())
-        entries.update(self._global_names())
-        return sorted(entries)
-
-    def _global_names(self) -> set[str]:
-        from .declarative import global_names
-        return global_names(self.handle)
-
-    def _register_known_name(self, name: str) -> None:
-        from .declarative import register_global_name
-        if self.handle in {"metadata", "option", "nxfield"}:
-            register_global_name(self.handle, name)
-            if not hasattr(self.__class__, name):
-                setattr(self.__class__, name, name)
-            if not hasattr(self, name):
-                object.__setattr__(self, name, name)
 
     def declare(
             self,
@@ -197,7 +165,7 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
         declarator.__set_type__(
             annotation=annotation, type_=type, classvar=classvar, nullable=nullable
         )
-        dns.register_declaration(declarator, name=name)
+        dns.register_declarator(declarator, name=name)
         return declarator
 
     @property

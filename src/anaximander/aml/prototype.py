@@ -17,11 +17,176 @@ from ..utils.funcs import (
     unwrap_classvar_type,
     unwrap_optional_type,
 )
-from .declarative import AnnotatableDeclarator, DeclarativeNamespace, Declarator, declarative
-from .metadescriptors import Metadescriptor, MetadescriptorRegistry, PrototypeValidator
-from .protodescriptors import ProtodescriptorRegistry
+from .declarative import DeclarativeNamespace, declarative
+from .declarators import (
+    AnnotatableDeclarator,
+    ConstructorDeclarator,
+    Declarator,
+    FieldProtodescriptor,
+    MetadataDeclarator,
+    Metadescriptor,
+    MetaValidator,
+    NxFieldDeclarator,
+    OptionDeclarator,
+    PrototypeValidator,
+    SchemaDeclarator,
+)
+from .registries import (
+    BindingRegistry,
+    DeclaratorRegistry,
+    MultiBindingRegistry,
+    MultiDeclaratorRegistry,
+)
 
 # endregion
+
+# =============================================================================
+# Registries
+# =============================================================================
+# region Registries
+
+
+class PrototypeDeclaratorRegistry(MultiDeclaratorRegistry):
+    """Registry for prototype declarators."""
+    __handles__ = {"metadata", "nxfield", "option", "metavalidator", "field", "schema", "constructor"}  # noqa
+    __namespaces__ = {"domain", "nx"}
+
+    def __init__(self):
+        super().__init__()
+        # Initialize registries for each namespace
+        metadata = DeclaratorRegistry[MetadataDeclarator]()
+        nxfield = DeclaratorRegistry[NxFieldDeclarator]()
+        option = DeclaratorRegistry[OptionDeclarator]()
+        metavalidator = DeclaratorRegistry[MetaValidator]()
+        field = DeclaratorRegistry[FieldProtodescriptor]()
+        schema = DeclaratorRegistry[SchemaDeclarator]()
+        constructor = DeclaratorRegistry[ConstructorDeclarator]()
+        self._registries = {
+            "metadata": metadata,
+            "nxfield": nxfield,
+            "option": option,
+            "metavalidator": metavalidator,
+            "field": field,
+            "schema": schema,
+            "constructor": constructor,
+        }
+        self._namespaces = {
+            "domain": dict(),
+            "nx": dict(),
+        }
+
+    @property
+    def metadata(self) -> DeclaratorRegistry[MetadataDeclarator]:
+        """Returns the metadata metadescriptor registry."""
+        return cast(DeclaratorRegistry[MetadataDeclarator], self._registries["metadata"])
+
+    @property
+    def nxfield(self) -> DeclaratorRegistry[NxFieldDeclarator]:
+        """Returns the nxfield metadescriptor registry."""
+        return cast(DeclaratorRegistry[NxFieldDeclarator], self._registries["nxfield"])
+
+    @property
+    def option(self) -> DeclaratorRegistry[OptionDeclarator]:
+        """Returns the option metadescriptor registry."""
+        return cast(DeclaratorRegistry[OptionDeclarator], self._registries["option"])
+
+    @property
+    def metavalidator(self) -> DeclaratorRegistry[MetaValidator]:
+        """Returns the metavalidator metadescriptor registry."""
+        return cast(DeclaratorRegistry[MetaValidator], self._registries["metavalidator"])
+
+    @property
+    def field(self) -> DeclaratorRegistry[FieldProtodescriptor]:
+        """Returns the field protodescriptor registry."""
+        return cast(DeclaratorRegistry[FieldProtodescriptor], self._registries["field"])
+
+    @property
+    def schema(self) -> DeclaratorRegistry[SchemaDeclarator]:
+        """Returns the schema declarator registry."""
+        return cast(DeclaratorRegistry[SchemaDeclarator], self._registries["schema"])
+
+    @property
+    def constructor(self) -> DeclaratorRegistry[ConstructorDeclarator]:
+        """Returns the constructor declarator registry."""
+        return cast(DeclaratorRegistry[ConstructorDeclarator], self._registries["constructor"])
+
+    @classmethod
+    def handle(cls, declarator: Declarator) -> str | None:
+        """Returns the registry handle for the given declarator, or None if not found."""
+        match declarator:
+            case MetadataDeclarator():
+                return "metadata"
+            case NxFieldDeclarator():
+                return "nxfield"
+            case OptionDeclarator():
+                return "option"
+            case MetaValidator():
+                return "metavalidator"
+            case FieldProtodescriptor():
+                return "field"
+            case SchemaDeclarator():
+                return "schema"
+            case ConstructorDeclarator():
+                return "constructor"
+            case _:
+                return None
+
+    @classmethod
+    def namespace(cls, declarator: Declarator) -> str | None:
+        """Returns the registry namespace for the given declarator."""
+        match declarator:
+            case MetadataDeclarator():
+                if declarator.domain is True:
+                    return "domain"
+                else:
+                    return "nx"
+            case Metadescriptor():
+                return "nx"
+            case FieldProtodescriptor() | ConstructorDeclarator():
+                return "domain"
+            case _:
+                return None
+
+
+class PrototypeBindingRegistry(MultiBindingRegistry):
+    """Registry for prototype bindings."""
+    __handles__ = {"metadata", "nxfield", "option", "data"}
+
+    def __init__(self, declarators: PrototypeDeclaratorRegistry):
+        self._declarators = declarators
+        metadata = BindingRegistry(_declarators=declarators.metadata)
+        nxfield = BindingRegistry(_declarators=declarators.nxfield)
+        option = BindingRegistry(_declarators=declarators.option)
+        data = BindingRegistry(_declarators=declarators.field)
+        self._registries = {
+            "metadata": metadata,
+            "nxfield": nxfield,
+            "option": option,
+            "data": data,
+        }
+
+    @property
+    def metadata(self) -> BindingRegistry[MetadataDeclarator]:
+        """Returns the metadata binding registry."""
+        return cast(BindingRegistry[MetadataDeclarator], self._registries["metadata"])
+
+    @property
+    def nxfield(self) -> BindingRegistry[NxFieldDeclarator]:
+        """Returns the nxfield binding registry."""
+        return cast(BindingRegistry[NxFieldDeclarator], self._registries["nxfield"])
+
+    @property
+    def option(self) -> BindingRegistry[OptionDeclarator]:
+        """Returns the option binding registry."""
+        return cast(BindingRegistry[OptionDeclarator], self._registries["option"])
+
+    @property
+    def data(self) -> BindingRegistry[FieldProtodescriptor]:
+        """Returns the data binding registry."""
+        return cast(BindingRegistry[FieldProtodescriptor], self._registries["data"])
+
+# endregion
+
 
 # =============================================================================
 # Prototype Metaclass
@@ -41,10 +206,10 @@ class prototypeProtocol(Protocol):
     __archetype__: ClassVar["Archetype"]
     __traits__: ClassVar[tuple["Trait", ...]]
     __merged_traits__: ClassVar[tuple["Trait", ...]]
-    __metadescriptors__: ClassVar[MetadescriptorRegistry]
-    __metacharacters__: ClassVar[ProtodescriptorRegistry]
-    __merged_metadescriptors__: ClassVar[MetadescriptorRegistry]
-    __merged_metacharacters__: ClassVar[ProtodescriptorRegistry]
+    __declarators__: ClassVar[PrototypeDeclaratorRegistry]
+    __bindings__: ClassVar[PrototypeBindingRegistry]
+    __merged_declarators__: ClassVar[PrototypeDeclaratorRegistry]
+    __merged_bindings__: ClassVar[PrototypeBindingRegistry]
     __compilations__: ClassVar[dict[str, dict]]
 
     @classmethod
@@ -53,13 +218,13 @@ class prototypeProtocol(Protocol):
         ...
 
     @classmethod
-    def metadescriptors(cls, view: Literal["local", "merged", "resolved"]) -> MetadescriptorRegistry:  # noqa
-        """The metadescriptors of this type."""
+    def declarators(cls, view: Literal["local", "merged", "resolved"]) -> PrototypeDeclaratorRegistry:  # noqa
+        """The declarators of this type."""
         ...
 
     @classmethod
-    def metacharacters(cls, view: Literal["local", "merged", "resolved"]) -> ProtodescriptorRegistry:  # noqa
-        """The metacharacters of this type."""
+    def bindings(cls, view: Literal["local", "merged", "resolved"]) -> PrototypeBindingRegistry:  # noqa
+        """The bindings of this type."""
         ...
 
 
@@ -115,8 +280,8 @@ class Arche(metaclass=declarative):
     __role__: ClassVar[Literal[TypeRole.ARCHETYPE]] = TypeRole.ARCHETYPE
     __archetype__: ClassVar[Archetype]
     __traits__: ClassVar[tuple[Trait, ...]] = ()
-    _metadescriptors: ClassVar[MetadescriptorRegistry] = MetadescriptorRegistry()
-    _metacharacters: ClassVar[ProtodescriptorRegistry] = ProtodescriptorRegistry(_metadescriptors)
+    _declarators: ClassVar[PrototypeDeclaratorRegistry] = PrototypeDeclaratorRegistry()
+    _bindings: ClassVar[PrototypeBindingRegistry] = PrototypeBindingRegistry(_declarators)
     __declarator_types__: ClassVar[set[type[Declarator]]] = {Metadescriptor}
 
     def __new__(cls, *args, **kwargs):
@@ -132,18 +297,17 @@ class Arche(metaclass=declarative):
         return ()
 
     @classmethod
-    def metadescriptors(cls, view: Literal["local", "merged", "resolved"]) -> MetadescriptorRegistry:  # noqa
-        """The metadescriptors of this archetype."""
+    def declarators(cls, view: Literal["local", "merged", "resolved"]) -> PrototypeDeclaratorRegistry:  # noqa
+        """The declarators of this archetype."""
         if isinstance(cls, prototype):
-            return prototype.metadescriptors(cls, view)
-        return cls._metadescriptors.copy()
-
+            return prototype.declarators(cls, view)
+        return cls._declarators.copy()
     @classmethod
-    def metacharacters(cls, view: Literal["local", "merged", "resolved"]) -> ProtodescriptorRegistry:  # noqa
-        """The metacharacters of this archetype."""
+    def bindings(cls, view: Literal["local", "merged", "resolved"]) -> PrototypeBindingRegistry:  # noqa
+        """The bindings of this archetype."""
         if isinstance(cls, prototype):
-            return prototype.metacharacters(cls, view)
-        return cls._metacharacters.copy()
+            return prototype.bindings(cls, view)
+        return cls._bindings.copy()
 
 Arche.__archetype__ = cast(Archetype, Arche)
 
@@ -154,10 +318,10 @@ class prototype(declarative):
     __archetype__: Archetype  # The prototype's archetype
     __traits__: tuple[Trait, ...]  # The prototype's traits implemented on top of its archetype
     __merged_traits__: tuple[Trait, ...]  # The prototype's merged traits, including inherited ones
-    __metadescriptors__: MetadescriptorRegistry  # The prototype's locally declared metadescriptors
-    __metacharacters__: ProtodescriptorRegistry  # The prototype's locally declared metacharacters
-    __merged_metadescriptors__: MetadescriptorRegistry  # The prototype's merged metadescriptors
-    __merged_metacharacters__: ProtodescriptorRegistry  # The prototype's merged metacharacters
+    __declarators__: PrototypeDeclaratorRegistry  # The prototype's locally declared declarators
+    __bindings__: PrototypeBindingRegistry  # The prototype's locally declared bindings
+    __merged_declarators__: PrototypeDeclaratorRegistry  # The prototype's merged declarators
+    __merged_bindings__: PrototypeBindingRegistry  # The prototype's merged bindings
     __compilations__: dict[str, dict]  # Holds compilation target handles and parameters
 
     def __new__(mcls, name, bases, namespace: DeclarativeNamespace, traits=(), **metadata):
@@ -186,57 +350,50 @@ class prototype(declarative):
         cls.__traits__ = tuple(T for T in cls.__merged_traits__ if T not in base_traits)
         # Validate that all declarations conform to the archetype
         allowed_declarator_types = tuple(getattr(archetype, "__declarator_types__", set()))
-        for declarator in cls.__declarations__.values():
+        for declarator in cls.__raw_declarators__.values():
             if not isinstance(declarator, allowed_declarator_types):
                 msg = f"Declarator of type '{declarator.dtype}' is not allowed in archetype {archetype.__name__}."  # noqa
                 raise TypeError(msg)
-        # Set local metadescriptors
-        cls.__metadescriptors__ = MetadescriptorRegistry()
-        for declarator in cls.__declarations__.values():
-            if isinstance(declarator, Metadescriptor):
-                cls.__metadescriptors__.register(declarator.name, declarator)
-        # Merge inherited metadescriptors
-        merged_metadescriptors = base.metadescriptors("merged")
+        # Set local declarators
+        cls.__declarators__ = PrototypeDeclaratorRegistry()
+        for declarator in cls.__raw_declarators__.values():
+            if isinstance(declarator, Declarator):
+                cls.__declarators__.register(declarator.name, declarator)
+        # Merge inherited declarators
+        merged_declarators = base.declarators("merged")
         for trait in cls.__traits__:
-            trait_metadescriptors = trait.metadescriptors("merged")
-            merged_metadescriptors.update(trait_metadescriptors)
-        merged_metadescriptors.update(cls.__metadescriptors__)
-        cls.__merged_metadescriptors__ = merged_metadescriptors
-        # Set local metacharacters
-        cls.__metacharacters__ = ProtodescriptorRegistry(cls.__merged_metadescriptors__)
-        for declarator in cls.__declarations__.values():
-            if not isinstance(declarator, Metadescriptor):
-                cls.__metacharacters__.register(declarator.name, declarator)
+            trait_declarators = trait.declarators("merged")
+            merged_declarators.update(trait_declarators)
+        merged_declarators.update(cls.__declarators__)
+        cls.__merged_declarators__ = merged_declarators
+        # Set local bindings
+        cls.__bindings__ = PrototypeBindingRegistry(declarators=cls.__merged_declarators__)
         for name, value in cls.__bindings__.items():
             if "." in name:
                 handle, binding_name = name.split(".", 1)
-                cls.__metacharacters__.register(binding_name, value, handle=handle)
+                cls.__bindings__.register(binding_name, value, handle=handle)
             else:
-                cls.__metacharacters__.register(name, value)
+                cls.__bindings__.register(name, value)
         # And additionaly set metadata passed in the class header
         # Only non-domain metadata can be set this way
         for name, value in metadata.items():
-            declarator = merged_metadescriptors.metadata.get(name)
-            if declarator is not None and declarator.domain is True:
+            declarator = merged_declarators.metadata.get(name)
+            if declarator is None or not isinstance(declarator, MetadataDeclarator):
+                msg = f"Metadata '{name}' is not declared for prototype '{cls.__name__}'."
+                raise KeyError(msg)
+            elif declarator.domain is True:
                 msg = f"Cannot set domain metadata '{name}' in class header of prototype '{cls.__name__}'."  # noqa
                 raise TypeError(msg)
-            cls.__metacharacters__.register(name, value, handle="metadata")
-        # Merge inherited metacharacters
-        merged_metacharacters = ProtodescriptorRegistry(cls.__merged_metadescriptors__)
-        base_metacharacters = base.metacharacters("merged")
-        merged_metacharacters.update(base_metacharacters)
+            cls.__bindings__.register(name, value, handle="metadata")
+        # Merge local and inherited bindings
+        merged_bindings = PrototypeBindingRegistry(cls.__merged_declarators__)
+        base_bindings = base.bindings("merged")
+        merged_bindings.update(base_bindings)
         for trait in cls.__traits__:
-            trait_metacharacters = trait.metacharacters("merged")
-            merged_metacharacters.update(trait_metacharacters)
-        merged_metacharacters.update(cls.__metacharacters__)
-        cls.__merged_metacharacters__ = merged_metacharacters
-        # Next we check for possible naming conflicts between domain metadata and protodescriptors
-        domain_metadata_names = (md.name for md in merged_metadescriptors.metadata.values()
-                                 if md.domain is True)
-        if any(name in merged_metacharacters.names for name in domain_metadata_names):
-            msg = (f"Prototype '{cls.__name__}' has naming conflicts between domain metadata "
-                   "and protodescriptors.")
-            raise ValueError(msg)
+            trait_bindings = trait.bindings("merged")
+            merged_bindings.update(trait_bindings)
+        merged_bindings.update(cls.__bindings__)
+        cls.__merged_bindings__ = merged_bindings
         # Binding validation and registered validators run at module finalization.
         # Compilations and ast start empty and are filled when the declaring module is evaluated by the AML compiler  # noqa
         cls.__compilations__: dict[str, dict] = {}
@@ -262,14 +419,13 @@ class prototype(declarative):
         """
         bindable_domain_names = set()
         # Domain metadata
-        for md in cls.__merged_metadescriptors__.metadata.values():
+        for md in cls.__merged_declarators__.metadata.values():
             if md.domain_bindable:
                 bindable_domain_names.add(md.name)
         # Class variable protodescriptors
-        for registry in cls.__merged_metacharacters__.declarator_registries.values():
-            for name, declarator in registry.items():
-                if declarator.domain_bindable:
-                    bindable_domain_names.add(name)
+        for fd in cls.__merged_declarators__.field.values():
+            if fd.domain_bindable:
+                bindable_domain_names.add(fd.name)
         return bindable_domain_names
 
     def __call__(cls, *args, **kwargs):
@@ -372,41 +528,41 @@ class prototype(declarative):
             msg = f"Invalid view '{view}'. Expected 'local' or 'merged'."
             raise ValueError(msg)
 
-    def metadescriptors(cls, view: Literal["local", "merged", "resolved"]) -> MetadescriptorRegistry:  # noqa
-        """The metadescriptors of this type.
+    def declarators(cls, view: Literal["local", "merged", "resolved"]) -> PrototypeDeclaratorRegistry:  # noqa
+        """The declarators of this type.
 
         Args:
-            view: Specifies which metadescriptors to return:
-                - "local": metadescriptors declared directly on this type
-                - "merged": metadescriptors declared on this type and inherited from archetype
+            view: Specifies which declarators to return:
+                - "local": declarators declared directly on this type
+                - "merged": declarators declared on this type and inherited from archetype
                 and traits
-                - "resolved": metadescriptors after applying resolution rules, if any
+                - "resolved": declarators after applying resolution rules, if any
         """
         if view == "local":
-            return cls.__metadescriptors__.copy()
+            return cls.__declarators__.copy()
         elif view == "merged":
-            return cls.__merged_metadescriptors__.copy()
+            return cls.__merged_declarators__.copy()
         elif view == "resolved":
             return NotImplemented
         else:
             msg = f"Invalid view '{view}'. Expected 'local', 'merged', or 'resolved'."
             raise ValueError(msg)
 
-    def metacharacters(cls, view: Literal["local", "merged", "resolved"]) -> ProtodescriptorRegistry:  # noqa
-        """The metacharacters of this type.
+    def bindings(cls, view: Literal["local", "merged", "resolved"]) -> PrototypeBindingRegistry:  # noqa
+        """The bindings of this type.
 
         Args:
-            view: Specifies which metacharacters to return:
-                - "local": metacharacters declared directly on this type
-                - "merged": metacharacters declared on this type and inherited from archetype and
+            view: Specifies which bindings to return:
+                - "local": bindings declared directly on this type
+                - "merged": bindings declared on this type and inherited from archetype and
                 traits
-                - "resolved": metacharacters after applying resolution rules, particularly
+                - "resolved": bindings after applying resolution rules, particularly
                 default bindings, if any
         """
         if view == "local":
-            return cls.__metacharacters__.copy()
+            return cls.__bindings__.copy()
         elif view == "merged":
-            return cls.__merged_metacharacters__.copy()
+            return cls.__merged_bindings__.copy()
         elif view == "resolved":
             return NotImplemented
         else:
@@ -430,7 +586,7 @@ class prototype(declarative):
         annotation_strings = get_annotations(cls, format=Format.STRING)
         # Fetch annotatable declarators declared on this class
         annotatable_declarators = [
-            declarator for declarator in cls.__declarations__.values()
+            declarator for declarator in cls.__raw_declarators__.values()
             if isinstance(declarator, AnnotatableDeclarator)
         ]
         # Set annotations on each annotatable declarator
