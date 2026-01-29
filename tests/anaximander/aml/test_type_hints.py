@@ -24,7 +24,7 @@ class Sensor(nx.Model):
         module = __import__("hints_module")
         nx.finalize_module(module)
         sensor = module.Sensor
-        field = sensor.metacharacters("merged").field["temperature"]
+        field = sensor.declarators("merged").field["temperature"]
         assert field.type is module.Temperature
         assert field.nullable is True
     finally:

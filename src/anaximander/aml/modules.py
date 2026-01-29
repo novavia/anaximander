@@ -263,8 +263,12 @@ def _validate_type_role(cls: prototype) -> None:
         if cls.__role__ is not TypeRole.PROTOTYPE:
             raise TypeError(f"Prototype {cls.__name__} must have role PROTOTYPE.")
         # Pure prototypes cannot declare metadescriptors locally.
-        metadescriptors = cls.declarators("local")
-        if any(registry for registry in metadescriptors.values()):
+        metadescriptors = [
+            registry
+            for handle, registry in cls.__declarators__.items()
+            if handle in ("metadata", "nxfield", "option", "metavalidator")
+        ]
+        if any(registry for registry in metadescriptors):
             raise TypeError("Prototypes cannot declare metadescriptors.")
         return
     raise TypeError(f"AML type {cls.__name__} is not a valid archetype, trait, or prototype.")
@@ -272,8 +276,8 @@ def _validate_type_role(cls: prototype) -> None:
 
 def _validate_bindings(cls: prototype) -> None:
     """Validate bound values, attribute validators, and data parsers for a prototype."""
-    declarators = cls.declarators("merged")
-    bindings = cls.bindings("merged")
+    declarators = cls.__merged_declarators__
+    bindings = cls.__merged_bindings__
     # -------------------------
     # 1) Validate each bound value against its declarator contract.
     # -------------------------
@@ -325,7 +329,7 @@ def _validate_bindings(cls: prototype) -> None:
                 # In the edge case of a Data-typed classevar, apply its type-level parsers/validators. # noqa
                 # Type-level parsers/validators declared on a Data subclass apply to the value.
                 if isinstance(declarator.type, type) and issubclass(declarator.type, Data):
-                    constructors = declarator.type.declarators("merged").constructor.values()
+                    constructors = declarator.type.__merged_declarators__.constructor.values()
                     data_parsers = [
                         p for p in constructors if isinstance(p, ParserDeclarator) and not p.members  # noqa
                     ]
@@ -423,7 +427,7 @@ def finalize_module(
         _validate_enumerations(cls)
     for cls in prototypes:
         _validate_bindings(cls)
-        validators = cls.declarators("merged").metavalidator.values()
+        validators = cls.__merged_declarators__.metavalidator.values()
         prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]
         for validator in prototype_validators:
             if is_not_missing(validator.callable):

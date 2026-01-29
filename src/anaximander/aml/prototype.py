@@ -151,6 +151,7 @@ class PrototypeDeclaratorRegistry(MultiDeclaratorRegistry):
 class PrototypeBindingRegistry(MultiBindingRegistry):
     """Registry for prototype bindings."""
     __handles__ = {"metadata", "nxfield", "option", "data"}
+    __auto_handles__ = {"metadata", "data"}
 
     def __init__(self, declarators: PrototypeDeclaratorRegistry):
         super().__init__(declarators)

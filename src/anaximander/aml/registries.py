@@ -372,14 +372,14 @@ class MultiBindingRegistry(MultiRegistry[BindingRegistry]):
         if handle is not None:
             registry = self.get_registry(handle)
             registry.register(name, item)
-        else:
-            for handle in self.__auto_handles__:
-                registry = self.get_registry(handle)
-                try:
-                    registry.register(name, item)
-                    return
-                except KeyError:
-                    continue
+            return
+        for handle in self.__auto_handles__:
+            registry = self.get_registry(handle)
+            try:
+                registry.register(name, item)
+                return
+            except KeyError:
+                continue
         msg = f"Cannot register binding '{name}': no matching declarator found."
         raise KeyError(msg)
 
