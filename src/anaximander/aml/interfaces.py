@@ -9,7 +9,7 @@
 from collections.abc import Callable, Mapping
 from functools import update_wrapper
 from numbers import Real
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from ..utils.meta import Singleton
 from .declarative import (
@@ -136,7 +136,7 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
             raise KeyError(f"{self.handle} interface does not support item assignment.")
         self.bind(name, value)
 
-    def declare(
+    def _declare(
             self,
             name: str, *,
             type: type,
@@ -156,8 +156,6 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
             doc=doc,
             config=config,
         )
-        if isinstance(declarator, MetadataDeclarator):
-            declarator._set_once("domain", False)
         classvar = True
         annotation = (
             f"ClassVar[{type.__name__} | None]" if nullable else f"ClassVar[{type.__name__}]"
@@ -205,17 +203,92 @@ class MetadataInterface(AssignableMetadescriptorInterface[MetadataDeclarator]):
             config=config,
         )
 
+    def declare(
+            self,
+            name: str, *,
+            type: type,
+            nullable: bool = False,
+            default: Any = MISSING,
+            factory: Callable[[], Any] | Missing = MISSING,
+            validator: Callable[[Any], bool] | Missing = MISSING,
+            doc: str | Missing = MISSING,
+            config: Mapping[str, Any] | Missing = MISSING
+    ) -> MetadataDeclarator:
+        """Declare a named metadata declarator with a fixed type."""
+        declarator = cast(
+            MetadataDeclarator,
+            super()._declare(
+                name,
+                type=type,
+                nullable=nullable,
+                default=default,
+                factory=factory,
+                validator=validator,
+                doc=doc,
+                config=config,
+            ),
+        )
+        declarator._set_once("domain", False)
+        return declarator
+
 
 class OptionInterface(AssignableMetadescriptorInterface[OptionDeclarator]):
     """Interface for option declarators and bindings."""
     __handle__ = "option"
     __validator_type__ = OptionValidator
 
+    def declare(
+            self,
+            name: str, *,
+            type: type,
+            nullable: bool = False,
+            default: Any = MISSING,
+            factory: Callable[[], Any] | Missing = MISSING,
+            validator: Callable[[Any], bool] | Missing = MISSING,
+            doc: str | Missing = MISSING,
+            config: Mapping[str, Any] | Missing = MISSING
+    ) -> OptionDeclarator:
+        """Declare a named nxfield with a fixed string type."""
+        declarator = cast(
+            OptionDeclarator,
+            super()._declare(
+                name,
+                type=type,
+                nullable=nullable,
+                default=default,
+                factory=factory,
+                validator=validator,
+                doc=doc,
+                config=config,
+            ),
+        )
+        return declarator
+
 
 class NxFieldInterface(AssignableMetadescriptorInterface[NxFieldDeclarator]):
     """Interface for nxfield declarators and bindings."""
     __handle__ = "nxfield"
     __validator_type__ = NxFieldValidator
+
+    def declare(
+            self,
+            name: str, *,
+            fieldtype: type,
+            doc: str | Missing = MISSING,
+            config: Mapping[str, Any] | Missing = MISSING
+    ) -> NxFieldDeclarator:
+        """Declare a named nxfield with a fixed string type."""
+        declarator = cast(
+            NxFieldDeclarator,
+            super()._declare(
+                name,
+                type=str,
+                doc=doc,
+                config=config,
+            ),
+        )
+        declarator._set_once("fieldtype", fieldtype)
+        return declarator
 
 
 class FieldInterface[DT](DeclaratorInterface[FieldProtodescriptor]):

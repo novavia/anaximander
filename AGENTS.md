@@ -31,3 +31,10 @@ introduce concepts or terminology that contradict them.
 - **Method Definitions**: Define methods clearly, ensuring parameters and return types are well-specified.
 - **Code Clarity**: Prioritize code clarity and maintainability, ensuring that the code is easy to read and understand.
 - **Avoid Redundancy**: Do not include redundant or unnecessary code constructs.
+
+## Tooling
+
+- Use the repo’s venv interpreter for all Python commands:
+  - `./.venv/bin/python -m pytest` instead of `pytest`
+  - `./.venv/bin/python -m pip ...` instead of `pip`
+- Use `./.venv/bin/ruff` for linting and formatting instead of `ruff` directly.
