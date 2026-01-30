@@ -15,7 +15,7 @@ remaining self-contained inside AML.
 import ast
 from pathlib import Path
 from types import ModuleType
-from typing import get_type_hints
+from typing import cast, get_type_hints
 
 from ..utils.funcs import unwrap_classvar_type, unwrap_optional_type
 from .data import Data
@@ -23,11 +23,13 @@ from .declarators import (
     AnnotatableDeclarator,
     Declarator,
     EnumerationCallableDeclarator,
+    FieldGroupProtodescriptor,
     ParserDeclarator,
     PrototypeValidator,
     ValidatorDeclarator,
     is_not_missing,
 )
+from .model import Model
 from .prototype import TypeRole, is_archetype, is_prototype, is_trait, prototype
 
 # endregion
@@ -353,31 +355,73 @@ def _validate_enumerations(cls: prototype) -> None:
     """Validate EnumerationDeclarator members against declared names."""
     # Enumerations reference members by name. We validate those names against
     # the merged declarator registries so inherited declarations are included.
-    # TODO: properly implement enumeration validation
-    pass
-    # metacharacters = cls.__merged_metacharacters__
-    # registries = tuple(metacharacters.declarator_registries.values())
-    # for registry in registries:
-    #     for declarator in registry.values():
-    #         if not isinstance(declarator, EnumerationDeclarator):
-    #             continue
-    #         if not declarator.members:
-    #             continue
-    #         member_types = getattr(declarator, "__member_types__", ())
-    #         for member in declarator.members:
-    #             found = False
-    #             for target_registry in registries:
-    #                 if member not in target_registry:
-    #                     continue
-    #                 target = target_registry[member]
-    #                 if not member_types or isinstance(target, member_types):
-    #                     found = True
-    #                     break
-    #             if not found:
-    #                 msg = (f"Enumeration member '{member}' not found for declarator "
-    #                        f"'{declarator.name}' in prototype '{cls.__name__}'.")
-    #                 raise ValueError(msg)
-
+    local_declarators = cls.__declarators__
+    merged_declarators = cls.__merged_declarators__
+    # We start with metavalidators, concretely meaning MetadataValidator,
+    # NxFieldValidator, and OptionValidator declarators.
+    metavalidators = local_declarators.metavalidator
+    for declarator in metavalidators.values():
+        if not isinstance(declarator, EnumerationCallableDeclarator):
+            continue
+        if not declarator.members:
+            msg = (f"Enumeration declarator '{declarator.name}' in prototype "
+                   f"'{cls.__name__}' must specify at least one member.")
+            raise ValueError(msg)
+        target_handle = declarator.__handle__.removesuffix("_validator")
+        target_registry = merged_declarators.get(target_handle, {})
+        for member in declarator.members:
+            if member not in target_registry:
+                msg = (f"Enumeration member '{member}' not found for declarator "
+                       f"'{declarator.name}' in prototype '{cls.__name__}'.")
+                raise ValueError(msg)
+    # Next we validate any parsers or validators that are possible enumerations.
+    constructor_registry = local_declarators.constructor
+    for declarator in constructor_registry.values():
+        declarator = cast(ParserDeclarator | ValidatorDeclarator, declarator)
+        if issubclass(cls, Data):
+            # Data prototypes cannot have enumeration parsers/validators.
+            if declarator.members:
+                msg = (f"{declarator} cannot have members in a Data prototype.")
+                raise ValueError(msg)
+        elif issubclass(cls, Model):
+            # Model prototypes implement both targeted and model-wide parsers/validators.
+            if not declarator.members:
+                # Declarator applies to the model itself, skip enumeration validation.
+                continue
+            else:
+                # Declarator applies to specific attributes, validate members.
+                target_registry = merged_declarators.field
+                for member in declarator.members:
+                    if member not in target_registry:
+                        msg = (f"Enumeration member '{member}' not found for declarator "
+                               f"'{declarator.name}' in prototype '{cls.__name__}'.")
+                        raise ValueError(msg)
+    # Next we validate field groups
+    field_groups = [d for d in local_declarators.field.values() if isinstance(d, FieldGroupProtodescriptor)]  # noqa
+    for field_group in field_groups:
+        if not field_group.members:
+            msg = (f"Field group '{field_group.name}' in prototype "
+                   f"'{cls.__name__}' must specify at least one member.")
+            raise ValueError(msg)
+        target_registry = merged_declarators.field
+        for member in field_group.members:
+            if member not in target_registry:
+                msg = (f"Field group member '{member}' not found for declarator "
+                       f"'{field_group.name}' in prototype '{cls.__name__}'.")
+                raise ValueError(msg)
+    # Finally, we validate any schema declarator
+    schema_declarators = [d for d in local_declarators.schema.values() if isinstance(d, EnumerationCallableDeclarator)]  # noqa
+    for declarator in schema_declarators:
+        if not declarator.members:
+            msg = (f"Enumeration declarator '{declarator.name}' in prototype "
+                   f"'{cls.__name__}' must specify at least one member.")
+            raise ValueError(msg)
+        target_registry = merged_declarators.field
+        for member in declarator.members:
+            if member not in target_registry:
+                msg = (f"Enumeration member '{member}' not found for declarator "
+                       f"'{declarator.name}' in prototype '{cls.__name__}'.")
+                raise ValueError(msg)
 
 # endregion
 

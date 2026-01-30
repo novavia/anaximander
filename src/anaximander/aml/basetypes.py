@@ -28,5 +28,3 @@ for scalar_type in PY_SCALAR_TYPES:
         Metadata.register(scalar_type)
     except TypeError:
         pass
-
-metadata = Metadata | PyScalar

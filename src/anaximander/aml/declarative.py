@@ -21,7 +21,7 @@ from typing import (
 
 from attrs import define
 
-from .declarators import Declarator
+from .declarators import DeclarativeTypeKey, Declarator
 
 # endregion
 
@@ -30,21 +30,9 @@ from .declarators import Declarator
 # =============================================================================
 # region Declarative metaclass
 
-# TODO: moved from declarators post-init - make an explict registration instead
-        # dns = DECLARATIVE_NAMESPACE.get()
-        # if dns is not None:
-        #     dns.register_declarator(self)
 
 # Context variable holding the current declarative namespace
 DECLARATIVE_NAMESPACE: ContextVar[Optional["DeclarativeNamespace"]] = ContextVar("DECLARATIVE_NAMESPACE", default=None)  # noqa
-
-
-@define(frozen=True)
-class DeclarativeTypeKey:
-    """A unique key for identifying declarative types."""
-    project: str
-    module: str
-    name: str
 
 
 class DeclarativeNamespace(dict[str, Any]):

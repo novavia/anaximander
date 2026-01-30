@@ -187,9 +187,24 @@ def _tighten_upper(base_lt: Real | Missing, base_le: Real | Missing,
 
 
 @define(frozen=True)
+class DeclarativeTypeKey:
+    """A unique key for identifying declarative types."""
+    project: str
+    module: str
+    name: str
+
+
+class DeclarativeProtocol(Protocol):
+    """A protocol for declarative types with unique keys."""
+    __key__: ClassVar[DeclarativeTypeKey]
+
+Declarative = type[DeclarativeProtocol]
+
+
+@define(frozen=True)
 class DeclaratorKey:
     """A unique key for identifying declarators."""
-    owner: "DeclarativeTypeKey"
+    owner: DeclarativeTypeKey
     ordinal: int
 
 
@@ -226,7 +241,7 @@ class Declarator(ABC):
 
     # Post-init wired fields (logically immutable; set via internal backdoor).
     name: str = field(init=False, default=None)  # Attribute or key name this declarator is assigned to # noqa
-    owner: type = field(init=False, default=None)  # Owning class of this declarator
+    owner: Declarative = field(init=False, default=None)  # Owning class of this declarator
     ordinal: int = field(init=False, default=None)  # Index of this declarator within the owning class # noqa
     __ast__: ast.AST | None = field(init=False, default=None)  # AST node that declared this declarator # noqa
 

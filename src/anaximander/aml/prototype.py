@@ -405,7 +405,7 @@ class prototype(declarative):
     @staticmethod
     def validator():
         """Create a prototype validator as a decorator."""
-        def decorator(fn: Callable) -> PrototypeValidator:
+        def decorator(fn: Callable[["prototype"], bool]) -> PrototypeValidator:
             declarator = PrototypeValidator(callable=fn, doc=fn.__doc__)  # type: ignore[abstract]
             update_wrapper(declarator, fn, updated=())  # type: ignore[arg-type]
             return declarator
