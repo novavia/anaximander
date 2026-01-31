@@ -30,6 +30,7 @@ from typing import (
 from attrs import define, field
 
 from ..utils.meta import classproperty
+from .basetypes import is_metadata_type
 
 # endregion
 
@@ -433,33 +434,16 @@ class AnnotatableDeclarator(Declarator):
     type: builtins.type | None = field(init=False, default=None)  # Evaluated type annotation  # noqa
     nullable: bool | None = field(init=False, default=None)  # Whether the type is nullable  # noqa
     classvar: bool | None = field(init=False, default=None)  # Whether the type is a ClassVar  # noqa
-    __types__: ClassVar[tuple[builtins.type, ...]] = ()  # Admissible types for this annotatable declarator  # noqa
-
     def __init_subclass__(cls):
         super().__init_subclass__()
-        # Check that __types__ are tightening the admissible types from base classes.
-        base_annotatables = (b for b in cls.__bases__ if issubclass(b, AnnotatableDeclarator))
-        base_types = tuple(chain.from_iterable(b.__types__ for b in base_annotatables))
-        if "__types__" in vars(cls):
-            types: tuple[type, ...] = cls.__types__
-            try:
-                assert all(issubclass(t, base_type) for t in types for base_type in base_types)
-            except AssertionError:
-                raise TypeError(
-                    "__types__ must only contain types that are subclasses of all "
-                    + "admissible types from base classes."
-                )
-
-    def __validate_type__(self, type_: type) -> bool:
-        if not self.__types__:
-            return True
-        try:
-            return issubclass(type_, self.__types__)
-        except TypeError:
-            return False
 
     def __validate_annotation__(self, annotation: str | None, hint: Any | None) -> None:
-        """Validate a resolved annotation for this declarator."""
+        """Validate a resolved annotation for this declarator.
+
+        This hook focuses on annotation semantics, not runtime binding checks.
+        Subclasses should validate the effective hint and ignore missing hints.
+        """
+        return None
 
     def __set_type__(
         self,
@@ -474,15 +458,8 @@ class AnnotatableDeclarator(Declarator):
         self._validate_value_type("type", type_, (type, type(None)))
         self._validate_value_type("nullable", nullable, (bool, type(None)))
         self._validate_value_type("classvar", classvar, (bool, type(None)))
+        # Annotation validation is declarator-specific and may rely on the hint.
         self.__validate_annotation__(annotation, hint)
-        if type_ is not None and not self.__validate_type__(type_):
-            declarator = self.name
-            owner_name = self.owner.__name__
-            msg = (
-                f"Incompatible annotation {annotation} supplied to {declarator} declarator "
-                + f"of {owner_name}."
-            )
-            raise TypeError(msg)
         self._set_once("annotation", annotation, treat_none_as_unset=True)
         self._set_once("hint", hint, treat_none_as_unset=True)
         self._set_once("type", type_, treat_none_as_unset=True)
@@ -580,22 +557,6 @@ class Metadescriptor(Declarator):
 class AssignableMetadescriptor(AssignableDeclarator, Metadescriptor):
     """Base class for assignable prototype-level descriptors declared in archetypes and traits."""
 
-    def __validate_binding__(self, host: type, value: Any) -> bool:
-        """Validate a metadata binding in the context of a host type."""
-        if is_missing(value):
-            if self.default is not MISSING:
-                return True
-            else:
-                raise ValueError("Metadata binding cannot be missing.")
-        elif value is None:
-            if not self.nullable:
-                raise ValueError("Non-nullable metadata cannot be bound to None.")
-        elif self.type is not None:
-            if not isinstance(value, self.type):
-                if not (isinstance(value, type) and issubclass(value, self.type)):
-                    raise TypeError("Cannot bind metadata of incompatible type.")
-        return True
-
 
 @declarator
 class MetadataDeclarator(AssignableMetadescriptor):
@@ -611,6 +572,24 @@ class MetadataDeclarator(AssignableMetadescriptor):
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("domain", self.domain, bool)
+
+    def __validate_annotation__(self, annotation: str | None, hint: Any | None) -> None:
+        """Validate metadata annotations against the metadata type contract."""
+        if hint is not None and not is_metadata_type(hint):
+            msg = f"Metadata '{self.name}' must be annotated as a metadata type."
+            raise TypeError(msg)
+
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        """Validate a metadata binding in the context of a host type."""
+        # Missing bindings are not validated here; only bound values are checked.
+        if value is None:
+            if not self.nullable:
+                raise ValueError("Non-nullable metadata cannot be bound to None.")
+        elif self.type is not None:
+            if not isinstance(value, self.type):
+                if not (isinstance(value, type) and issubclass(value, self.type)):
+                    raise TypeError("Cannot bind metadata of incompatible type.")
+        return True
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
         """Bind a metadata value, enforcing monotone tightening and inline validation."""
@@ -647,6 +626,24 @@ class OptionDeclarator(AssignableMetadescriptor):
     """The metadescriptor class for option fields."""
     __handle__ = "option"
 
+    def __validate_annotation__(self, annotation: str | None, hint: Any | None) -> None:
+        """Validate option annotations against the metadata type contract."""
+        if hint is not None and not is_metadata_type(hint):
+            msg = f"Option '{self.name}' must be annotated as a metadata type."
+            raise TypeError(msg)
+
+    def __validate_binding__(self, host: type, value: Any) -> bool:
+        """Validate an option binding in the context of a host type."""
+        # Missing bindings are not validated here; only bound values are checked.
+        if value is None:
+            if not self.nullable:
+                raise ValueError("Non-nullable option cannot be bound to None.")
+        elif self.type is not None:
+            if not isinstance(value, self.type):
+                if not (isinstance(value, type) and issubclass(value, self.type)):
+                    raise TypeError("Cannot bind option of incompatible type.")
+        return True
+
 
 @declarator
 class NxFieldDeclarator(AssignableMetadescriptor):
@@ -657,6 +654,12 @@ class NxFieldDeclarator(AssignableMetadescriptor):
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("fieldtype", self.fieldtype, type)
+
+    def __validate_annotation__(self, annotation: str | None, hint: Any | None) -> None:
+        """Validate nxfield annotations as string references."""
+        if hint is not None and hint is not str:
+            msg = f"NxField '{self.name}' must be annotated as str."
+            raise TypeError(msg)
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
         """Bind an nxfield value, disallowing reassignment in derived prototypes."""
@@ -684,10 +687,7 @@ class NxFieldDeclarator(AssignableMetadescriptor):
         if not _tighten_classvar(self.classvar, override.classvar):
             raise AttributeError("NxField declarator classvar cannot be overridden.")
 
-    def __validate_binding__(self, host: type, value: Any) -> bool:
-        """Validate an nxfield binding in the context of a host type."""
-        # TODO: verify that value is a string that matches a field of host of type fieldtype
-        return True
+
 
 
 # Metavalidators
@@ -927,11 +927,6 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
         """Validate a data binding in the context of a host type."""
         if not self.classvar:
             raise AttributeError("Only data descriptors typed as class variables can be bound.")
-        if is_missing(value):
-            if self.default is not MISSING:
-                return True
-            else:
-                raise ValueError("Datad binding cannot be missing.")
         elif value is None:
             if not self.nullable:
                 raise ValueError("Non-nullable data field cannot be bound to None.")

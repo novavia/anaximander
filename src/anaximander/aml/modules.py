@@ -278,10 +278,12 @@ def _validate_type_role(cls: prototype) -> None:
     raise TypeError(f"AML type {cls.__name__} is not a valid archetype, trait, or prototype.")
 
 
-def _validate_annotation_types(cls: prototype) -> None:
-    """Validate annotatable declarators against owner-aware annotation rules."""
-    archetype = cls.__archetype__
-    archetype.__validate_annotation_types__(cls)
+def _validate_declarators(cls: prototype) -> None:
+    """Validate declarators against owner-aware rules."""
+    # Defer to archetype and traits for domain-specific declarator validation.
+    cls.__archetype__.__validate_declarators__(cls)
+    for trait in cls.__traits__:
+        trait.__validate_declarators__(cls)
 
 
 def _validate_bindings(cls: prototype) -> None:
@@ -291,7 +293,7 @@ def _validate_bindings(cls: prototype) -> None:
     # -------------------------
     # 1) Validate each bound value against its declarator contract.
     # -------------------------
-    for binding_registry in bindings.values():
+    for binding_registry in (bindings.metadata, bindings.option):
         for name, value in binding_registry.items():
             declarator: Declarator = binding_registry.declarators[name]
             if not declarator.__validate_binding__(cls, value):
@@ -315,48 +317,7 @@ def _validate_bindings(cls: prototype) -> None:
                                f"'{validator}' in prototype '{cls.__name__}'.")
                         raise ValueError(msg)
     # -------------------------
-    # 3) Run parsers/validators for classvar data fields.
-    # -------------------------
-    data_bindings = bindings.data
-    constructor_registry = declarators.constructor
-    parsers = [p for p in constructor_registry.values() if isinstance(p, ParserDeclarator)]
-    field_validators = [
-        v for v in constructor_registry.values() if isinstance(v, ValidatorDeclarator)
-    ]
-    if parsers or field_validators:
-        declarators = data_bindings.declarators
-        for name, value in data_bindings.items():
-            parsed = value
-            # Local field-level parsers/validators (declared on the host prototype).
-            local_parsers = [p for p in parsers if name in p.members]
-            local_validators = [
-                v for v in field_validators if name in v.members
-            ]
-            data_parsers: list[ParserDeclarator] = []
-            data_validators: list[ValidatorDeclarator] = []
-            declarator = declarators[name]
-            if declarator.classvar and declarator.type is not None:
-                # In the edge case of a Data-typed classevar, apply its type-level parsers/validators. # noqa
-                # Type-level parsers/validators declared on a Data subclass apply to the value.
-                if isinstance(declarator.type, type) and issubclass(declarator.type, Data):
-                    constructors = declarator.type.__merged_declarators__.constructor.values()
-                    data_parsers = [
-                        p for p in constructors if isinstance(p, ParserDeclarator) and not p.members  # noqa
-                    ]
-                    data_validators = [
-                        v for v in constructors if isinstance(v, ValidatorDeclarator) and not v.members  # noqa
-                    ]
-            # Apply parsers, then validators, and persist any parsing changes back to bindings.
-            for parser in (*data_parsers, *local_parsers):
-                if is_not_missing(parser.callable):
-                    parsed = parser.callable(cls, parsed)
-            if parsed is not value:
-                data_bindings._data[name] = parsed
-            for validator in (*data_validators, *local_validators):
-                if is_not_missing(validator.callable) and not validator.callable(cls, parsed):
-                    msg = (f"Binding '{name}' with value '{parsed}' failed validation by "
-                        f"'{validator}' in prototype '{cls.__name__}'.")
-                    raise ValueError(msg)
+    # 3) Data parsing/validation is deferred to runtime.
 
 
 def _validate_enumerations(cls: prototype) -> None:
@@ -476,7 +437,7 @@ def finalize_module(
         # Resolve forward references and validate type roles/enumerations.
         _backfill_annotation_types(cls, module)
         _validate_type_role(cls)
-        _validate_annotation_types(cls)
+        _validate_declarators(cls)
         _validate_enumerations(cls)
     for cls in prototypes:
         _validate_bindings(cls)

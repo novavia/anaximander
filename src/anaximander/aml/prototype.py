@@ -235,8 +235,9 @@ class ArchetypeProtocol(prototypeProtocol):
     __declarator_types__: ClassVar[set[type[Declarator]]]
 
     @classmethod
-    def __validate_annotation_types__(cls, owner: "prototype") -> None:
-        """Validate declarator annotations in the context of an owner."""
+    def __validate_declarators__(cls, owner: "prototype") -> None:
+        """Validate declarators in the context of an owner."""
+        # Default implementation is a no-op; archetypes/traits can override.
         ...
 
 Archetype = type[ArchetypeProtocol]
@@ -254,8 +255,8 @@ class TraitProtocol(prototypeProtocol):
     supertrait: ClassVar["Trait | None"]
 
     @classmethod
-    def __validate_annotation_types__(cls, owner: "prototype") -> None:
-        """Validate declarator annotations in the context of an owner."""
+    def __validate_declarators__(cls, owner: "prototype") -> None:
+        """Validate declarators in the context of an owner."""
         ...
 
 Trait = type[TraitProtocol]
@@ -321,8 +322,8 @@ class Arche(metaclass=declarative):
         return cls._bindings.copy()
 
     @classmethod
-    def __validate_annotation_types__(cls, owner: "prototype") -> None:
-        """Validate declarator annotations in the context of an owner."""
+    def __validate_declarators__(cls, owner: "prototype") -> None:
+        """Validate declarators in the context of an owner."""
 
 Arche.__archetype__ = cast(Archetype, Arche)
 
