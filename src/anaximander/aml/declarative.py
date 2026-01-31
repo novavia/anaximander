@@ -61,8 +61,8 @@ class DeclarativeNamespace(dict[str, Any]):
         """Registers a declarator in this namespace.
 
         name is optional and only used when the declarator is registered through a declarative
-        interface with a .declare() method. Otherwise the declarator is not given a name yet as
-        it is set by the __set_name__ hook after the class body is executed.
+        handle with a .declare() method. Otherwise the declarator is not given a name yet as it
+        is set by the __set_name__ hook after the class body is executed.
         """
         declarators: dict[int, Declarator] = self["__raw_declarators__"]
         if declarator in declarators.values():

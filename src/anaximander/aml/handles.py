@@ -1,4 +1,4 @@
-"""Interface objects for AML declarators and metadata bindings."""
+"""Handle objects for AML declarators and metadata bindings."""
 
 # =============================================================================
 # Imports
@@ -9,7 +9,7 @@
 from collections.abc import Callable, Mapping
 from functools import update_wrapper
 from numbers import Real
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 from ..utils.meta import Singleton
 from .declarative import (
@@ -71,19 +71,19 @@ def _decorator_factory(
 # endregion
 
 # =============================================================================
-# Interface classes
+# Handle classes
 # =============================================================================
-# region Interface classes
+# region Handle classes
 
 
-class DeclaratorInterface[DT: Declarator](metaclass=Singleton):
-    """Base class for AML declarator interfaces.
+class DeclaratorHandle[DT: Declarator](metaclass=Singleton):
+    """Base class for AML declarator handles.
 
     Instances act as lightweight facades for creating declarators and registering
     declarations or bindings in the active declarative class body.
     """
 
-    __handle__: str
+    __handle__: ClassVar[str]
     __declarator_type__: type[DT]
 
     def __init_subclass__(cls) -> None:
@@ -91,16 +91,16 @@ class DeclaratorInterface[DT: Declarator](metaclass=Singleton):
             if "__handle__" in cls.__dict__:
                 cls.__declarator_type__ = Declarator.__handles__[cls.__handle__]
         except KeyError:
-            raise ValueError(f"Invalid handle '{cls.__handle__}' for declarator interface.")
+            raise ValueError(f"Invalid handle '{cls.__handle__}' for declarator handle.")
 
     @property
     def declarator_type(self) -> type[DT]:
-        """The declarator type for this interface."""
+        """The declarator type for this handle."""
         return self.__class__.__declarator_type__
 
     @property
     def handle(self) -> str:
-        """The interface handle."""
+        """The handle name."""
         return self.__class__.__handle__
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -112,7 +112,7 @@ class DeclaratorInterface[DT: Declarator](metaclass=Singleton):
     def _require_namespace(self) -> DeclarativeNamespace:
         dns = DECLARATIVE_NAMESPACE.get()
         if dns is None:
-            raise RuntimeError(f"{self.handle} interface can only be used in declarative bodies.")
+            raise RuntimeError(f"{self.handle} handle can only be used in declarative bodies.")
         return dns
 
     def bind(self, name: str, value: Any) -> None:
@@ -121,8 +121,8 @@ class DeclaratorInterface[DT: Declarator](metaclass=Singleton):
         dns.register_binding(name, value, handle=self.handle)
 
 
-class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetadescriptor]):
-    """Interface for metadescriptor declarators and bindings."""
+class AssignableMetadescriptorHandle[DT](DeclaratorHandle[AssignableMetadescriptor]):
+    """Handle for metadescriptor declarators and bindings."""
     __validator_type__: type[MetadataValidator | OptionValidator | NxFieldValidator]
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -133,7 +133,7 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
 
     def __setitem__(self, name: str, value: Any) -> None:
         if self.handle not in {"metadata", "option", "nxfield"}:
-            raise KeyError(f"{self.handle} interface does not support item assignment.")
+            raise KeyError(f"{self.handle} handle does not support item assignment.")
         self.bind(name, value)
 
     def _declare(
@@ -168,20 +168,20 @@ class AssignableMetadescriptorInterface[DT](DeclaratorInterface[AssignableMetade
 
     @property
     def validator_type(self) -> type[MetadataValidator | OptionValidator | NxFieldValidator]:
-        """The validator declarator type for this interface, if any."""
+        """The validator declarator type for this handle, if any."""
         return self.__validator_type__
 
     def validator(self, *members_or_fn):
         """Create a validation declarator as a decorator."""
         if (validator_type := self.validator_type) is None:
-            raise TypeError(f"{self.handle} interface does not support validators.")
+            raise TypeError(f"{self.handle} handle does not support validators.")
         return _decorator_factory(
             *members_or_fn, declarator_type=validator_type, err_label="Validator"
         )
 
 
-class MetadataInterface(AssignableMetadescriptorInterface[MetadataDeclarator]):
-    """Interface for metadata declarators and bindings."""
+class MetadataHandle(AssignableMetadescriptorHandle[MetadataDeclarator]):
+    """Handle for metadata declarators and bindings."""
     __handle__ = "metadata"
     __validator_type__ = MetadataValidator
 
@@ -232,8 +232,8 @@ class MetadataInterface(AssignableMetadescriptorInterface[MetadataDeclarator]):
         return declarator
 
 
-class OptionInterface(AssignableMetadescriptorInterface[OptionDeclarator]):
-    """Interface for option declarators and bindings."""
+class OptionHandle(AssignableMetadescriptorHandle[OptionDeclarator]):
+    """Handle for option declarators and bindings."""
     __handle__ = "option"
     __validator_type__ = OptionValidator
 
@@ -265,8 +265,8 @@ class OptionInterface(AssignableMetadescriptorInterface[OptionDeclarator]):
         return declarator
 
 
-class NxFieldInterface(AssignableMetadescriptorInterface[NxFieldDeclarator]):
-    """Interface for nxfield declarators and bindings."""
+class NxFieldHandle(AssignableMetadescriptorHandle[NxFieldDeclarator]):
+    """Handle for nxfield declarators and bindings."""
     __handle__ = "nxfield"
     __validator_type__ = NxFieldValidator
 
@@ -291,26 +291,26 @@ class NxFieldInterface(AssignableMetadescriptorInterface[NxFieldDeclarator]):
         return declarator
 
 
-class FieldInterface[DT](DeclaratorInterface[FieldProtodescriptor]):
-    """Abstract base class for field interfaces exposing validators."""
+class FieldHandle[DT](DeclaratorHandle[FieldProtodescriptor]):
+    """Abstract base class for field handles exposing validators."""
     __validator_type__ = ValidatorDeclarator
 
     @property
     def validator_type(self) -> type[ValidatorDeclarator]:
-        """The validator declarator type for this interface, if any."""
+        """The validator declarator type for this handle, if any."""
         return self.__validator_type__
 
     def validator(self, *members_or_fn):
         """Create a validation declarator as a decorator."""
         if (validator_type := self.validator_type) is None:
-            raise TypeError(f"{self.handle} interface does not support validators.")
+            raise TypeError(f"{self.handle} handle does not support validators.")
         return _decorator_factory(
             *members_or_fn, declarator_type=validator_type, err_label="Validator"  # type: ignore
         )
 
 
-class DataInterface(FieldInterface[DataProtodescriptor]):
-    """Interface for data protodescriptor constructors."""
+class DataHandle(FieldHandle[DataProtodescriptor]):
+    """Handle for data protodescriptor constructors."""
     __handle__ = "data"
 
     def __call__(
@@ -380,8 +380,8 @@ class DataInterface(FieldInterface[DataProtodescriptor]):
         )
 
 
-class LinkInterface(FieldInterface[LinkProtodescriptor]):
-    """Interface for link protodescriptor constructors."""
+class LinkHandle(FieldHandle[LinkProtodescriptor]):
+    """Handle for link protodescriptor constructors."""
     __handle__ = "link"
 
     def __call__(
@@ -411,8 +411,8 @@ class LinkInterface(FieldInterface[LinkProtodescriptor]):
         )
 
 
-class BacklinkInterface(DeclaratorInterface[BackLinkProtodescriptor]):
-    """Interface for backlink protodescriptor constructors."""
+class BacklinkHandle(DeclaratorHandle[BackLinkProtodescriptor]):
+    """Handle for backlink protodescriptor constructors."""
     __handle__ = "backlink"
 
     def __call__(
@@ -436,8 +436,8 @@ class BacklinkInterface(DeclaratorInterface[BackLinkProtodescriptor]):
         )
 
 
-class ParserInterface(DeclaratorInterface[ParserDeclarator]):
-    """Interface for parser declarators."""
+class ParserHandle(DeclaratorHandle[ParserDeclarator]):
+    """Handle for parser declarators."""
     __handle__ = "parser"
 
     def __call__(self, *members_or_fn):
@@ -447,8 +447,8 @@ class ParserInterface(DeclaratorInterface[ParserDeclarator]):
         )
 
 
-class ValidatorInterface(DeclaratorInterface[ValidatorDeclarator]):
-    """Interface for validator declarators."""
+class ValidatorHandle(DeclaratorHandle[ValidatorDeclarator]):
+    """Handle for validator declarators."""
     __handle__ = "validator"
 
     def __call__(self, *members_or_fn):
@@ -465,14 +465,14 @@ class ValidatorInterface(DeclaratorInterface[ValidatorDeclarator]):
 # region Singleton instances
 
 
-metadata = MetadataInterface()
-option = OptionInterface()
-nxfield = NxFieldInterface()
-data = DataInterface()
-link = LinkInterface()
-backlink = BacklinkInterface()
-parser = ParserInterface()
-validator = ValidatorInterface()
+metadata = MetadataHandle()
+option = OptionHandle()
+nxfield = NxFieldHandle()
+data = DataHandle()
+link = LinkHandle()
+backlink = BacklinkHandle()
+parser = ParserHandle()
+validator = ValidatorHandle()
 meta = metadata
 
 # endregion

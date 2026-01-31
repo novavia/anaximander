@@ -7,7 +7,7 @@ from .trait import trait
 from .object import Object
 from .data import Data, Scalar, Integer, Float, Bool, String, Measurement, measurement
 from .model import Model
-from .interfaces import (
+from .handles import (
     metadata,
     option,
     nxfield,

@@ -1027,7 +1027,7 @@ class Baz(Foo):
     nx.meta.bar = "baz"      
 ```
 
-As can be seen the `bar` metacharacter is declared with `bar = nx.meta()`, and the concrete prototype `Baz` sets a value for it with `nx.meta.bar = "baz"`. In practice, these functions are a special class of callable objects acting as declarator interfaces. nxdescriptors are registered as attributes of that interface, and these attributes have a special setter that uses the current context to make a targeted assignment whose scope is limited to the class in which the assignment takes place, here `Baz`.
+As can be seen the `bar` metacharacter is declared with `bar = nx.meta()`, and the concrete prototype `Baz` sets a value for it with `nx.meta.bar = "baz"`. In practice, these functions are a special class of callable objects acting as declarator handles. nxdescriptors are registered as attributes of that handle, and these attributes have a special setter that uses the current context to make a targeted assignment whose scope is limited to the class in which the assignment takes place, here `Baz`.
 
 ### FieldDescriptor
 

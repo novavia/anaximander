@@ -12,7 +12,7 @@ def test_minimal_aml_declarations():
     assert "temperature" in Sensor.declarators("merged").field
 
 
-def test_interface_binding_syntaxes():
+def test_handle_binding_syntaxes():
     class Temperature(nx.Measurement):
         nx.metadata["unit"] = "K"
 
