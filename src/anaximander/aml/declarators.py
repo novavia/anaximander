@@ -429,6 +429,7 @@ class Declarator(ABC):
 class AnnotatableDeclarator(Declarator):
     """Base class for declarators that can be annotated with type information."""
     annotation: str | None = field(init=False, default=None)  # Literal type annotation as a string  # noqa
+    hint: Any | None = field(init=False, default=None)  # Evaluated type hint object  # noqa
     type: builtins.type | None = field(init=False, default=None)  # Evaluated type annotation  # noqa
     nullable: bool | None = field(init=False, default=None)  # Whether the type is nullable  # noqa
     classvar: bool | None = field(init=False, default=None)  # Whether the type is a ClassVar  # noqa
@@ -457,18 +458,23 @@ class AnnotatableDeclarator(Declarator):
         except TypeError:
             return False
 
+    def __validate_annotation__(self, annotation: str | None, hint: Any | None) -> None:
+        """Validate a resolved annotation for this declarator."""
+
     def __set_type__(
         self,
         annotation: str | None,
         type_: Any | None,
         nullable: bool | None,
         classvar: bool | None = None,
+        hint: Any | None = None,
     ):
         """Sets the type by supplying annotation, evaluated type, nullability and classvar."""
         self._validate_value_type("annotation", annotation, (str, type(None)))
         self._validate_value_type("type", type_, (type, type(None)))
         self._validate_value_type("nullable", nullable, (bool, type(None)))
         self._validate_value_type("classvar", classvar, (bool, type(None)))
+        self.__validate_annotation__(annotation, hint)
         if type_ is not None and not self.__validate_type__(type_):
             declarator = self.name
             owner_name = self.owner.__name__
@@ -478,6 +484,7 @@ class AnnotatableDeclarator(Declarator):
             )
             raise TypeError(msg)
         self._set_once("annotation", annotation, treat_none_as_unset=True)
+        self._set_once("hint", hint, treat_none_as_unset=True)
         self._set_once("type", type_, treat_none_as_unset=True)
         self._set_once("nullable", nullable, treat_none_as_unset=True)
         self._set_once("classvar", classvar, treat_none_as_unset=True)

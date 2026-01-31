@@ -246,7 +246,9 @@ def _backfill_annotation_types(cls: prototype, module: NxModuleType) -> None:
         hint_value, classvar = unwrap_classvar(hint_value)
         hint_value, nullable = unwrap_optional(hint_value)
         hint = hint_value if isinstance(hint_value, type) else None
-        declarator.__set_type__(declarator.annotation, hint, nullable, classvar)
+        declarator.__set_type__(
+            declarator.annotation, hint, nullable, classvar, hint=hint_value
+        )
 
 
 def _validate_type_role(cls: prototype) -> None:
@@ -274,6 +276,12 @@ def _validate_type_role(cls: prototype) -> None:
             raise TypeError("Prototypes cannot declare metadescriptors.")
         return
     raise TypeError(f"AML type {cls.__name__} is not a valid archetype, trait, or prototype.")
+
+
+def _validate_annotation_types(cls: prototype) -> None:
+    """Validate annotatable declarators against owner-aware annotation rules."""
+    archetype = cls.__archetype__
+    archetype.__validate_annotation_types__(cls)
 
 
 def _validate_bindings(cls: prototype) -> None:
@@ -468,6 +476,7 @@ def finalize_module(
         # Resolve forward references and validate type roles/enumerations.
         _backfill_annotation_types(cls, module)
         _validate_type_role(cls)
+        _validate_annotation_types(cls)
         _validate_enumerations(cls)
     for cls in prototypes:
         _validate_bindings(cls)

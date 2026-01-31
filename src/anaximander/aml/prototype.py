@@ -234,6 +234,11 @@ class ArchetypeProtocol(prototypeProtocol):
     __role__: ClassVar[Literal[TypeRole.ARCHETYPE]]
     __declarator_types__: ClassVar[set[type[Declarator]]]
 
+    @classmethod
+    def __validate_annotation_types__(cls, owner: "prototype") -> None:
+        """Validate declarator annotations in the context of an owner."""
+        ...
+
 Archetype = type[ArchetypeProtocol]
 
 def is_archetype(cls: type[Any]) -> TypeGuard[Archetype]:
@@ -247,6 +252,11 @@ class TraitProtocol(prototypeProtocol):
     """Protocol for trait classes."""
     __role__: ClassVar[Literal[TypeRole.TRAIT]]
     supertrait: ClassVar["Trait | None"]
+
+    @classmethod
+    def __validate_annotation_types__(cls, owner: "prototype") -> None:
+        """Validate declarator annotations in the context of an owner."""
+        ...
 
 Trait = type[TraitProtocol]
 
@@ -309,6 +319,10 @@ class Arche(metaclass=declarative):
         if isinstance(cls, prototype):
             return prototype.bindings(cls, view)
         return cls._bindings.copy()
+
+    @classmethod
+    def __validate_annotation_types__(cls, owner: "prototype") -> None:
+        """Validate declarator annotations in the context of an owner."""
 
 Arche.__archetype__ = cast(Archetype, Arche)
 
@@ -616,7 +630,7 @@ class prototype(declarative):
                 hint, nullable = cls.__unwrap_optional_type__(hint)
             # TODO: normalize to a prototype in case of model attributes
             # TODO: normalize to a metadata type in case of option / metacharacter
-            declarator.__set_type__(annotation, hint, nullable, classvar)
+            declarator.__set_type__(annotation, hint, nullable, classvar, hint=hint)
 
     @property
     def collection_name(cls):
