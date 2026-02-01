@@ -19,6 +19,19 @@ from .handles import (
     validator,
 )
 
+_FINALIZE_MODULE_NAMES: tuple[str, ...] = (
+    Object.__module__,
+    Data.__module__,
+    Model.__module__,
+)
+
+for _module_name in _FINALIZE_MODULE_NAMES:
+    try:
+        _module = __import__(_module_name, fromlist=["__name__"])
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Failed to import AML module '{_module_name}': {exc}") from exc
+    finalize_module(_module)  # type: ignore[arg-type]
+
 
 __all__ = [
     "prototype",

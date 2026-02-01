@@ -8,7 +8,7 @@
 
 from enum import Enum
 from functools import update_wrapper
-from typing import Any, Callable, ClassVar, Literal, Protocol, TypeGuard, cast
+from typing import Any, Callable, ClassVar, Literal, TypeGuard, cast
 
 from annotationlib import Format, get_annotations
 
@@ -17,10 +17,12 @@ from ..utils.funcs import (
     unwrap_classvar_type,
     unwrap_optional_type,
 )
+from ..utils.yaml import nx_register_representer
 from .declarative import DeclarativeNamespace, declarative
 from .declarators import (
     AnnotatableDeclarator,
     ConstructorDeclarator,
+    DeclarativeProtocol,
     Declarator,
     FieldProtodescriptor,
     MetadataDeclarator,
@@ -202,7 +204,7 @@ class TypeRole(Enum):
     PROTOTYPE = "prototype"
 
 
-class prototypeProtocol(Protocol):
+class prototypeProtocol(DeclarativeProtocol):
     """Protocol for prototype classes."""
     __archetype__: ClassVar["Archetype"]
     __traits__: ClassVar[tuple["Trait", ...]]
@@ -368,7 +370,7 @@ class prototype(declarative):
         allowed_declarator_types = tuple(getattr(archetype, "__declarator_types__", set()))
         for declarator in cls.__raw_declarators__.values():
             if not isinstance(declarator, allowed_declarator_types):
-                msg = f"Declarator of type '{declarator.dtype}' is not allowed in archetype {archetype.__name__}."  # noqa
+                msg = f"{declarator.typename} is not allowed in archetype {archetype.__name__}."
                 raise TypeError(msg)
         # Set local declarators
         cls.__declarators__ = PrototypeDeclaratorRegistry()
@@ -633,6 +635,9 @@ class prototype(declarative):
             # TODO: normalize to a metadata type in case of option / metacharacter
             declarator.__set_type__(annotation, hint, nullable, classvar, hint=hint)
 
+    def __repr__(cls) -> str:
+        return f"<{cls.__name__} {cls.__role__.value}>"
+
     @property
     def collection_name(cls):
         """A collection name using camel case and pluralization.
@@ -640,3 +645,27 @@ class prototype(declarative):
         This can be customized by passing metadata (#TODO).
         """
         return type_name_to_collection_name(cls.__name__)
+
+
+def _register_aml_yaml_prototypes() -> None:
+    """Register YAML handlers for prototype references."""
+    def _repr_type(dumper, obj: type):
+        return dumper.represent_scalar("tag:yaml.org,2002:str", f"<{obj.__name__}>")
+
+    def _repr_function(dumper, obj: object):
+        name = getattr(obj, "__qualname__", getattr(obj, "__name__", obj.__class__.__name__))
+        return dumper.represent_scalar("tag:yaml.org,2002:str", f"<{name}>")
+
+    def _repr_prototype(dumper, obj: prototype):
+        return dumper.represent_scalar("tag:yaml.org,2002:str", repr(obj))
+
+    nx_register_representer(type, _repr_type)
+    nx_register_representer(prototype, _repr_prototype)
+    from types import BuiltinFunctionType, BuiltinMethodType, FunctionType, MethodType
+    nx_register_representer(FunctionType, _repr_function)
+    nx_register_representer(BuiltinFunctionType, _repr_function)
+    nx_register_representer(MethodType, _repr_function)
+    nx_register_representer(BuiltinMethodType, _repr_function)
+
+
+_register_aml_yaml_prototypes()

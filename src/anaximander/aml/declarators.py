@@ -24,12 +24,21 @@ from typing import (
     TypeAlias,
     TypeGuard,
     TypeVar,
+    cast,
     dataclass_transform,
 )
 
-from attrs import define, field
+import yaml
+from attrs import asdict, define, field
 
 from ..utils.meta import classproperty
+from ..utils.yaml import (
+    nx_register_constructor,
+    nx_register_multi_representer,
+    nx_register_representer,
+    nx_register_type,
+    nx_yaml_dump,
+)
 from .basetypes import is_metadata_type
 
 # endregion
@@ -47,7 +56,7 @@ T = TypeVar("T")
 @dataclass_transform(kw_only_default=True, field_specifiers=(field,))
 def declarator(cls: DT) -> DT:
     """Apply attrs define for declarator classes with a preserved init signature."""
-    return define(cls, slots=False, frozen=True, kw_only=True)
+    return define(cls, slots=False, frozen=True, kw_only=True, repr=False, str=False)
 
 
 # Missing sentinel
@@ -83,6 +92,34 @@ Missing: TypeAlias = _MissingSentinel
 
 # The one and only instance
 MISSING = _MissingSentinel()
+
+
+def _register_aml_yaml_declarators() -> None:
+    """Register YAML handlers for declarators and missing sentinel."""
+    global register_yaml_type
+    def register_yaml_type(name: str, type_: type) -> None:
+        """Register a custom type name for YAML resolution."""
+        nx_register_type(name, type_)
+
+    def _repr_declarator(dumper, obj: "Declarator"):
+        return dumper.represent_scalar("tag:yaml.org,2002:str", repr(obj))
+
+    def _repr_missing(dumper, obj: Missing):
+        return dumper.represent_scalar("!Missing", "MISSING")
+
+    def _repr_mappingproxy(dumper, obj: MappingProxyType):
+        return dumper.represent_mapping("tag:yaml.org,2002:map", dict(obj))
+
+    def _construct_missing(loader, node):
+        loader.construct_scalar(cast(yaml.ScalarNode, node))
+        return MISSING
+
+    nx_register_representer(Declarator, _repr_declarator)
+    nx_register_multi_representer(Declarator, _repr_declarator)
+    nx_register_representer(Missing, _repr_missing)
+    nx_register_representer(MappingProxyType, _repr_mappingproxy)
+    nx_register_constructor("!Missing", _construct_missing)
+
 
 def is_missing(value: object) -> TypeGuard[Missing]:
     """Whether a value is the MISSING sentinel."""
@@ -187,7 +224,7 @@ def _tighten_upper(base_lt: Real | Missing, base_le: Real | Missing,
 # region Declarator base class
 
 
-@define(frozen=True)
+@define(frozen=True, order=True)
 class DeclarativeTypeKey:
     """A unique key for identifying declarative types."""
     project: str
@@ -202,7 +239,7 @@ class DeclarativeProtocol(Protocol):
 Declarative = type[DeclarativeProtocol]
 
 
-@define(frozen=True)
+@define(frozen=True, order=True)
 class DeclaratorKey:
     """A unique key for identifying declarators."""
     owner: DeclarativeTypeKey
@@ -271,9 +308,11 @@ class Declarator(ABC):
         return cls._handles
 
     @classproperty
-    def dtype(cls):
+    def typename(cls) -> str:
         """A message-friendly shorthand for the declarator's type."""
-        return cls.__handle__ or cls.__name__
+        if cls.__handle__:
+            return f"{cls.__handle__} declarator"
+        return cls.__name__
 
     @property
     def domain_bindable(self) -> bool:
@@ -364,10 +403,10 @@ class Declarator(ABC):
             pattern for pattern in self.__reserved_patterns__ if isinstance(pattern, re.Pattern)
         }
         if name in forbidden_names:
-            msg = f"Cannot use reserved name {name} for declarator or type {self.dtype}."
+            msg = f"Cannot use reserved name {name} for {self.typename}."
             raise ValueError(msg)
         if any(pattern.fullmatch(name) for pattern in forbidden_patterns):
-            msg = f"Cannot use reserved name {name} for declarator or type {self.dtype}."
+            msg = f"Cannot use reserved name {name} for {self.typename}."
             raise ValueError(msg)
         self._set_once("name", name, treat_none_as_unset=True)
         self._set_once("owner", owner, treat_none_as_unset=True)
@@ -425,6 +464,26 @@ class Declarator(ABC):
         """
         return True
 
+    def __repr__(self) -> str:
+        if self.owner is not None:
+            if self.name is not None:
+                return f"<{self.owner.__name__}.{self.name} {self.typename}>"
+            return f"<{self.owner.__name__} {self.typename}>"
+        return f"<unbound {self.typename}>"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to a plain dict suitable for serialization."""
+        return asdict(self)
+
+    def to_yaml(self) -> str:
+        """YAML-style pretty print."""
+        return nx_yaml_dump(self.to_dict())
+
+    def __str__(self) -> str:
+        return self.to_yaml()
+
+
+_register_aml_yaml_declarators()
 
 @declarator
 class AnnotatableDeclarator(Declarator):
@@ -688,14 +747,17 @@ class NxFieldDeclarator(AssignableMetadescriptor):
             raise AttributeError("NxField declarator classvar cannot be overridden.")
 
 
-
-
 # Metavalidators
 
 @declarator
 class MetaValidator(Metadescriptor):
     """A common base class for metadescriptor validators."""
     __handle__ = "metavalidator"
+
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the metavalidator's type."""
+        return "metavalidator"
 
 
 @declarator
@@ -707,6 +769,11 @@ class PrototypeValidator(CallableDeclarator[Callable[[type], bool]], MetaValidat
         super().__validate__()
         self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the metavalidator's type."""
+        return "prototype validator"
+
 
 @declarator
 class MetadataValidator(EnumerationCallableDeclarator[Callable[[type, Any], bool]], MetaValidator):  # noqa
@@ -716,6 +783,11 @@ class MetadataValidator(EnumerationCallableDeclarator[Callable[[type, Any], bool
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
+
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the metavalidator's type."""
+        return "metadata validator"
 
 
 @declarator
@@ -727,6 +799,11 @@ class OptionValidator(EnumerationCallableDeclarator[Callable[[type, Any], bool]]
         super().__validate__()
         self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the metavalidator's type."""
+        return "option validator"
+
 
 @declarator
 class NxFieldValidator(EnumerationCallableDeclarator[Callable[[type, Any], bool]], MetaValidator):  # noqa
@@ -737,6 +814,10 @@ class NxFieldValidator(EnumerationCallableDeclarator[Callable[[type, Any], bool]
         super().__validate__()
         self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the metavalidator's type."""
+        return "nxfield validator"
 
 # endregion
 
@@ -936,6 +1017,11 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
                     raise TypeError("Cannot bind data field of incompatible type.")
         return True
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "data field"
+
 
 @declarator
 class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescriptor):
@@ -965,6 +1051,11 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
         order = {"cascade": 0, "set_null": 1, "restrict": 2}
         if order.get(override.on_delete, 0) < order.get(self.on_delete, 0):
             raise AttributeError("Link protodescriptor on_delete cannot be loosened.")
+
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "link field"
 
 
 @declarator
@@ -1001,6 +1092,11 @@ class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
         if is_not_missing(self.limit) and is_not_missing(override.limit):
             if override.limit > self.limit:
                 raise AttributeError("Backlink protodescriptor limit cannot be loosened.")
+
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "backlink field"
 
 
 @declarator
@@ -1097,6 +1193,11 @@ class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator[Calla
             if is_not_missing(self.limit):
                 self._validate_value_type("limit", self.limit, int)
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "selection field"
+
 
 @declarator
 class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
@@ -1115,6 +1216,11 @@ class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
         if is_not_missing(self.compression):
             self._validate_value_type("compression", self.compression, str)
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "document field"
+
 
 @declarator
 class FolderProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
@@ -1122,10 +1228,16 @@ class FolderProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     __handle__ = "folder"
     path: str | Missing = field(default=MISSING)
 
+
     def __validate__(self) -> None:
         super().__validate__()
         if is_not_missing(self.path):
             self._validate_value_type("path", self.path, str)
+
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "folder field"
 
 
 @declarator
@@ -1151,6 +1263,11 @@ class StateProtodescriptor(RelationProtodescriptor):
             if self.min_observations < 1:
                 raise ValueError("state.min_observations must be >= 1.")
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "state field"
+
 
 @declarator
 class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[type], Any]]):  # noqa
@@ -1167,6 +1284,11 @@ class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator[Ca
         if is_not_missing(self.callable):
             self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "field expression"
+
 
 @declarator
 class FieldGroupProtodescriptor(FieldProtodescriptor, FieldEnumeration):
@@ -1178,11 +1300,21 @@ class FieldGroupProtodescriptor(FieldProtodescriptor, FieldEnumeration):
         if not self.members:
             raise ValueError("FieldGroupProtodescriptor must have at least one member.")
 
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "field group"
+
 
 @declarator
 class FieldBlockProtodescriptor(FieldProtodescriptor):
     """The protodescriptor class for field blocks."""
     __handle__ = "fieldblock"
+
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "field block"
 
 
 @declarator
@@ -1193,6 +1325,11 @@ class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[t
     def __validate__(self) -> None:
         super().__validate__()
         self._validate_value_type("callable", self.callable, Callable)  # type: ignore[arg-type]
+
+    @classproperty
+    def typename(cls) -> str:
+        """A message-friendly shorthand for the protodescriptor's type."""
+        return "metric field"
 
 
 @declarator
@@ -1217,6 +1354,8 @@ class ValidatorDeclarator(ConstructorDeclarator[Callable[[type, Any], bool]], Fi
         self._validate_value_type("element_wise", self.element_wise, bool)
 
 
+# Schema Declarators
+
 @declarator
 class KeyDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
     """The declarator class for schema keys."""
@@ -1227,6 +1366,7 @@ class KeyDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
 class SequenceDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
     """The declarator class for schema sequences."""
     __handle__ = "sequence"
+
 
 
 @declarator

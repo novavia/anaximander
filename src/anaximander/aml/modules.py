@@ -13,11 +13,16 @@ remaining self-contained inside AML.
 # region Imports
 
 import ast
+import builtins
+import re
 from pathlib import Path
 from types import ModuleType
 from typing import cast, get_type_hints
 
+import yaml
+
 from ..utils.funcs import unwrap_classvar_type, unwrap_optional_type
+from ..utils.yaml import NX_YAML_TYPES, nx_register_constructor
 from .data import Data
 from .declarators import (
     AnnotatableDeclarator,
@@ -31,6 +36,7 @@ from .declarators import (
 )
 from .model import Model
 from .prototype import TypeRole, is_archetype, is_prototype, is_trait, prototype
+from .registries import DeclarativeTypeRegistry
 
 # endregion
 
@@ -75,6 +81,174 @@ DEFAULT_ALLOWED_CLASS_NODES: tuple[type[ast.AST], ...] = (
     ast.AsyncFunctionDef,
     ast.Pass,
 )
+
+# endregion
+
+# =============================================================================
+# Prototype registry
+# =============================================================================
+# region Prototype registry
+
+
+class PrototypeRegistry(DeclarativeTypeRegistry[NxModuleType, prototype]):
+    """Registry for prototypes and their owning modules."""
+
+    def _resolve_from_module(self, module: NxModuleType, name: str) -> prototype:
+        if hasattr(module, "__prototypes__"):
+            for proto in getattr(module, "__prototypes__", []):
+                if proto.__name__ == name:
+                    return proto
+        return module.__dict__[name]
+
+
+PROTOTYPES = PrototypeRegistry()
+
+# endregion
+
+# =============================================================================
+# YAML loader hooks
+# =============================================================================
+# region YAML loader hooks
+
+
+_REF_PATTERN = re.compile(r"^<(?P<body>.+)>$")
+_QUALIFIED_PATTERN = re.compile(r"^(?P<project>[^:]+)::(?P<module>[^:]+)::(?P<name>.+)$")
+_KIND_SUFFIXES = (
+    " data field",
+    " prototype",
+    " callable",
+    " field",
+    " metadata",
+    " option",
+    " nxfield",
+    " schema",
+    " constructor",
+    " type",
+)
+
+
+def _parse_reference(value: str) -> tuple[str | None, str | None, str]:
+    match = _QUALIFIED_PATTERN.match(value)
+    if match:
+        return match.group("project"), match.group("module"), match.group("name")
+    return None, None, value
+
+
+def _split_owner(ref: str) -> tuple[str, str | None]:
+    if "." in ref:
+        owner_ref, member = ref.split(".", 1)
+        return owner_ref, member
+    return ref, None
+
+
+def _split_kind(body: str) -> tuple[str, str | None]:
+    for suffix in _KIND_SUFFIXES:
+        if body.endswith(suffix):
+            return body[:-len(suffix)], suffix.strip()
+    return body, None
+
+
+def _resolve_prototype(name: str, *, project: str | None = None, module: str | None = None) -> prototype:  # noqa
+    return PROTOTYPES.resolve_type(name, project=project, module=module)
+
+
+def _resolve_tagged_reference(ref: str, kind: str) -> object:
+    if kind == "prototype":
+        project, module, name = _parse_reference(ref)
+        return _resolve_prototype(name, project=project, module=module)
+    if kind in {"data field", "field", "metadata", "option", "nxfield", "schema", "constructor"}:
+        owner_ref, member = _split_owner(ref)
+        if member is None:
+            raise KeyError(f"Declarator reference '{ref} {kind}' must include owner and member.")
+        project, module, owner_name = _parse_reference(owner_ref)
+        owner = _resolve_prototype(owner_name, project=project, module=module)
+        return getattr(owner, member)
+    if kind == "callable":
+        owner_ref, member = _split_owner(ref)
+        if member is None:
+            raise KeyError(f"Callable reference '{ref} {kind}' must include owner and member.")
+        project, module, owner_name = _parse_reference(owner_ref)
+        owner = _resolve_prototype(owner_name, project=project, module=module)
+        return getattr(owner, member)
+    if kind == "type":
+        project, module, name = _parse_reference(ref)
+        if name in builtins.__dict__:
+            return builtins.__dict__[name]
+        if name in NX_YAML_TYPES:
+            return NX_YAML_TYPES[name]
+        if project is None and module is None:
+            raise KeyError(f"Unknown type reference '{ref} {kind}'.")
+        return _resolve_prototype(name, project=project, module=module)
+    raise KeyError(f"Unknown reference kind '{kind}'.")
+
+
+def _resolve_reference(value: str) -> object:
+    match = _REF_PATTERN.match(value)
+    if not match:
+        return value
+    body = match.group("body")
+    ref, kind = _split_kind(body)
+    if kind is not None:
+        return _resolve_tagged_reference(ref, kind)
+    if "." in body:
+        owner_ref, member = _split_owner(body)
+        if member is None:
+            raise KeyError(f"Invalid reference '{body}'.")
+        project, module, owner_name = _parse_reference(owner_ref)
+        owner = _resolve_prototype(owner_name, project=project, module=module)
+        return getattr(owner, member)
+    project, module, name = _parse_reference(body)
+    if name in builtins.__dict__:
+        return builtins.__dict__[name]
+    if name in NX_YAML_TYPES:
+        return NX_YAML_TYPES[name]
+    return _resolve_prototype(name, project=project, module=module)
+
+
+def _construct_reference(loader, node):
+    value = loader.construct_scalar(cast(yaml.ScalarNode, node))
+    return _resolve_reference(value)
+
+
+def _construct_prototype(loader, node):
+    value = loader.construct_scalar(cast(yaml.ScalarNode, node))
+    match = _REF_PATTERN.match(value)
+    body = match.group("body") if match else value
+    ref, kind = _split_kind(body)
+    if kind is not None and kind != "prototype":
+        raise KeyError(f"Expected prototype reference, got '{value}'.")
+    project, module, name = _parse_reference(ref)
+    return _resolve_prototype(name, project=project, module=module)
+
+
+def _construct_declarator(loader, node):
+    value = loader.construct_scalar(cast(yaml.ScalarNode, node))
+    match = _REF_PATTERN.match(value)
+    body = match.group("body") if match else value
+    ref, kind = _split_kind(body)
+    if kind is None:
+        kind = "field"
+    return _resolve_tagged_reference(ref, kind)
+
+
+def _construct_type(loader, node):
+    value = loader.construct_scalar(cast(yaml.ScalarNode, node))
+    match = _REF_PATTERN.match(value)
+    body = match.group("body") if match else value
+    ref, kind = _split_kind(body)
+    if kind is None:
+        kind = "type"
+    return _resolve_tagged_reference(ref, kind)
+
+
+def _register_aml_yaml_loader() -> None:
+    nx_register_constructor("!Prototype", _construct_prototype)
+    nx_register_constructor("!Declarator", _construct_declarator)
+    nx_register_constructor("!Type", _construct_type)
+    nx_register_constructor("tag:yaml.org,2002:str", _construct_reference)
+
+
+_register_aml_yaml_loader()
 
 # endregion
 
@@ -297,8 +471,8 @@ def _validate_bindings(cls: prototype) -> None:
         for name, value in binding_registry.items():
             declarator: Declarator = binding_registry.declarators[name]
             if not declarator.__validate_binding__(cls, value):
-                msg = (f"Binding '{name}' with value '{value}' is not valid for declarator "
-                       f"of type '{declarator.dtype}' in prototype '{cls.__name__}'.")
+                msg = (f"Binding '{name}' with value '{value}' is not valid "
+                       f"for {declarator.typename} in prototype '{cls.__name__}'.")
                 raise ValueError(msg)
     # -------------------------
     # 2) Run attribute-level validators (metadata/option/nxfield validators).
@@ -448,6 +622,7 @@ def finalize_module(
                 if not validator.callable(cls):
                     msg = f"Prototype '{cls.__name__}' failed validation by '{validator}'."
                     raise ValueError(msg)
+    PROTOTYPES.register_module(module, prototypes)
     # Mark module as finalized to avoid rework.
     setattr(module, "__finalized__", True)
 

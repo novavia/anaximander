@@ -11,6 +11,7 @@ These artifacts form the foundation for declarative type definitions in AML.
 
 from abc import abstractmethod
 from collections.abc import Iterable, Mapping
+from types import ModuleType
 from typing import (
     Any,
     ClassVar,
@@ -18,9 +19,9 @@ from typing import (
     get_args,
 )
 
-import yaml
-
-from .declarators import MISSING, Declarator
+from ..utils.yaml import nx_yaml_dump
+from .declarative import declarative
+from .declarators import MISSING, DeclarativeTypeKey, Declarator
 
 # endregion
 
@@ -78,10 +79,89 @@ class Registry[T](Mapping[str, T]):
 
     def to_yaml(self) -> str:
         """YAML-style pretty print."""
-        return yaml.safe_dump(self.to_dict(), sort_keys=False, default_flow_style=False)
+        return nx_yaml_dump(self.to_dict())
 
     def __str__(self) -> str:
         return self.to_yaml()
+
+
+class DeclarativeTypeRegistry[M: ModuleType, DT: declarative](Registry[M]):
+    """Registry for declarative types and their owning modules.
+
+    This base registry stores module instances and indexes declarative types
+    by their keys and names. Concrete subclasses decide how to resolve a type
+    from a module (e.g., via module attributes or cached prototype lists).
+    """
+
+    def __init__(self, data: Mapping[str, M] | Iterable[tuple[str, M]] | None = None, **kwargs: M) -> None:  # noqa
+        """Initialize the registry with optional module mappings."""
+        super().__init__(data, **kwargs)
+        self.prototype_to_module: dict[DeclarativeTypeKey, M] = {}
+        self.name_to_prototypes: dict[str, set[DeclarativeTypeKey]] = {}
+
+    def register(self, key: str, item: M) -> None:
+        """Register a module by its canonical key."""
+        registered = self._data.get(key)
+        if registered is None:
+            self._data[key] = item
+            return
+        if registered is not item:
+            raise KeyError(f"Module {key} is already registered.")
+
+    def register_module(self, module: M, types: Iterable[DT]) -> None:
+        """Register a module and its declarative types."""
+        project = self._resolve_project(types)
+        module_key = f"{project}::{self._module_name(module)}"
+        self.register(module_key, module)
+        for type_ in types:
+            self.register_type(type_, module)
+
+    def register_type(self, type_: DT, module: M) -> None:
+        """Register a declarative type for name-based lookup."""
+        if not hasattr(type_, "__key__"):
+            raise TypeError(f"Type {type_} does not provide a declarative key.")
+        key = type_.__key__
+        self.prototype_to_module[key] = module
+        self.name_to_prototypes.setdefault(key.name, set()).add(key)
+
+    def resolve_type(self, name: str, *, project: str | None = None, module: str | None = None) -> DT:  # noqa
+        """Resolve a declarative type name with optional project/module qualifiers."""
+        if project is not None and module is not None:
+            key = DeclarativeTypeKey(project=project, module=module, name=name)
+            try:
+                return self._resolve_from_module(self.prototype_to_module[key], name)
+            except KeyError:
+                raise KeyError(f"Unknown type '{project}::{module}::{name}'.") from None
+        keys = self.name_to_prototypes.get(name, set())
+        if project is not None:
+            keys = {k for k in keys if k.project == project}
+        if module is not None:
+            keys = {k for k in keys if k.module == module}
+        if not keys:
+            raise KeyError(f"Unknown type '{name}'.")
+        if len(keys) > 1:
+            candidates = ", ".join(f"{k.project}::{k.module}::{k.name}" for k in sorted(keys))
+            raise KeyError(f"Ambiguous type '{name}': {candidates}")
+        key = next(iter(keys))
+        return self._resolve_from_module(self.prototype_to_module[key], key.name)
+
+    def _module_name(self, module: M) -> str:
+        """Return the canonical module name for registry keys."""
+        return module.__name__
+
+    def _resolve_from_module(self, module: M, name: str) -> DT:
+        """Resolve a type name from a module instance."""
+        raise NotImplementedError
+
+    def _resolve_project(self, types: Iterable[DT]) -> str:
+        """Resolve the project namespace for a module's declarative types."""
+        projects: set[str] = {p for type_ in types if (p := getattr(type_, "__project__", None)) is not None}  # noqa
+        if not projects:
+            return "anaximander"
+        if len(projects) > 1:
+            msg = f"Module declares multiple projects: {sorted(projects)}"
+            raise ValueError(msg)
+        return next(iter(projects))
 
 
 class DeclaratorRegistry[D: Declarator](Registry[D]):
@@ -297,7 +377,7 @@ class MultiRegistry[R: Registry](Mapping[str, R]):
 
     def to_yaml(self) -> str:
         """YAML-style pretty print."""
-        return yaml.safe_dump(self.to_dict(), sort_keys=False, default_flow_style=False)
+        return nx_yaml_dump(self.to_dict())
 
     def __str__(self) -> str:
         return self.to_yaml()
