@@ -16,22 +16,6 @@ introduce concepts or terminology that contradict them.
 - Ensure that all new code is consistent with the architecture and design decisions outlined in the design documents.
 - Avoid introducing new concepts or terminology that are not present in the sources of truth.
 
-## Style and Formatting
-
-- **High Density**: Prefer high-density code and one-liners for simple assignments, function calls, and collection literal definitions.
-- **Avoid Vertical Expansion**: Do not "explode" lists, dictionaries, or function arguments into multiple lines unless they exceed the 99-character limit.
-- **Ruff Alignment**: Align with the project's Ruff configuration (`line-length = 99`, `skip-magic-trailing-comma = true`).
-- **Concatenation**: Avoid unnecessary line breaks between related logic blocks or decorators.
-- **Type Annotations**: Use built-in types for annotations (e.g., `list` instead of `List` from `typing`).
-- **Docstrings**: Use triple double-quoted (`"""`) docstrings for all public classes, methods, and functions. Please refer to the docstring conventions in `docs/implementation/IMPLEMENTATION-PLAN.md`.
-- **Section Comments**: Use section comments (e.g., `# -------------------------`) to delineate logical sections within classes or modules.
-- **Consistent Naming**: Follow existing naming conventions for functions, methods, variables, and classes.
-- **Error Handling**: Use specific exception types and provide informative error messages.
-- **Data Structures**: Use appropriate data structures for the task, ensuring clarity and efficiency.
-- **Method Definitions**: Define methods clearly, ensuring parameters and return types are well-specified.
-- **Code Clarity**: Prioritize code clarity and maintainability, ensuring that the code is easy to read and understand.
-- **Avoid Redundancy**: Do not include redundant or unnecessary code constructs.
-
 ## Tooling
 
 - Use the repo’s venv interpreter for all Python commands:

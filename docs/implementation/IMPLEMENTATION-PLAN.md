@@ -18,6 +18,52 @@ The repository is hosted on GitHub.
 
 The initial development will be conducted in VS Code, using GitHub Copilot for AI-assisted development.
 
+### Style and Formatting
+
+- **High Density**: Prefer high-density code and one-liners for simple assignments, function calls, and collection literal definitions.
+- **Avoid Vertical Expansion**: Do not "explode" lists, dictionaries, or function arguments into multiple lines unless they exceed the 99-character limit.
+- **line length**: The line length is set to 99 characters. This is enforced via Ruff but is a guideline rather than a hard limit; exceptions can be made for readability but should be explicitly annnotated with a `# noqa` comment to silence warnings.
+- **Ruff Alignment**: Align with the project's Ruff configuration (`line-length = 99`, `skip-magic-trailing-comma = true`).
+- **Concatenation**: Avoid unnecessary line breaks between related logic blocks or decorators.
+- **Type Annotations**: Use built-in types for annotations (e.g., `list` instead of `List` from `typing`).
+- **Docstrings**: Use triple double-quoted (`"""`) docstrings for all public modules, classes, methods, and functions. Please refer to detailed docstring conventions in the next section.
+- **Docstrings Content**: Every module must have a docstring at the top describing its purpose and contents. Shoot for approximately one line of text per 50 lines of code. For classes, methods and functions, the purpose and design must be described in the docstring, besides following the templates provided in the docstring conventions section for arguments, return values, and exceptions.
+- **Section Comments**: Use AML-style section banners and regions for module sections, e.g.:
+
+```python
+# =============================================================================
+# Section Title
+# =============================================================================
+# region Section Title
+  
+# (section code)
+  
+# endregion
+```
+
+- **Code Comments**: Use inline comments for every code block to explain the intent and rationale. Make it such that either a human or AI reader can understand the purpose of the code without delving into implementation details. Shoot for approximately one comment per 10 lines of code.
+- **License Header**: Every source file must begin with this standard license header:
+
+```python
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+```
+
+For Python files, this header must be the very first thing in the file, before any imports or module docstrings. Until additional contributors join the project, the header should additionally include the following line, separated by a blank line from the MPL text:
+
+```python
+# Copyright © 2024–2026 Novavia Solutions, LLC
+```
+
+- **Consistent Naming**: Follow existing naming conventions for functions, methods, variables, and classes.
+- **Error Handling**: Use specific exception types and provide informative error messages.
+- **Data Structures**: Use appropriate data structures for the task, ensuring clarity and efficiency.
+- **Method Definitions**: Define methods clearly, ensuring parameters and return types are well-specified.
+- **Code Clarity**: Prioritize code clarity and maintainability, ensuring that the code is easy to read and understand.
+- **Avoid Redundancy**: Do not include redundant or unnecessary code constructs.
+- **Python Imports**: Follow standard Python import conventions, grouping imports into standard library, third-party, and local application/library imports. Use relative imports for local modules within the package and its sub-packages. Ensure imports are sorted per Ruff configuration.
+
 ### Docstring Conventions and Workflow
 
 This project uses **Google-style Python docstrings** for all public APIs.
