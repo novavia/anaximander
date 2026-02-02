@@ -73,16 +73,24 @@ class Registry[T](Mapping[str, T]):
         for key, item in other.items():
             self.register(key, item)
 
-    def to_dict(self) -> dict[str, T]:
+    def to_dict(self, *, compact: bool = True) -> dict[str, T | dict[str, Any] | str]:
         """Convert to a plain dict suitable for serialization."""
-        return dict(self._data)
+        if compact:
+            return dict(self._data)
+        return {
+            key: (value.to_dict() if isinstance(value, Declarator) else value)
+            for key, value in self._data.items()
+        }
 
-    def to_yaml(self) -> str:
+    def to_yaml(self, *, compact: bool = True) -> str:
         """YAML-style pretty print."""
-        return nx_yaml_dump(self.to_dict())
+        return nx_yaml_dump(self.to_dict(compact=compact))
 
     def __str__(self) -> str:
         return self.to_yaml()
+
+    def __repr__(self) -> str:
+        return f"<{type(self).__name__}>"
 
 
 class DeclarativeTypeRegistry[M: ModuleType, DT: declarative](Registry[M]):
@@ -371,16 +379,19 @@ class MultiRegistry[R: Registry](Mapping[str, R]):
             msg = "Can only merge with another MultiRegistry instance of the same type."
             raise TypeError(msg)
 
-    def to_dict(self) -> dict[str, dict[str, Any]]:
+    def to_dict(self, *, compact: bool = True) -> dict[str, dict[str, Any]]:
         """Convert to a plain nested dict suitable for serialization."""
-        return {handle: dict(registry) for handle, registry in self._registries.items() if registry}  # noqa
+        return {handle: registry.to_dict(compact=compact) for handle, registry in self._registries.items() if registry}
 
-    def to_yaml(self) -> str:
+    def to_yaml(self, *, compact: bool = True) -> str:
         """YAML-style pretty print."""
-        return nx_yaml_dump(self.to_dict())
+        return nx_yaml_dump(self.to_dict(compact=compact))
 
     def __str__(self) -> str:
         return self.to_yaml()
+
+    def __repr__(self) -> str:
+        return f"<{type(self).__name__}>"
 
 
 class MultiDeclaratorRegistry(MultiRegistry[DeclaratorRegistry]):

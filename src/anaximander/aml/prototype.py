@@ -17,7 +17,7 @@ from ..utils.funcs import (
     unwrap_classvar_type,
     unwrap_optional_type,
 )
-from ..utils.yaml import nx_register_representer
+from ..utils.yaml import nx_register_representer, nx_set_ignore_aliases
 from .declarative import DeclarativeNamespace, declarative
 from .declarators import (
     AnnotatableDeclarator,
@@ -659,6 +659,7 @@ def _register_aml_yaml_prototypes() -> None:
     def _repr_prototype(dumper, obj: prototype):
         return dumper.represent_scalar("tag:yaml.org,2002:str", repr(obj))
 
+    nx_set_ignore_aliases(lambda value: isinstance(value, type))
     nx_register_representer(type, _repr_type)
     nx_register_representer(prototype, _repr_prototype)
     from types import BuiltinFunctionType, BuiltinMethodType, FunctionType, MethodType

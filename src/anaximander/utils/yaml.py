@@ -44,22 +44,6 @@ def _build_dumper() -> type[yaml.SafeDumper]:
         "false",
         "False",
         "FALSE",
-        "y",
-        "Y",
-        "yes",
-        "Yes",
-        "YES",
-        "n",
-        "N",
-        "no",
-        "No",
-        "NO",
-        "on",
-        "On",
-        "ON",
-        "off",
-        "Off",
-        "OFF",
     }
     # Numeric-looking strings are quoted to prevent coercion.
     _numeric_pattern = re.compile(
@@ -125,6 +109,19 @@ def nx_register_multi_constructor(tag: str, constructor) -> None:
 def nx_register_type(name: str, type_: type) -> None:
     """Register a custom type name for YAML resolution."""
     NX_YAML_TYPES[name] = type_
+
+
+def nx_set_ignore_aliases(predicate) -> None:
+    """Extend the dumper's ignore_aliases logic with a custom predicate."""
+    dumper = _ensure_dumper()
+    base = dumper.ignore_aliases
+
+    def _ignore_aliases(self, data):
+        if predicate(data):
+            return True
+        return base(self, data)
+
+    dumper.ignore_aliases = _ignore_aliases
 
 
 def nx_yaml_dump(data: object) -> str:

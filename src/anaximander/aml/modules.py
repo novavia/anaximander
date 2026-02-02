@@ -29,6 +29,7 @@ from .declarators import (
     Declarator,
     EnumerationCallableDeclarator,
     FieldGroupProtodescriptor,
+    MISSING,
     ParserDeclarator,
     PrototypeValidator,
     ValidatorDeclarator,
@@ -185,6 +186,8 @@ def _resolve_tagged_reference(ref: str, kind: str) -> object:
 def _resolve_reference(value: str) -> object:
     match = _REF_PATTERN.match(value)
     if not match:
+        if value == "MISSING":
+            return MISSING
         return value
     body = match.group("body")
     ref, kind = _split_kind(body)

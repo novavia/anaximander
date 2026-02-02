@@ -28,8 +28,8 @@ from typing import (
     dataclass_transform,
 )
 
+import attrs
 import yaml
-from attrs import asdict, define, field
 
 from ..utils.meta import classproperty
 from ..utils.yaml import (
@@ -37,6 +37,7 @@ from ..utils.yaml import (
     nx_register_multi_representer,
     nx_register_representer,
     nx_register_type,
+    nx_set_ignore_aliases,
     nx_yaml_dump,
 )
 from .basetypes import is_metadata_type
@@ -53,10 +54,18 @@ from .basetypes import is_metadata_type
 DT = TypeVar("DT", bound=type)  # Declarator-type type variable
 T = TypeVar("T")
 
+def field(*args, z: int | None = None, **kwargs):
+    """Declare a field with optional z-order metadata."""
+    metadata = dict(kwargs.pop("metadata", {}))
+    if z is not None:
+        metadata["z"] = z
+    return attrs.field(*args, metadata=metadata, **kwargs)
+
+
 @dataclass_transform(kw_only_default=True, field_specifiers=(field,))
 def declarator(cls: DT) -> DT:
     """Apply attrs define for declarator classes with a preserved init signature."""
-    return define(cls, slots=False, frozen=True, kw_only=True, repr=False, str=False)
+    return attrs.define(cls, slots=False, frozen=True, kw_only=True, repr=False, str=False)
 
 
 # Missing sentinel
@@ -105,7 +114,7 @@ def _register_aml_yaml_declarators() -> None:
         return dumper.represent_scalar("tag:yaml.org,2002:str", repr(obj))
 
     def _repr_missing(dumper, obj: Missing):
-        return dumper.represent_scalar("!Missing", "MISSING")
+        return dumper.represent_scalar("tag:yaml.org,2002:str", "MISSING")
 
     def _repr_mappingproxy(dumper, obj: MappingProxyType):
         return dumper.represent_mapping("tag:yaml.org,2002:map", dict(obj))
@@ -114,6 +123,7 @@ def _register_aml_yaml_declarators() -> None:
         loader.construct_scalar(cast(yaml.ScalarNode, node))
         return MISSING
 
+    nx_set_ignore_aliases(lambda value: isinstance(value, Missing))
     nx_register_representer(Declarator, _repr_declarator)
     nx_register_multi_representer(Declarator, _repr_declarator)
     nx_register_representer(Missing, _repr_missing)
@@ -224,7 +234,7 @@ def _tighten_upper(base_lt: Real | Missing, base_le: Real | Missing,
 # region Declarator base class
 
 
-@define(frozen=True, order=True)
+@attrs.define(frozen=True, order=True)
 class DeclarativeTypeKey:
     """A unique key for identifying declarative types."""
     project: str
@@ -239,7 +249,7 @@ class DeclarativeProtocol(Protocol):
 Declarative = type[DeclarativeProtocol]
 
 
-@define(frozen=True, order=True)
+@attrs.define(frozen=True, order=True)
 class DeclaratorKey:
     """A unique key for identifying declarators."""
     owner: DeclarativeTypeKey
@@ -278,14 +288,14 @@ class Declarator(ABC):
     _handles: ClassVar[tuple[str, ...]] = ()  # A tuple of all handles for this declarator type and its ancestors, in reverse mro (do not override) # noqa
 
     # Post-init wired fields (logically immutable; set via internal backdoor).
-    name: str = field(init=False, default=None)  # Attribute or key name this declarator is assigned to # noqa
-    owner: Declarative = field(init=False, default=None)  # Owning class of this declarator
-    ordinal: int = field(init=False, default=None)  # Index of this declarator within the owning class # noqa
+    name: str = field(init=False, default=None, z=100)  # Attribute or key name this declarator is assigned to # noqa
+    owner: Declarative = field(init=False, default=None, z=110)  # Owning class of this declarator
+    ordinal: int = field(init=False, default=None, z=120)  # Index of this declarator within the owning class # noqa
     __ast__: ast.AST | None = field(init=False, default=None)  # AST node that declared this declarator # noqa
 
     # Init-time fields (immutable)
-    doc: str | Missing = field(default=MISSING)  # Optional documentation string # noqa
-    config: Mapping[str, ConfigValue] | Missing = field(factory=dict)  # Extraneous declarator configuration # noqa
+    doc: str | Missing = field(default=MISSING, z=900)  # Optional documentation string # noqa
+    config: Mapping[str, ConfigValue] | Missing = field(factory=dict, z=910)  # Extraneous declarator configuration # noqa
 
     @property
     def __key__(self) -> DeclaratorKey:
@@ -473,7 +483,17 @@ class Declarator(ABC):
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a plain dict suitable for serialization."""
-        return asdict(self)
+        attributes = attrs.fields(self.__class__)
+        ordered = []
+        for idx, attr in enumerate(attributes):
+            if attr.name == "__ast__":
+                continue
+            z = attr.metadata.get("z", 1000)
+            if not isinstance(z, int):
+                z = 1000
+            ordered.append((z, idx, attr.name))
+        ordered.sort()
+        return {name: getattr(self, name) for _, _, name in ordered}
 
     def to_yaml(self) -> str:
         """YAML-style pretty print."""
@@ -488,11 +508,11 @@ _register_aml_yaml_declarators()
 @declarator
 class AnnotatableDeclarator(Declarator):
     """Base class for declarators that can be annotated with type information."""
-    annotation: str | None = field(init=False, default=None)  # Literal type annotation as a string  # noqa
-    hint: Any | None = field(init=False, default=None)  # Evaluated type hint object  # noqa
-    type: builtins.type | None = field(init=False, default=None)  # Evaluated type annotation  # noqa
-    nullable: bool | None = field(init=False, default=None)  # Whether the type is nullable  # noqa
-    classvar: bool | None = field(init=False, default=None)  # Whether the type is a ClassVar  # noqa
+    annotation: str | None = field(init=False, default=None, z=200)  # Literal type annotation as a string  # noqa
+    hint: Any | None = field(init=False, default=None, z=210)  # Evaluated type hint object  # noqa
+    type: builtins.type | None = field(init=False, default=None, z=220)  # Evaluated type annotation  # noqa
+    nullable: bool | None = field(init=False, default=None, z=230)  # Whether the type is nullable  # noqa
+    classvar: bool | None = field(init=False, default=None, z=240)  # Whether the type is a ClassVar  # noqa
     def __init_subclass__(cls):
         super().__init_subclass__()
 
@@ -529,7 +549,7 @@ class AnnotatableDeclarator(Declarator):
 @declarator
 class IdentifiableDeclarator(AnnotatableDeclarator):
     """Base class for declarators of attributes that can uniquely identify an instance."""
-    unique: bool = field(default=False)  # Whether this declarator uniquely identifies an instance  # noqa
+    unique: bool = field(default=False, z=325)  # Whether this declarator uniquely identifies an instance  # noqa
 
     def __validate__(self) -> None:
         self._validate_value_type("unique", self.unique, bool)
@@ -539,11 +559,11 @@ class IdentifiableDeclarator(AnnotatableDeclarator):
 @declarator
 class AssignableDeclarator(AnnotatableDeclarator):
     """Base class for declarators of attributes that receive their value through assignment."""
-    default: Any = field(default=MISSING)
-    factory: Callable[[], Any] | Missing = field(default=MISSING)
+    default: Any = field(default=MISSING, z=250)
+    factory: Callable[[], Any] | Missing = field(default=MISSING, z=260)
     # This is a fail-quick optional inline validator that takes a value as its only argument
     # It is intended to be called in the __bind__ hook to validate assigned values
-    validator: Callable[[Any], bool] | Missing = field(default=MISSING)
+    validator: Callable[[Any], bool] | Missing = field(default=MISSING, z=520)
 
     def __validate__(self) -> None:
         if is_not_missing(self.factory):
@@ -556,7 +576,7 @@ class AssignableDeclarator(AnnotatableDeclarator):
 @declarator
 class CallableDeclarator[C: Callable](Declarator):
     """A mixin class for declarators that wrap callables."""
-    callable: C | Missing = field(default=MISSING)
+    callable: C | Missing = field(default=MISSING, z=270)
 
     def __validate__(self) -> None:
         if is_not_missing(self.callable):
@@ -567,7 +587,7 @@ class CallableDeclarator[C: Callable](Declarator):
 @declarator
 class EnumerationDeclarator(Declarator):
     """A mixin class for declarators that reference a list of declarators by name."""
-    members: tuple[str, ...] = field(factory=tuple)
+    members: tuple[str, ...] = field(factory=tuple, z=280)
     __member_types__: ClassVar[tuple[type[Declarator], ...]] = ()  # Admissible member types
 
     def __validate__(self) -> None:
@@ -621,7 +641,7 @@ class AssignableMetadescriptor(AssignableDeclarator, Metadescriptor):
 class MetadataDeclarator(AssignableMetadescriptor):
     """The metadescriptor class for metadata fields."""
     __handle__ = "metadata"
-    domain: bool = field(default=False)  # Whether this metadata is part of the domain schema  # noqa
+    domain: bool = field(default=False, z=305)  # Whether this metadata is part of the domain schema  # noqa
 
     @property
     def domain_bindable(self) -> bool:
@@ -708,7 +728,7 @@ class OptionDeclarator(AssignableMetadescriptor):
 class NxFieldDeclarator(AssignableMetadescriptor):
     """The metadescriptor class for nxfield, i.e. abstract semantic fields."""
     __handle__ = "nxfield"
-    fieldtype: type = field()
+    fieldtype: type = field(z=290)  # The expected type of the field reference
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -843,8 +863,8 @@ class Protodescriptor(Declarator):
 class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
     """Base class for descriptors that represent individual fields."""
     __handle__ = "field"
-    load: Literal["eager", "lazy"] | Missing = field(default=MISSING)
-    repr: bool | Callable | str | Missing = field(default=MISSING)
+    load: Literal["eager", "lazy"] | Missing = field(default=MISSING, z=320)
+    repr: bool | Callable | str | Missing = field(default=MISSING, z=810)
 
     @property
     def domain_bindable(self) -> bool:
@@ -875,7 +895,7 @@ class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
 @declarator
 class AssignableFieldProtodescriptor(AssignableDeclarator, IdentifiableDeclarator, FieldProtodescriptor):  # noqa
     """Abstract base class for assignable field descriptors ('data' and 'link')."""
-    required: bool = field(default=False)
+    required: bool = field(default=False, z=315)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -935,23 +955,23 @@ class AssignableFieldEnumeration(EnumerationDeclarator):
 class DataProtodescriptor(AssignableFieldProtodescriptor):
     """The protodescriptor class for data fields."""
     __handle__ = "data"
-    index: bool = field(default=False)
-    typekey: bool = field(default=False)
-    key: bool = field(default=False)
-    sequence: bool = field(default=False)
-    timestamp: bool = field(default=False)
-    start_time: bool = field(default=False)
-    end_time: bool = field(default=False)
-    period: bool = field(default=False)
-    location: bool = field(default=False)
-    geom: bool = field(default=False)
-    gt: Real | Missing = field(default=MISSING)
-    ge: Real | Missing = field(default=MISSING)
-    lt: Real | Missing = field(default=MISSING)
-    le: Real | Missing = field(default=MISSING)
-    min_length: int | Missing = field(default=MISSING)
-    max_length: int | Missing = field(default=MISSING)
-    pattern: str | Missing = field(default=MISSING)
+    index: bool = field(default=False, z=330)
+    typekey: bool = field(default=False, z=301)
+    key: bool = field(default=False, z=335)
+    sequence: bool = field(default=False, z=340)
+    timestamp: bool = field(default=False, z=345)
+    start_time: bool = field(default=False, z=350)
+    end_time: bool = field(default=False, z=355)
+    period: bool = field(default=False, z=360)
+    location: bool = field(default=False, z=365)
+    geom: bool = field(default=False, z=370)
+    gt: Real | Missing = field(default=MISSING, z=600)
+    ge: Real | Missing = field(default=MISSING, z=610)
+    lt: Real | Missing = field(default=MISSING, z=620)
+    le: Real | Missing = field(default=MISSING, z=630)
+    min_length: int | Missing = field(default=MISSING, z=640)
+    max_length: int | Missing = field(default=MISSING, z=650)
+    pattern: str | Missing = field(default=MISSING, z=660)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1027,8 +1047,8 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
 class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescriptor):
     """The protodescriptor class for link fields."""
     __handle__ = "link"
-    on_delete: Literal["restrict", "set_null", "cascade"] = field(default="restrict")
-    key: bool = field(default=False)
+    key: bool = field(default=False, z=335)
+    on_delete: Literal["restrict", "set_null", "cascade"] = field(default="restrict", z=375)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1062,8 +1082,8 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
 class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
     """The protodescriptor class for backlink fields."""
     __handle__ = "backlink"
-    via: type | Missing = field(default=MISSING)
-    limit: int | Missing = field(default=MISSING)
+    via: type | Missing = field(default=MISSING, z=380)
+    limit: int | Missing = field(default=MISSING, z=385)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1103,21 +1123,20 @@ class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
 class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator[Callable]):
     """Protodescriptor for selection relations."""
     __handle__ = "selection"
-    kind: Literal["sql", "ibis"] | Missing = field(default=MISSING)
+    kind: Literal["sql", "ibis"] | Missing = field(default=MISSING, z=265)
     # Syntactic sugar for callable-based forms
-    sql: Callable | Missing = field(default=MISSING)
-    ibis: Callable | Missing = field(default=MISSING)
+    sql: Callable | Missing = field(default=MISSING, z=271)
+    ibis: Callable | Missing = field(default=MISSING, z=272)
     # Field-expression-based form
-    fx: Callable | str | Missing = field(default=MISSING)
+    fx: Callable | str | Missing = field(default=MISSING, z=273)
     # Frame-based form
-    source: Any | Missing = field(default=MISSING)
-    key: Any | list[Any] | Missing = field(default=MISSING)
-    time: Any | Missing = field(default=MISSING)
-    space: Any | Missing = field(default=MISSING)
-    filter: Callable | Any | Missing = field(default=MISSING)
-    sort: str | list[str] | Missing = field(default=MISSING)
-    limit: int | Missing = field(default=MISSING)
-
+    source: Any | Missing = field(default=MISSING, z=266)
+    key: Any | list[Any] | Missing = field(default=MISSING, z=281)
+    time: Any | Missing = field(default=MISSING, z=282)
+    space: Any | Missing = field(default=MISSING, z=283)
+    filter: Callable | Any | Missing = field(default=MISSING, z=284)
+    sort: str | list[str] | Missing = field(default=MISSING, z=285)
+    limit: int | Missing = field(default=MISSING, z=286)
     def __validate__(self) -> None:
         super().__validate__()
 
@@ -1203,9 +1222,9 @@ class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator[Calla
 class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     """The protodescriptor class for document fields."""
     __handle__ = "document"
-    path: str | Missing = field(default=MISSING)
-    format: str | Missing = field(default=MISSING)
-    compression: str | Missing = field(default=MISSING)
+    path: str | Missing = field(default=MISSING, z=295)
+    format: str | Missing = field(default=MISSING, z=380)
+    compression: str | Missing = field(default=MISSING, z=381)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1226,7 +1245,7 @@ class DocumentProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
 class FolderProtodescriptor(AssignableDeclarator, RelationProtodescriptor):
     """The protodescriptor class for folder fields."""
     __handle__ = "folder"
-    path: str | Missing = field(default=MISSING)
+    path: str | Missing = field(default=MISSING, z=296)
 
 
     def __validate__(self) -> None:
@@ -1245,12 +1264,12 @@ class StateProtodescriptor(RelationProtodescriptor):
     """Protodescriptor for dynamic state values."""
     __handle__ = "state"
     # Underlying time series
-    source: type | Protodescriptor | Missing = field(default=MISSING)
+    source: type | Protodescriptor | Missing = field(default=MISSING, z=266)
     # Reduction policy
-    reducer: str | Callable | Missing = field(default=MISSING)
+    reducer: str | Callable | Missing = field(default=MISSING, z=287)
     # Constraints
-    max_lag: str | timedelta | Missing = field(default=MISSING)
-    min_observations: int | Missing = field(default=MISSING)
+    max_lag: str | timedelta | Missing = field(default=MISSING, z=288)
+    min_observations: int | Missing = field(default=MISSING, z=289)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1273,7 +1292,7 @@ class StateProtodescriptor(RelationProtodescriptor):
 class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[type], Any]]):  # noqa
     """The protodescriptor class for field expressions."""
     __handle__ = "fx"
-    ref: str | Missing = field(default=MISSING)
+    ref: str | Missing = field(default=MISSING, z=274)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1336,7 +1355,7 @@ class MetricProtodescriptor(FieldProtodescriptor, CallableDeclarator[Callable[[t
 class ParserDeclarator(ConstructorDeclarator[Callable[[type, Any], Any]], FieldEnumeration):  # noqa
     """The declarator class for field parsers."""
     __handle__ = "parser"
-    element_wise: bool = field(default=False)
+    element_wise: bool = field(default=False, z=291)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1347,7 +1366,7 @@ class ParserDeclarator(ConstructorDeclarator[Callable[[type, Any], Any]], FieldE
 class ValidatorDeclarator(ConstructorDeclarator[Callable[[type, Any], bool]], FieldEnumeration):  # noqa
     """The declarator class for field validators."""
     __handle__ = "validator"
-    element_wise: bool = field(default=False)
+    element_wise: bool = field(default=False, z=291)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1379,7 +1398,7 @@ class UnicityDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
 class IndexDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
     """The declarator class for schema indexes."""
     __handle__ = "index"
-    kind: str | Missing = field(default=MISSING)
+    kind: str | Missing = field(default=MISSING, z=292)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1391,11 +1410,11 @@ class IndexDeclarator(AssignableFieldEnumeration, SchemaDeclarator):
 class PartitionDeclarator(SchemaDeclarator):
     """The declarator class for schema partitions."""
     __handle__ = "partition"
-    key: FieldProtodescriptor = field()
-    scheme: Literal["range", "categorical", "hash", "time"] = field()
+    key: FieldProtodescriptor = field(z=293)
+    scheme: Literal["range", "categorical", "hash", "time"] = field(z=294)
     # MISSING → not specified (inherit / infer)
     # None → scheme-defined implicit bucketing (categorical, hash)
-    buckets: None | int | tuple | list | str | Missing = field(default=MISSING)
+    buckets: None | int | tuple | list | str | Missing = field(default=MISSING, z=296)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1409,7 +1428,7 @@ class PartitionDeclarator(SchemaDeclarator):
 class PathDeclarator(SchemaDeclarator):
     """The declarator class for traversal paths."""
     __handle__ = "path"
-    template: str | Missing = field(default=MISSING)
+    template: str | Missing = field(default=MISSING, z=295)
 
     def __validate__(self) -> None:
         super().__validate__()
@@ -1421,7 +1440,7 @@ class PathDeclarator(SchemaDeclarator):
 class SortDeclarator(FieldEnumeration, SchemaDeclarator):
     """The declarator class for schema sort orders."""
     __handle__ = "sort"
-    sort_directions: Literal["asc", "desc"] | list[Literal["asc", "desc"]] | Missing = field(default=MISSING)  # noqa
+    sort_directions: Literal["asc", "desc"] | list[Literal["asc", "desc"]] | Missing = field(default=MISSING, z=297)  # noqa
 
     def __validate__(self) -> None:
         super().__validate__()

@@ -20,7 +20,7 @@ def _pick_declarator() -> Declarator:
 def test_aml_yaml_missing_roundtrip():
     payload = {"missing": MISSING}
     dumped = nx_yaml_dump(payload)
-    assert "!Missing" in dumped
+    assert "MISSING" in dumped
     loaded = cast(dict[str, Any], nx_yaml_load(dumped))
     assert loaded["missing"] is MISSING
 
