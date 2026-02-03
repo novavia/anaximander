@@ -1,4 +1,10 @@
-"""General-purpose utilities for environment detection, strings, iteration, and annotations."""
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
+"""Provide general-purpose utilities for environment checks, strings, iteration, and annotations."""
 
 # =============================================================================
 # Imports
@@ -38,14 +44,15 @@ def boolean(string):
     """Convert a string literal to a boolean.
 
     Args:
-        string (str): The string "True" or "False".
+        string: The string "True" or "False".
 
     Returns:
-        bool: The corresponding boolean value.
+        The corresponding boolean value.
 
     Raises:
         ValueError: If the input is not "True" or "False".
     """
+    # Normalize explicit string values to booleans.
     if string == "True":
         return True
     elif string == "False":
@@ -58,8 +65,9 @@ def is_online():
     """Check if outbound network connectivity is available.
 
     Returns:
-        bool: True if a connection to a well-known host can be made, False otherwise.
+        True if a connection to a well-known host can be made, False otherwise.
     """
+    # Probe a well-known host to infer connectivity.
     connection = None
     try:
         host = socket.gethostbyname("www.google.com")
@@ -80,10 +88,10 @@ def offline(assertion=None):
     to False, an online connectivity check is performed before updating the status.
 
     Args:
-        assertion (bool | None): Desired offline status. If None, the current status is returned.
+        assertion: Desired offline status. If None, the current status is returned.
 
     Returns:
-        bool: Current offline status.
+        Current offline status.
     """
     if assertion is not None:
         if assertion is False:
@@ -99,6 +107,7 @@ def offline(assertion=None):
     try:
         return boolean(os.environ["OFFLINE"])
     except KeyError:
+        # Default to offline if connectivity is unavailable.
         which = not is_online()
         os.environ["OFFLINE"] = str(which)
         return which
@@ -108,7 +117,7 @@ def local_runtime() -> bool:
     """Indicate whether the application is running locally.
 
     Returns:
-        bool: True if a local runtime is detected, False otherwise.
+        True if a local runtime is detected, False otherwise.
     """
     return bool(os.getenv("IS_RUNNING_LOCALLY"))
 
@@ -124,13 +133,14 @@ def is_close(a, b, tolerance=1e-9):
     """Test near-equality of two numbers within a tolerance.
 
     Args:
-        a (float): First value.
-        b (float): Second value.
-        tolerance (float, optional): Maximum allowed absolute difference. Defaults to 1e-9.
+        a: First value.
+        b: Second value.
+        tolerance: Maximum allowed absolute difference. Defaults to 1e-9.
 
     Returns:
-        bool: True if the absolute difference is less than tolerance.
+        True if the absolute difference is less than tolerance.
     """
+    # Use absolute difference to validate near-equality.
     return abs(a - b) < tolerance
 
 # endregion
@@ -145,11 +155,11 @@ def batched(iterable, n: int):
     """Yield fixed-size batches from an iterable.
 
     Args:
-        iterable (Iterable): Source of items.
-        n (int): Batch size. Must be at least 1.
+        iterable: Source of items.
+        n: Batch size. Must be at least 1.
 
     Yields:
-        tuple: Tuples of up to n items from the iterable.
+        Tuples of up to n items from the iterable.
 
     Raises:
         ValueError: If n is less than 1.
@@ -166,13 +176,14 @@ def subclasses(cls, depth: int = -1, strict: bool = True) -> list[type]:
     """Recursively get all subclasses of a class up to a given inheritance depth.
 
     Args:
-        cls (type): The base class.
-        depth (int, optional): Maximum depth to traverse. Defaults to -1 for no limit.
-        strict (bool, optional): If True, exclude cls itself from the results. Defaults to True.
+        cls: The base class.
+        depth: Maximum depth to traverse. Defaults to -1 for no limit.
+        strict: If True, exclude cls itself from the results. Defaults to True.
 
     Returns:
-        list[type]: All discovered subclasses.
+        All discovered subclasses.
     """
+    # Walk the inheritance tree depth-first.
     all = []
     if not strict:
         all.append(cls)
@@ -192,14 +203,15 @@ def subclasses(cls, depth: int = -1, strict: bool = True) -> list[type]:
 
 
 def camel_to_snake(s: str) -> str:
-    """Converts a camel case string to a snake case string.
+    """Convert a camel case string to a snake case string.
 
     Args:
-        s (str): string to convert.
+        s: String to convert.
 
     Returns:
-        str: converted string.
+        The converted string.
     """
+    # Transform common CamelCase patterns to snake_case.
     s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", s)
     s2 = re.sub("__([A-Z])", r"_\1", s1)
     s3 = re.sub("([a-z0-9])([A-Z])", r"\1_\2", s2)
@@ -207,14 +219,15 @@ def camel_to_snake(s: str) -> str:
 
 
 def pluralize(s: str) -> str:
-    """Pluralizes a string.
+    """Pluralize a string.
 
     Args:
-        s (str): string to pluralize.
+        s: String to pluralize.
 
     Returns:
-        str: pluralized string.
+        The pluralized string.
     """
+    # Use inflect for proper pluralization when available.
     if isinstance(s, Word):
         if not IE.singular_noun(s):
             return IE.plural(s)
@@ -222,16 +235,17 @@ def pluralize(s: str) -> str:
 
 
 def type_name_to_collection_name(name: str) -> str:
-    """Converts a class name to a collection name.
+    """Convert a class name to a collection name.
 
     Effectively converts CamelCase to snake_case and adds plural form.
 
     Args:
-        name (str): A class name presumed to be CamelCase.
+        name: A class name presumed to be CamelCase.
 
     Returns:
-        str: A collection name using snake_case and plural form.
+        A collection name using snake_case and plural form.
     """
+    # Convert to snake_case and pluralize the final segment.
     snake = camel_to_snake(name)
     *prefixes, last_word = snake.split("_")
     if isinstance(last_word, Word):
@@ -253,8 +267,9 @@ def unwrap_optional_type(type_hint: Any) -> tuple[Any, bool]:
         type_hint: The type annotation to inspect.
 
     Returns:
-        tuple[Any, bool]: The base type (or None) and whether the annotation is nullable.
+        The base type (or None) and whether the annotation is nullable.
     """
+    # Inspect union arguments to detect None members.
     if type_hint is None:
         return None, False
     args = get_args(type_hint)
@@ -272,8 +287,9 @@ def unwrap_classvar_type(type_hint: Any) -> tuple[Any, bool]:
         type_hint: The type annotation to inspect.
 
     Returns:
-        tuple[Any, bool]: The base type (or None) and whether the annotation is a ClassVar.
+        The base type (or None) and whether the annotation is a ClassVar.
     """
+    # Detect ClassVar origins and extract their payload types.
     if get_origin(type_hint) is ClassVar:
         args = get_args(type_hint)
         base_type = args[0] if args else None
@@ -295,15 +311,16 @@ def workdir(path: Path | str, *, mkdir: bool = True) -> Generator[Path, None, No
     Optionally creates the directory before entering.
 
     Args:
-        path (Path | str): Target directory.
-        mkdir (bool, optional): Whether to create the directory if it does not exist. Defaults to True.
+        path: Target directory.
+        mkdir: Whether to create the directory if it does not exist. Defaults to True.
 
     Yields:
-        Path: The path of the active working directory.
+        The path of the active working directory.
 
     Raises:
         ValueError: If the path exists but is not a directory.
     """
+    # Resolve and optionally create the directory before entering.
     path = Path(path)
     cwd = Path.cwd()
     if mkdir:
@@ -329,11 +346,12 @@ def is_package_init(module: ModuleType):
     """Return whether the module corresponds to a package __init__ file.
 
     Args:
-        module (ModuleType): Module to inspect.
+        module: Module to inspect.
 
     Returns:
-        bool: True if the module file name is '__init__.py', False otherwise.
+        True if the module file name is '__init__.py', False otherwise.
     """
+    # Guard against modules without a file path.
     if not (file_path := getattr(module, '__file__', None)):
         return False
     path = Path(file_path)

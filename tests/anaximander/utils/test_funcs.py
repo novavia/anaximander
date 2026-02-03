@@ -1,5 +1,16 @@
-"""Tests for utility helpers: subclasses discovery, case conversion, pluralization,
-collection-name derivation, and package __init__ detection."""
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
+"""Exercise utility helpers for subclasses, naming, and module detection."""
+
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
+
 import sys
 
 import anaximander as nx
@@ -11,21 +22,35 @@ from anaximander.utils.funcs import (
     type_name_to_collection_name,
 )
 
+# endregion
+
+# =============================================================================
+# Test scaffolding
+# =============================================================================
+# region Test scaffolding
+
 
 class C0:
-    pass
+    """Base class for subclass enumeration tests."""
 
 
 class C1(C0):
-    pass
+    """First-level subclass for enumeration tests."""
 
 
 class D1(C0):
-    pass
+    """Sibling subclass for enumeration tests."""
 
 
 class D2(D1):
-    pass
+    """Second-level subclass for enumeration tests."""
+
+# endregion
+
+# =============================================================================
+# Tests
+# =============================================================================
+# region Tests
 
 
 def test_subclasses():
@@ -66,3 +91,5 @@ def test_is_package_init():
     this_module = sys.modules[__name__]
     assert not is_package_init(this_module)
     assert is_package_init(nx)
+
+# endregion

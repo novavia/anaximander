@@ -1,4 +1,10 @@
-"""Utilities for creating and managing Anaximander projects."""
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
+"""Provide helpers for creating and managing Anaximander projects."""
 
 # =============================================================================
 # Imports
@@ -38,13 +44,16 @@ PROJECT_TEMPLATE = NXPATH / "config/projects/project_template"
 
 
 class ProjectConfig(Config):
+    """Declare configuration for project scaffolding."""
     name: str
 
     @property
     def slug(self) -> str:
-        return self.name.lower().replace(' ', '_').replace('-', '_')
+        """Return the normalized slug for the project name."""
+        return self.name.lower().replace(" ", "_").replace("-", "_")
 
     def cookiecutter_context(self):
+        """Return the Cookiecutter context for project scaffolding."""
         return {
             "project_name": self.name,
             "project_slug": self.slug,
@@ -60,12 +69,13 @@ class ProjectConfig(Config):
 
 @attrs.define
 class Project:
-    """A class that represents an Anaximander project."""
+    """Represent an Anaximander project and its on-disk layout."""
 
     path: Path = attrs.field(converter=Path)
     _config: ProjectConfig | None = private_field(default=None)
 
     def __attrs_post_init__(self):
+        """Finalize initialization by registering the import path."""
         self.set_import_path()
 
     @classmethod
@@ -77,16 +87,16 @@ class Project:
         domain: str | Path | None = None,
         **kwargs,
     ) -> "Project":
-        """Creates a new Anaximander project into the specified directory.
+        """Create a new Anaximander project in the specified directory.
 
         Args:
-            project_name (str): A name for the project, which also sets the name of the project
+            project_name: A name for the project, which also sets the name of the project
                 directory. It can be capitalized, but note that the name is converted to lowercase
                 to define a top-level Python package.
-            parent_directory (str | Path | None, optional): The directory in which to create
+            parent_directory: The directory in which to create
                 the project. It can be absolute or relative to the current working directory.
                 If None (the default), then it is set to the current working directory.
-            domain (str | Path | None, optional): An optional path to either a python file
+            domain: An optional path to either a python file
                 or directory containing domain model declarations. Like parent_directory it can be
                 either absolute or relative to the current working directory.
                 Note that the name of the file or directory is ignored:
@@ -98,7 +108,10 @@ class Project:
                 Defaults to None.
 
         Returns:
-            Project: A new Anaximander project instance.
+            A new Anaximander project instance.
+
+        Raises:
+            FileNotFoundError: If the domain path does not exist.
         """
         config = ProjectConfig(name=project_name, **kwargs)
         if parent_directory is None:
@@ -110,6 +123,7 @@ class Project:
             cookiecutter(
                 PROJECT_TEMPLATE.as_posix(), no_input=True, extra_context=cookiecutter_context
             )
+        # Instantiate and persist project configuration.
         project = cls(path=parent_directory / project_name)
         config.save(project.config_path)
         if domain is not None:
@@ -126,57 +140,66 @@ class Project:
 
     @property
     def name(self):
+        """Return the project directory name."""
         return self.path.name
 
     @property
     def slug(self):
+        """Return the configured project slug."""
         return self.config.slug
 
     @property
     def config_path(self) -> Path:
+        """Return the path to the project configuration file."""
         return self.path / ".nxp"
 
     @property
     def config(self) -> ProjectConfig:
+        """Return the cached project configuration, loading if needed."""
         if not self._config:
             self._config = ProjectConfig.load(self.config_path)
         return self._config
 
     @property
     def code_path(self) -> Path:
+        """Return the project code root path."""
         return self.path / "src"
 
     @property
     def domain_source_path(self) -> Path:
+        """Return the domain package root path."""
         return self.path / "src/domain"
 
     @property
     def application_path(self) -> Path:
+        """Return the application package root path."""
         return self.path / f"src/{self.slug}"
 
     @property
     def compilation_path(self) -> Path:
+        """Return the compilation output path."""
         return self.application_path / "api"
 
     def set_import_path(self):
-        """Sets the project's code path on the interpreter's import path."""
+        """Set the project's code path on the interpreter's import path."""
         if (code_path := self.code_path).exists():
             if code_path not in sys.path:
                 sys.path.insert(0, code_path.as_posix())
 
     @classmethod
     def is_project_directory(cls, path: Path | str) -> bool:
+        """Return whether the given path is a project directory."""
         return (Path(path) / ".nxp").exists()
 
     @classmethod
     def _collect_from_directory(cls, directory: Path) -> list[Path]:
-        """Primitive method for collect_domain.
+        """Collect Python module paths from a directory tree.
 
         Args:
-            directory (Path): The directory containing python files to import.
+            directory: The directory containing python files to import.
 
         Returns:
-            list[Path]: A list of module file paths.
+            A list of module file paths.
         """
         module_paths = []
         subdirectories = directory.glob("*/")
@@ -188,7 +211,7 @@ class Project:
         return module_paths
 
     def collect_domain(self) -> list[Path]:
-        """Collects modules from the source domain directory."""
+        """Collect modules from the source domain directory."""
         if not self.domain_source_path.exists():
             relative_path = self.domain_source_path.relative_to(self.path)
             msg = f"Project {self.name} does not contain the requisite {relative_path} directory."
@@ -199,15 +222,15 @@ class Project:
     def _import_from_directory(
         cls, directory: Path, package: str | None = None
     ) -> list[NxModuleType]:
-        """Primitive function for import_domain.
+        """Import modules recursively from a directory tree.
 
         Args:
-            directory (Path): The directory containing python files to import.
-            package (str | None, optional): Optional parent package, possibly nested.
+            directory: The directory containing python files to import.
+            package: Optional parent package, possibly nested.
                 Defaults to None.
 
         Returns:
-            list[NxModuleType]: A list of imported modules.
+            A list of imported modules.
         """
         modules = []
         subdirectories = directory.glob("*/")
@@ -224,12 +247,13 @@ class Project:
             if package is not None:
                 module_name = "." + module_name
             module: NxModuleType = cast(NxModuleType, import_module(module_name, package=package))
+            # Preserve module AST for AML analysis.
             module.__ast__ = module_ast
             modules.append(module)
         return modules
 
     def import_domain(self) -> list[NxModuleType]:
-        """Imports the modules in the project's src/domain directory."""
+        """Import the modules in the project's src/domain directory."""
         if not self.domain_source_path.exists():
             relative_path = self.domain_source_path.relative_to(self.path)
             msg = f"Project {self.name} does not contain the requisite {relative_path} directory."
@@ -239,7 +263,7 @@ class Project:
         return modules
 
     def compile(self, *compilations: str, **kwargs):
-        """Compiles the project using the specified compilers."""
+        """Compile the project using the specified compilers."""
         return None
 
 # endregion

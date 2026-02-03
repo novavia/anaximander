@@ -1,8 +1,15 @@
-"""Archetypes for AML models."""
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
+"""Define archetypes and helpers for AML models."""
 
 # =============================================================================
 # Imports
 # =============================================================================
+# region Imports
 
 from typing import TypeAliasType, dataclass_transform, get_args, get_origin
 
@@ -22,9 +29,12 @@ from .declarators import (
 from .object import Object
 from .prototype import prototype
 
+# endregion
+
 # =============================================================================
 # Model archetype
 # =============================================================================
+# region Model archetype
 
 
 @archetype
@@ -41,7 +51,15 @@ class Model(Object):
 
     @classmethod
     def _validate_nxfields(cls, owner: prototype) -> None:
-        """Validate nxfield bindings for a concrete model owner."""
+        """Validate nxfield bindings for a concrete model owner.
+
+        Args:
+            owner: Prototype instance to validate.
+
+        Raises:
+            TypeError: If bindings are invalid or reference incompatible fields.
+            KeyError: If bindings reference missing fields.
+        """
         bindings = owner.__merged_bindings__
         declarators = owner.__merged_declarators__
         if not bindings.nxfield:
@@ -70,7 +88,14 @@ class Model(Object):
 
     @classmethod
     def _validate_data_fields(cls, owner: prototype) -> None:
-        """Validate data field annotations for a concrete model owner."""
+        """Validate data field annotations for a concrete model owner.
+
+        Args:
+            owner: Prototype instance to validate.
+
+        Raises:
+            TypeError: If data field annotations violate AML expectations.
+        """
         declarators = owner.__merged_declarators__
         field_registry = declarators.field
 
@@ -145,3 +170,5 @@ class Model(Object):
         # Owner-aware validation for declarators that reference model fields or types.
         cls._validate_nxfields(owner)
         cls._validate_data_fields(owner)
+
+# endregion

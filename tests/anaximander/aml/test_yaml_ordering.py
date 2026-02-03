@@ -1,13 +1,46 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
+"""Exercise declarator ordering in AML YAML serialization."""
+
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
+
 from __future__ import annotations
 
-from anaximander.aml.declarators import BackLinkProtodescriptor, DataProtodescriptor, LinkProtodescriptor
+from anaximander.aml.declarators import (
+    BackLinkProtodescriptor,
+    DataProtodescriptor,
+    LinkProtodescriptor,
+)
+
+# endregion
+
+# =============================================================================
+# Helpers
+# =============================================================================
+# region Helpers
 
 
 def _keys(obj) -> list[str]:
+    """Return ordered serialization keys for a declarator."""
     return list(obj.to_dict().keys())
+
+# endregion
+
+# =============================================================================
+# Tests
+# =============================================================================
+# region Tests
 
 
 def test_data_protodescriptor_ordering():
+    """Ensure data protodescriptor ordering matches expected YAML serialization."""
     expected = [
         "name",
         "owner",
@@ -49,6 +82,7 @@ def test_data_protodescriptor_ordering():
 
 
 def test_link_protodescriptor_ordering():
+    """Ensure link protodescriptor ordering matches expected YAML serialization."""
     expected = [
         "name",
         "owner",
@@ -75,6 +109,7 @@ def test_link_protodescriptor_ordering():
 
 
 def test_backlink_protodescriptor_ordering():
+    """Ensure backlink protodescriptor ordering matches expected YAML serialization."""
     expected = [
         "name",
         "owner",
@@ -94,3 +129,5 @@ def test_backlink_protodescriptor_ordering():
     ]
     got = _keys(BackLinkProtodescriptor())
     assert got[: len(expected)] == expected
+
+# endregion

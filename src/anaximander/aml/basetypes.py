@@ -1,10 +1,28 @@
-"""This module defines base types for AML data and metadata."""
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
+"""Define base types and helpers for AML data and metadata."""
+
+# =============================================================================
+# Imports
+# =============================================================================
+# region Imports
 
 from abc import ABC
 from decimal import Decimal
 from enum import IntEnum, StrEnum
 from typing import Annotated, TypeAliasType, cast, get_args, get_origin
 from uuid import UUID
+
+# endregion
+
+# =============================================================================
+# Type aliases
+# =============================================================================
+# region Type aliases
 
 type PyScalar = (
     Decimal
@@ -17,6 +35,15 @@ type PyScalar = (
     | int
     | str
 )
+
+
+# endregion
+
+# =============================================================================
+# Helper functions
+# =============================================================================
+# region Helper functions
+
 
 def _type_alias_args(tp: object) -> tuple[object, ...]:
     """Return type arguments, unwrapping TypeAliasType when needed."""
@@ -36,8 +63,22 @@ type PyData = (
 )
 
 
+# endregion
+
+# =============================================================================
+# PyData validation helpers
+# =============================================================================
+# region PyData validation helpers
+
 def is_pydata(value: object) -> bool:
-    """Return whether a value is a valid PyData instance."""
+    """Return whether a value is a valid PyData instance.
+
+    Args:
+        value: Value to validate as PyData.
+
+    Returns:
+        True if the value conforms to PyData semantics.
+    """
     # Type objects that are valid PyScalar are accepted as metadata-like values.
     if isinstance(value, type) and value in PY_SCALAR_TYPES:
         return True
@@ -57,7 +98,14 @@ def is_pydata(value: object) -> bool:
 
 
 def is_pydata_type(tp: object) -> bool:
-    """Return whether a type annotation is a valid PyData type."""
+    """Return whether a type annotation is a valid PyData type.
+
+    Args:
+        tp: Type annotation to inspect.
+
+    Returns:
+        True if the annotation conforms to PyData semantics.
+    """
     # Unwrap type aliases to inspect the actual annotation.
     if isinstance(tp, TypeAliasType):
         return is_pydata_type(tp.__value__)
@@ -87,8 +135,16 @@ def is_pydata_type(tp: object) -> bool:
         return all(is_pydata_type(arg) for arg in get_args(tp))
     return False
 
+
 def is_metadata_type(tp: object) -> bool:
-    """Return whether a type annotation is a valid Metadata type."""
+    """Return whether a type annotation is a valid Metadata type.
+
+    Args:
+        tp: Type annotation to inspect.
+
+    Returns:
+        True if the annotation is metadata-compatible.
+    """
     # Metadata types are either Metadata subclasses or PyData types.
     if isinstance(tp, TypeAliasType):
         return is_metadata_type(tp.__value__)
@@ -98,7 +154,14 @@ def is_metadata_type(tp: object) -> bool:
 
 
 def is_pydata_container_type(tp: object) -> bool:
-    """Return whether a type annotation includes a PyData container."""
+    """Return whether a type annotation includes a PyData container.
+
+    Args:
+        tp: Type annotation to inspect.
+
+    Returns:
+        True if a container is present in the annotation.
+    """
     # Accept direct container classes or container generics.
     if isinstance(tp, TypeAliasType):
         return is_pydata_container_type(tp.__value__)
@@ -118,7 +181,14 @@ def is_pydata_container_type(tp: object) -> bool:
 
 
 def pydata_runtime_type(tp: object) -> type | None:
-    """Return the runtime container type for a PyData annotation, if any."""
+    """Return the runtime container type for a PyData annotation, if any.
+
+    Args:
+        tp: Type annotation to inspect.
+
+    Returns:
+        The runtime container type, if it can be determined.
+    """
     # Unwrap type aliases to inspect the actual annotation.
     if isinstance(tp, TypeAliasType):
         return pydata_runtime_type(tp.__value__)
@@ -142,12 +212,29 @@ def pydata_runtime_type(tp: object) -> type | None:
         return next(iter(runtime_types)) if len(runtime_types) == 1 else None
     return None
 
+# endregion
+
+# =============================================================================
+# Metadata base
+# =============================================================================
+# region Metadata base
+
 
 class Metadata(ABC):
     """Base class for metadata and metadata-compatible data."""
 
     @classmethod
     def __subclasshook__(cls, candidate: type) -> bool:
+        """Return whether a candidate is treated as Metadata-compatible.
+
+        Args:
+            candidate: Type to test for metadata compatibility.
+
+        Returns:
+            True if the type is compatible, otherwise NotImplemented.
+        """
         if cls is Metadata and (candidate in PY_SCALAR_TYPES or candidate in (tuple, list, dict)):
             return True
         return NotImplemented
+
+# endregion

@@ -1,4 +1,10 @@
-"""Metaprogramming utilities for Anaximander."""
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
+"""Define metaprogramming utilities for Anaximander."""
 
 # =============================================================================
 # Imports
@@ -36,6 +42,7 @@ class AutoDecoratedType(type):
         Returns:
             type: The resulting class, possibly decorated.
         """
+        # Build the class and optionally apply the configured decorator.
         new_class = super().__new__(mcls, name, bases, namespace)
         if "__decorated__" in namespace:
             delattr(new_class, "__decorated__")
@@ -66,9 +73,23 @@ class classproperty[T]:
     # Use a permissive callable type so methods annotated with a concrete
     # class (e.g. def x(cls) -> int) are accepted by type checkers.
     def __init__(self, fget: Callable[..., T]) -> None:
+        """Initialize the classproperty with a getter.
+
+        Args:
+            fget: Callable that receives the owner class.
+        """
         self.fget: Callable[..., T] = fget
 
     def __get__(self, instance: Any, owner: type) -> T:
+        """Return the computed attribute from the owner class.
+
+        Args:
+            instance: Instance when accessed from an instance, or None.
+            owner: Owner class used for computation.
+
+        Returns:
+            The computed attribute value.
+        """
         # owner is the class (e.g., DataDescriptor)
         # instance is the instance if accessed via instance, or None if via class
         return self.fget(owner)
@@ -79,6 +100,7 @@ class Singleton(type):
     _instances: dict[type, object] = {}
 
     def __call__(cls, *args, **kwargs):
+        """Return the singleton instance, creating it if needed."""
         if cls not in cls._instances:
             cls._instances[cls] = super().__call__(*args, **kwargs)
         return cls._instances[cls]

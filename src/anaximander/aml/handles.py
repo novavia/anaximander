@@ -1,10 +1,15 @@
-"""Handle objects for AML declarators and metadata bindings."""
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
+"""Provide handle objects for AML declarators and metadata bindings."""
 
 # =============================================================================
 # Imports
 # =============================================================================
 # region Imports
-
 
 from collections.abc import Callable, Mapping
 from functools import update_wrapper
@@ -49,7 +54,16 @@ def _decorator_factory(
     declarator_type: type[EnumerationCallableDeclarator[Callable[..., Any]]],
     err_label: str,
 ) -> Any:
-    """Build a declarator or decorator for enumeration callables."""
+    """Build a declarator or decorator for enumeration callables.
+
+    Args:
+        *members_or_fn: Members or a callable to decorate.
+        declarator_type: Declarator type to instantiate.
+        err_label: Label used in error messages.
+
+    Returns:
+        A declarator instance or a decorator that produces one.
+    """
     if members_or_fn and callable(members_or_fn[0]):
         if len(members_or_fn) != 1:
             raise TypeError(f"{err_label} decorator cannot mix members and callable.")
@@ -61,6 +75,7 @@ def _decorator_factory(
     members = tuple(members_or_fn)
 
     def decorator(fn: Callable) -> Declarator:
+        """Decorate a callable into an enumeration declarator."""
         doc = MISSING if fn.__doc__ is None else fn.__doc__
         declarator = declarator_type(callable=fn, members=members, doc=doc)
         update_wrapper(fn, declarator, updated=(), assigned=())  # type: ignore[arg-type]
@@ -87,6 +102,7 @@ class DeclaratorHandle[DT: Declarator](metaclass=Singleton):
     __declarator_type__: type[DT]
 
     def __init_subclass__(cls) -> None:
+        """Bind handle metadata to the appropriate declarator type."""
         try:
             if "__handle__" in cls.__dict__:
                 cls.__declarator_type__ = Declarator.__handles__[cls.__handle__]
@@ -95,28 +111,35 @@ class DeclaratorHandle[DT: Declarator](metaclass=Singleton):
 
     @property
     def declarator_type(self) -> type[DT]:
-        """The declarator type for this handle."""
+        """Return the declarator type for this handle."""
         return self.__class__.__declarator_type__
 
     @property
     def handle(self) -> str:
-        """The handle name."""
+        """Return the handle name."""
         return self.__class__.__handle__
 
     def __setattr__(self, name: str, value: Any) -> None:
+        """Bind attributes as declarator bindings when used in class bodies."""
         if name.startswith("__"):
             object.__setattr__(self, name, value)
             return
         self.bind(name, value)
 
     def _require_namespace(self) -> DeclarativeNamespace:
+        """Return the active declarative namespace, or raise if absent."""
         dns = DECLARATIVE_NAMESPACE.get()
         if dns is None:
             raise RuntimeError(f"{self.handle} handle can only be used in declarative bodies.")
         return dns
 
     def bind(self, name: str, value: Any) -> None:
-        """Register a binding for a previously declared declarator."""
+        """Register a binding for a previously declared declarator.
+
+        Args:
+            name: Declarator name to bind.
+            value: Value to bind.
+        """
         dns = self._require_namespace()
         dns.register_binding(name, value, handle=self.handle)
 
@@ -126,12 +149,14 @@ class AssignableMetadescriptorHandle[DT](DeclaratorHandle[AssignableMetadescript
     __validator_type__: type[MetadataValidator | OptionValidator | NxFieldValidator]
 
     def __setattr__(self, name: str, value: Any) -> None:
+        """Bind attributes or defer to normal attribute assignment."""
         if name.startswith("__"):
             object.__setattr__(self, name, value)
         else:
             self.bind(name, value)
 
     def __setitem__(self, name: str, value: Any) -> None:
+        """Bind item assignments for supported handles."""
         if self.handle not in {"metadata", "option", "nxfield"}:
             raise KeyError(f"{self.handle} handle does not support item assignment.")
         self.bind(name, value)
@@ -147,7 +172,21 @@ class AssignableMetadescriptorHandle[DT](DeclaratorHandle[AssignableMetadescript
             doc: str | Missing = MISSING,
             config: Mapping[str, Any] | Missing = MISSING
     ) -> AssignableMetadescriptor:
-        """Declare a named declarator without binding it as a class attribute."""
+        """Declare a named declarator without binding it as a class attribute.
+
+        Args:
+            name: Declarator name to declare.
+            type: Declarator data type.
+            nullable: Whether the declarator is nullable.
+            default: Default value for the declarator.
+            factory: Factory callable for the default value.
+            validator: Optional validator callable.
+            doc: Optional documentation string.
+            config: Optional configuration mapping.
+
+        Returns:
+            The created declarator instance.
+        """
         dns = self._require_namespace()
         declarator = self.__declarator_type__(
             default=default,
@@ -168,7 +207,7 @@ class AssignableMetadescriptorHandle[DT](DeclaratorHandle[AssignableMetadescript
 
     @property
     def validator_type(self) -> type[MetadataValidator | OptionValidator | NxFieldValidator]:
-        """The validator declarator type for this handle, if any."""
+        """Return the validator declarator type for this handle, if any."""
         return self.__validator_type__
 
     def validator(self, *members_or_fn):
@@ -186,14 +225,25 @@ class MetadataHandle(AssignableMetadescriptorHandle[MetadataDeclarator]):
     __validator_type__ = MetadataValidator
 
     def __call__(
-            self,
-            default: Any = MISSING,
-            factory: Callable[[], Any] | Missing = MISSING,
-            validator: Callable[[Any], bool] | Missing = MISSING,
-            doc: str | Missing = MISSING,
-            config: Mapping[str, Any] | Missing = MISSING,
+        self,
+        default: Any = MISSING,
+        factory: Callable[[], Any] | Missing = MISSING,
+        validator: Callable[[Any], bool] | Missing = MISSING,
+        doc: str | Missing = MISSING,
+        config: Mapping[str, Any] | Missing = MISSING,
     ) -> Any:
-        """Declares domain metadata for use in class assignments."""
+        """Declare domain metadata for use in class assignments.
+
+        Args:
+            default: Default metadata value.
+            factory: Factory callable for default values.
+            validator: Optional validator callable.
+            doc: Optional documentation string.
+            config: Optional configuration mapping.
+
+        Returns:
+            A metadata declarator instance.
+        """
         return MetadataDeclarator(
             domain=True,
             default=default,
@@ -204,17 +254,32 @@ class MetadataHandle(AssignableMetadescriptorHandle[MetadataDeclarator]):
         )
 
     def declare(
-            self,
-            name: str, *,
-            type: type,
-            nullable: bool = False,
-            default: Any = MISSING,
-            factory: Callable[[], Any] | Missing = MISSING,
-            validator: Callable[[Any], bool] | Missing = MISSING,
-            doc: str | Missing = MISSING,
-            config: Mapping[str, Any] | Missing = MISSING
+        self,
+        name: str,
+        *,
+        type: type,
+        nullable: bool = False,
+        default: Any = MISSING,
+        factory: Callable[[], Any] | Missing = MISSING,
+        validator: Callable[[Any], bool] | Missing = MISSING,
+        doc: str | Missing = MISSING,
+        config: Mapping[str, Any] | Missing = MISSING,
     ) -> MetadataDeclarator:
-        """Declare a named metadata declarator with a fixed type."""
+        """Declare a named metadata declarator with a fixed type.
+
+        Args:
+            name: Declarator name to register.
+            type: Declared metadata type.
+            nullable: Whether the metadata is nullable.
+            default: Default value for the metadata.
+            factory: Factory callable for default values.
+            validator: Optional validator callable.
+            doc: Optional documentation string.
+            config: Optional configuration mapping.
+
+        Returns:
+            The created metadata declarator.
+        """
         declarator = cast(
             MetadataDeclarator,
             super()._declare(
@@ -238,17 +303,32 @@ class OptionHandle(AssignableMetadescriptorHandle[OptionDeclarator]):
     __validator_type__ = OptionValidator
 
     def declare(
-            self,
-            name: str, *,
-            type: type,
-            nullable: bool = False,
-            default: Any = MISSING,
-            factory: Callable[[], Any] | Missing = MISSING,
-            validator: Callable[[Any], bool] | Missing = MISSING,
-            doc: str | Missing = MISSING,
-            config: Mapping[str, Any] | Missing = MISSING
+        self,
+        name: str,
+        *,
+        type: type,
+        nullable: bool = False,
+        default: Any = MISSING,
+        factory: Callable[[], Any] | Missing = MISSING,
+        validator: Callable[[Any], bool] | Missing = MISSING,
+        doc: str | Missing = MISSING,
+        config: Mapping[str, Any] | Missing = MISSING,
     ) -> OptionDeclarator:
-        """Declare a named nxfield with a fixed string type."""
+        """Declare a named option declarator with a fixed type.
+
+        Args:
+            name: Declarator name to register.
+            type: Declared option type.
+            nullable: Whether the option is nullable.
+            default: Default value for the option.
+            factory: Factory callable for default values.
+            validator: Optional validator callable.
+            doc: Optional documentation string.
+            config: Optional configuration mapping.
+
+        Returns:
+            The created option declarator.
+        """
         declarator = cast(
             OptionDeclarator,
             super()._declare(
@@ -271,13 +351,24 @@ class NxFieldHandle(AssignableMetadescriptorHandle[NxFieldDeclarator]):
     __validator_type__ = NxFieldValidator
 
     def declare(
-            self,
-            name: str, *,
-            fieldtype: type,
-            doc: str | Missing = MISSING,
-            config: Mapping[str, Any] | Missing = MISSING
+        self,
+        name: str,
+        *,
+        fieldtype: type,
+        doc: str | Missing = MISSING,
+        config: Mapping[str, Any] | Missing = MISSING,
     ) -> NxFieldDeclarator:
-        """Declare a named nxfield with a fixed string type."""
+        """Declare a named nxfield with a fixed string type.
+
+        Args:
+            name: Declarator name to register.
+            fieldtype: Expected field type.
+            doc: Optional documentation string.
+            config: Optional configuration mapping.
+
+        Returns:
+            The created nxfield declarator.
+        """
         declarator = cast(
             NxFieldDeclarator,
             super()._declare(
@@ -343,7 +434,39 @@ class DataHandle(FieldHandle[DataProtodescriptor]):
         doc: str | Missing = MISSING,
         config: Mapping[str, Any] | Missing = MISSING,
     ) -> Any:
-        """Construct a data protodescriptor with current AML field semantics."""
+        """Construct a data protodescriptor with current AML field semantics.
+
+        Args:
+            default: Default value to assign.
+            factory: Factory callable for default values.
+            typekey: Whether the field participates in type-keying.
+            required: Whether the field is required.
+            load: Load strategy for related data.
+            unique: Whether the field is unique.
+            index: Whether the field is indexed.
+            key: Whether the field is part of a key.
+            sequence: Whether the field is sequence-indexed.
+            timestamp: Whether the field is a timestamp.
+            start_time: Whether the field is a start time.
+            end_time: Whether the field is an end time.
+            period: Whether the field is a period.
+            location: Whether the field is a location.
+            geom: Whether the field is a geometry field.
+            validator: Optional validator callable.
+            gt: Lower bound (strict).
+            ge: Lower bound (inclusive).
+            lt: Upper bound (strict).
+            le: Upper bound (inclusive).
+            min_length: Minimum length constraint.
+            max_length: Maximum length constraint.
+            pattern: Regex pattern constraint.
+            repr: Representation control.
+            doc: Optional documentation string.
+            config: Optional configuration mapping.
+
+        Returns:
+            The created data protodescriptor.
+        """
         return DataProtodescriptor(
             default=default,
             factory=factory,
@@ -397,7 +520,22 @@ class LinkHandle(FieldHandle[LinkProtodescriptor]):
         doc: str | Missing = MISSING,
         config: Mapping[str, Any] | Missing = MISSING,
     ) -> Any:
-        """Construct a link protodescriptor with current AML field semantics."""
+        """Construct a link protodescriptor with current AML field semantics.
+
+        Args:
+            required: Whether the link is required.
+            on_delete: Deletion behavior for linked entities.
+            load: Load strategy for related data.
+            unique: Whether the link is unique.
+            key: Whether the link is part of a key.
+            validator: Optional validator callable.
+            repr: Representation control.
+            doc: Optional documentation string.
+            config: Optional configuration mapping.
+
+        Returns:
+            The created link protodescriptor.
+        """
         return LinkProtodescriptor(
             required=required,
             load=load,
@@ -426,7 +564,20 @@ class BacklinkHandle(DeclaratorHandle[BackLinkProtodescriptor]):
         doc: str | Missing = MISSING,
         config: Mapping[str, Any] | Missing = MISSING,
     ) -> Any:
-        """Construct a backlink protodescriptor with current AML field semantics."""
+        """Construct a backlink protodescriptor with current AML field semantics.
+
+        Args:
+            load: Load strategy for related data.
+            unique: Whether the backlink is unique.
+            via: Link type used for backlinking.
+            limit: Maximum number of related items.
+            repr: Representation control.
+            doc: Optional documentation string.
+            config: Optional configuration mapping.
+
+        Returns:
+            The created backlink protodescriptor.
+        """
         return BackLinkProtodescriptor(
             load=load,
             unique=unique,

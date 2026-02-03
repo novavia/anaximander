@@ -1,51 +1,71 @@
-"""Defines the Declarator class and declarative metaclass.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
 
-These artifacts form the foundation for declarative type definitions in AML.
-"""
+"""Define the declarative metaclass and namespace machinery for AML."""
 
 # =============================================================================
 # Imports
 # =============================================================================
 # region Imports
 
-
 import ast
 from abc import abstractmethod
 from contextvars import ContextVar, Token
 from itertools import chain, count
-from typing import (
-    Any,
-    ClassVar,
-    Optional,
-)
-
-from attrs import define
+from typing import Any, ClassVar
 
 from .declarators import DeclarativeTypeKey, Declarator
 
 # endregion
 
 # =============================================================================
-# Declarative metaclass
+# Namespace state
 # =============================================================================
-# region Declarative metaclass
+# region Namespace state
 
+# Context variable holding the current declarative namespace.
+DECLARATIVE_NAMESPACE: ContextVar["DeclarativeNamespace | None"] = ContextVar(
+    "DECLARATIVE_NAMESPACE",
+    default=None,
+)
 
-# Context variable holding the current declarative namespace
-DECLARATIVE_NAMESPACE: ContextVar[Optional["DeclarativeNamespace"]] = ContextVar("DECLARATIVE_NAMESPACE", default=None)  # noqa
+# endregion
+
+# =============================================================================
+# Declarative namespace
+# =============================================================================
+# region Declarative namespace
 
 
 class DeclarativeNamespace(dict[str, Any]):
-    """Collects class body declarations for a declarative type."""
+    """Collect class body declarations for declarative types."""
     context_token: Token
 
     def __init__(self, *, strict: bool = True, bindable_domain_names: set[str] | None = None):
+        """Initialize the namespace with declarator/binding tracking.
+
+        Args:
+            strict: Whether to enforce strict declaration rules.
+            bindable_domain_names: Names that may be bound directly in the namespace.
+        """
         super().__init__(__raw_declarators__=dict(), __raw_bindings__=dict())
         self.strict = strict
         self.bindable_domain_names = bindable_domain_names or set()
         self.declaration_index = count(start=1)
 
     def __setitem__(self, key: str, value: Any) -> None:
+        """Register declarations or bindings before assignment.
+
+        Args:
+            key: The name being assigned.
+            value: The assigned object or declarator.
+
+        Raises:
+            RuntimeError: If the name already exists in the namespace.
+        """
         if key in self:
             raise RuntimeError(f"Cannot redefine name '{key}' in declarative namespace.")
         elif isinstance(value, Declarator):
@@ -55,6 +75,7 @@ class DeclarativeNamespace(dict[str, Any]):
         super().__setitem__(key, value)
 
     def __delitem__(self, key: Any) -> None:
+        """Prevent deletion within declarative namespaces."""
         raise RuntimeError("Cannot delete items from a declarative namespace.")
 
     def register_declarator(self, declarator: Declarator, *, name: str | None = None) -> None:
@@ -70,11 +91,10 @@ class DeclarativeNamespace(dict[str, Any]):
         if not isinstance(declarator, Declarator):
             raise TypeError(f"Expected a Declarator instance, got {declarator}.")
         if name is not None:
-            # sentinel to fail quick if name contains a forbidden dot
+            # Sentinel to fail fast if name contains a forbidden dot.
             if "." in name:
                 raise ValueError("Declarator names cannot contain '.'.")
-            # next we check for name conflicts, starting with a cursory lookup
-            # and then refining it at the namespace level if warranted
+            # Check for name conflicts, refined at the namespace level if needed.
             if name in (d.name for d in declarators.values()):
                 declarator_handle = declarator.handle
                 matches = [d for d in declarators.values() if d.name == name]
@@ -124,6 +144,13 @@ class DeclarativeNamespace(dict[str, Any]):
         finally:
             DECLARATIVE_NAMESPACE.reset(self.context_token)
 
+# endregion
+
+# =============================================================================
+# Declarative metaclass
+# =============================================================================
+# region Declarative metaclass
+
 
 class declarative(type):
     """Metaclass for declarative types."""
@@ -136,7 +163,7 @@ class declarative(type):
 
     @property
     def __key__(cls) -> DeclarativeTypeKey:
-        """A unique key for identifying this declarative type."""
+        """Return a unique key for identifying this declarative type."""
         module = cls.__module__
         name = cls.__qualname__
         return DeclarativeTypeKey(
@@ -178,7 +205,7 @@ class declarative(type):
                 if name is None:
                     raise RuntimeError("Unnamed declarator registered outside class assignment.")
                 declarator.__set_name__(cls, name)
-        # Runs declarator validation hooks
+        # Run declarator validation hooks.
         for declarator in cls.__raw_declarators__.values():
             declarator.__validate__()
         return cls

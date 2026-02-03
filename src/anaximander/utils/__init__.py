@@ -1,8 +1,10 @@
-"""Utilities for keyword argument mapping and structured configuration support.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
 
-Provides KwargMap for contextual kwarg resolution and ordering, and Config
-for attrs-based structured configurations compatible with OmegaConf.
-"""
+"""Provide keyword argument mapping and structured configuration utilities."""
 
 # =============================================================================
 # Imports
@@ -52,6 +54,13 @@ class KwargMap(UserDict[str, Any]):
     """
 
     def __init__(self, context: Any = None, *args: Any, **kwargs: Any):
+        """Initialize the mapping with an optional context.
+
+        Args:
+            context: Context object used for dot-prefixed lookups.
+            *args: Positional arguments forwarded to UserDict.
+            **kwargs: Initial mapping content.
+        """
         if context is None:
             caller_frame = inspect.stack()[1]
             context = caller_frame.frame.f_locals
@@ -60,6 +69,15 @@ class KwargMap(UserDict[str, Any]):
         super().__init__(*args, **kwargs)
 
     def __setitem__(self, key: str, item: Any) -> None:
+        """Set a key/value pair and keep the ordering metadata in sync.
+
+        Args:
+            key: Mapping key to set.
+            item: Value to associate with the key.
+
+        Raises:
+            TypeError: If the key is not a string or '_' is invalid.
+        """
         if not isinstance(key, str):
             raise TypeError("Keys must be strings")
         _keys: list[str] = list(self.data.get("_", []))
@@ -91,10 +109,10 @@ class KwargMap(UserDict[str, Any]):
         """Look up a key in the context.
 
         Args:
-            actual_key (str): Attribute or mapping key to resolve.
+            actual_key: Attribute or mapping key to resolve.
 
         Returns:
-            Any: The resolved value from the context.
+            The resolved value from the context.
 
         Raises:
             AttributeError: If context is not a mapping and the attribute is missing.
@@ -109,6 +127,14 @@ class KwargMap(UserDict[str, Any]):
                 raise
 
     def __getitem__(self, key: str) -> Any:
+        """Return the resolved value for a key.
+
+        Args:
+            key: Mapping key to resolve.
+
+        Returns:
+            The resolved value, including context resolution.
+        """
         try:
             value = self.data[key]
             if isinstance(value, str) and value.startswith("."):
@@ -123,6 +149,7 @@ class KwargMap(UserDict[str, Any]):
                 raise
 
     def __delitem__(self, name: str) -> None:
+        """Delete a key from the map while keeping ordering metadata in sync."""
         if name == "_":
             keys = self.data.pop("_")
             for key in keys:
@@ -142,9 +169,11 @@ class KwargMap(UserDict[str, Any]):
         self._key_sequence.remove(name)
 
     def __iter__(self):
+        """Iterate over keys in insertion or sorted order."""
         return iter(self._key_sequence)
 
     def __len__(self):
+        """Return the number of ordered keys."""
         return len(self._key_sequence)
 
     def sort(
@@ -200,9 +229,11 @@ class KwargMap(UserDict[str, Any]):
         return copy
 
     def __repr__(self):
+        """Return the debug representation of the map."""
         return f"{self.__class__.__name__}(context={self.context}, data={self.data})"
 
     def __str__(self):
+        """Return a human-readable representation of the map."""
         return ", ".join(f"{k}={v}" for k, v in self.items())
 
 # endregion
@@ -217,7 +248,7 @@ _config_decorator = functools.partial(attrs.define, auto_attribs=True)
 
 
 class ConfigType(AutoDecoratedType, decorator=_config_decorator):
-    pass
+    """Metaclass that applies attrs-based configuration defaults."""
 
 
 @dataclass_transform()
@@ -233,7 +264,7 @@ class Config(metaclass=ConfigType):
         """Return an OmegaConf structured view of this instance.
 
         Returns:
-            DictConfig: Structured configuration built from this instance.
+            Structured configuration built from this instance.
         """
         return OmegaConf.structured(self)
 
@@ -242,10 +273,10 @@ class Config(metaclass=ConfigType):
         """Load a configuration from a file.
 
         Args:
-            path (Path | str): Path to a file readable by OmegaConf.
+            path: Path to a file readable by OmegaConf.
 
         Returns:
-            C: An instance of the configuration class populated from the file.
+            An instance of the configuration class populated from the file.
         """
         path = Path(path)
         return cls(**OmegaConf.load(path))  # type: ignore
@@ -254,7 +285,7 @@ class Config(metaclass=ConfigType):
         """Save the configuration to a file.
 
         Args:
-            path (Path | str): Target path to write the configuration.
+            path: Target path to write the configuration.
         """
         path = Path(path)
         with open(path, "w") as f:
@@ -266,5 +297,6 @@ class Config(metaclass=ConfigType):
 
 
 private_field = functools.partial(attrs.field, init=False, repr=False, eq=False, order=False)
+
 
 # endregion

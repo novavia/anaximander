@@ -1,10 +1,15 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
 """Defines the Declarator class and its subclasses."""
 
 # =============================================================================
 # Imports
 # =============================================================================
 # region Imports
-
 
 import ast
 import builtins
@@ -49,13 +54,22 @@ from .basetypes import is_metadata_type
 # =============================================================================
 # region Constants
 
-
 # Helpers for Declarator classes
 DT = TypeVar("DT", bound=type)  # Declarator-type type variable
 T = TypeVar("T")
 
+
 def field(*args, z: int | None = None, **kwargs):
-    """Declare a field with optional z-order metadata."""
+    """Declare a field with optional z-order metadata.
+
+    Args:
+        *args: Positional arguments forwarded to attrs.field.
+        z: Optional z-order metadata.
+        **kwargs: Keyword arguments forwarded to attrs.field.
+
+    Returns:
+        The configured attrs field.
+    """
     metadata = dict(kwargs.pop("metadata", {}))
     if z is not None:
         metadata["z"] = z
@@ -64,7 +78,14 @@ def field(*args, z: int | None = None, **kwargs):
 
 @dataclass_transform(kw_only_default=True, field_specifiers=(field,))
 def declarator(cls: DT) -> DT:
-    """Apply attrs define for declarator classes with a preserved init signature."""
+    """Apply attrs define for declarator classes with a preserved init signature.
+
+    Args:
+        cls: Declarator class to decorate.
+
+    Returns:
+        The decorated declarator class.
+    """
     return attrs.define(cls, slots=False, frozen=True, kw_only=True, repr=False, str=False)
 
 
@@ -79,22 +100,28 @@ class _MissingSentinel:
     __slots__ = ()
 
     def __repr__(self) -> str:
+        """Return the sentinel representation."""
         return "MISSING"
 
     def __bool__(self) -> bool:
+        """Disallow truthiness for the sentinel."""
         raise TypeError("MISSING has no truth value")
 
     def __eq__(self, other: object) -> bool:
+        """Return identity equality for the sentinel."""
         return self is other
 
     def __ne__(self, other: object) -> bool:
+        """Return identity inequality for the sentinel."""
         return self is not other
 
     def __hash__(self) -> int:
+        """Return a stable hash for the sentinel."""
         return id(self)
 
     def __reduce__(self):
-        # Ensures singleton behavior across pickling
+        """Return reducer that preserves singleton behavior."""
+        # Ensures singleton behavior across pickling.
         return "MISSING"
 
 Missing: TypeAlias = _MissingSentinel
@@ -106,20 +133,25 @@ MISSING = _MissingSentinel()
 def _register_aml_yaml_declarators() -> None:
     """Register YAML handlers for declarators and missing sentinel."""
     global register_yaml_type
+
     def register_yaml_type(name: str, type_: type) -> None:
         """Register a custom type name for YAML resolution."""
         nx_register_type(name, type_)
 
     def _repr_declarator(dumper, obj: "Declarator"):
+        """Represent declarators as scalar references."""
         return dumper.represent_scalar("tag:yaml.org,2002:str", repr(obj))
 
     def _repr_missing(dumper, obj: Missing):
+        """Represent the missing sentinel as a scalar."""
         return dumper.represent_scalar("tag:yaml.org,2002:str", "MISSING")
 
     def _repr_mappingproxy(dumper, obj: MappingProxyType):
+        """Represent mapping proxy values as standard mappings."""
         return dumper.represent_mapping("tag:yaml.org,2002:map", dict(obj))
 
     def _construct_missing(loader, node):
+        """Construct the missing sentinel from a YAML node."""
         loader.construct_scalar(cast(yaml.ScalarNode, node))
         return MISSING
 
@@ -132,17 +164,18 @@ def _register_aml_yaml_declarators() -> None:
 
 
 def is_missing(value: object) -> TypeGuard[Missing]:
-    """Whether a value is the MISSING sentinel."""
+    """Return whether a value is the MISSING sentinel."""
     return value is MISSING
 
+
 def is_not_missing(value: T | Missing) -> TypeGuard[T]:
-    """Whether a value is not the MISSING sentinel."""
+    """Return whether a value is not the MISSING sentinel."""
     return value is not MISSING
 
 
 # Helper functions for declarator hooks
 def _tighten_type(base: type | None, override: type | None) -> bool:
-    """Whether a type override is a monotone tightening."""
+    """Return whether a type override is a monotone tightening."""
     if base is None or override is None:
         return True
     try:
@@ -152,26 +185,26 @@ def _tighten_type(base: type | None, override: type | None) -> bool:
 
 
 def _tighten_nullable(base: bool | None, override: bool | None) -> bool:
-    """Whether a nullable override is monotone tightening."""
+    """Return whether a nullable override is monotone tightening."""
     if base is None or override is None:
         return True
     return not (base is False and override is True)
 
 
 def _tighten_classvar(base: bool | None, override: bool | None) -> bool:
-    """Whether a classvar override preserves classvar semantics."""
+    """Return whether a classvar override preserves classvar semantics."""
     if base is None or override is None:
         return True
     return base == override
 
 
 def _tighten_bool(base: bool, override: bool) -> bool:
-    """Whether a boolean override is monotone tightening."""
+    """Return whether a boolean override is monotone tightening."""
     return not base or override
 
 
 def _tighten_bound_value(value: Any, previous: Any) -> bool:
-    """Whether a bound value is a monotone tightening of its predecessor."""
+    """Return whether a bound value is a monotone tightening of its predecessor."""
     if isinstance(previous, type) and isinstance(value, type):
         return _tighten_type(previous, value)
     return value == previous
@@ -197,7 +230,7 @@ def _upper_bound(lt: Real | Missing, le: Real | Missing) -> tuple[Real, bool] | 
 
 def _tighten_lower(base_gt: Real | Missing, base_ge: Real | Missing,
                    new_gt: Real | Missing, new_ge: Real | Missing) -> bool:
-    """Whether the lower-bound constraint is monotonically tightened."""
+    """Return whether the lower-bound constraint is monotonically tightened."""
     base = _lower_bound(base_gt, base_ge)
     new = _lower_bound(new_gt, new_ge)
     if base is None or new is None:
@@ -213,7 +246,7 @@ def _tighten_lower(base_gt: Real | Missing, base_ge: Real | Missing,
 
 def _tighten_upper(base_lt: Real | Missing, base_le: Real | Missing,
                    new_lt: Real | Missing, new_le: Real | Missing) -> bool:
-    """Whether the upper-bound constraint is monotonically tightened."""
+    """Return whether the upper-bound constraint is monotonically tightened."""
     base = _upper_bound(base_lt, base_le)
     new = _upper_bound(new_lt, new_le)
     if base is None or new is None:
@@ -259,7 +292,16 @@ class DeclaratorKey:
 class DeclaratorConfig(Protocol):
     """A protocol for extending declarator configuration."""
 
-    def resolve(self, **context) -> Mapping[str, Any]: ...
+    def resolve(self, **context) -> Mapping[str, Any]:
+        """Resolve configuration values against a context mapping.
+
+        Args:
+            **context: Context values used to resolve configuration entries.
+
+        Returns:
+            A mapping of resolved configuration values.
+        """
+        ...
 
 
 type ConfigValue = Any | DeclaratorConfig | Mapping[str, ConfigValue]

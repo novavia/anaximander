@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright © 2024–2026 Novavia Solutions, LLC
+
 """Finalize AML modules after import.
 
 This module centralizes AML's module-finalization behavior. It parses the module
@@ -25,11 +31,11 @@ from ..utils.funcs import unwrap_classvar_type, unwrap_optional_type
 from ..utils.yaml import NX_YAML_TYPES, nx_register_constructor
 from .data import Data
 from .declarators import (
+    MISSING,
     AnnotatableDeclarator,
     Declarator,
     EnumerationCallableDeclarator,
     FieldGroupProtodescriptor,
-    MISSING,
     ParserDeclarator,
     PrototypeValidator,
     ValidatorDeclarator,
