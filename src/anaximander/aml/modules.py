@@ -6,11 +6,14 @@
 
 """Finalize AML modules after import.
 
-This module centralizes AML's module-finalization behavior. It parses the module
-source, enforces import-safety through an AST allow list, binds AST nodes to
-declarators and prototypes, resolves forward references, and validates core type
-roles. The logic is designed to be reusable by projects and compilers while
-remaining self-contained inside AML.
+Module finalization is the bridge between declarative syntax and executable
+prototype semantics. This module parses module source, enforces a strict AST
+allow list, binds AST nodes to declarators and prototypes, resolves forward
+references, and validates core archetype/trait/prototype invariants.
+
+It also registers prototypes into a module registry used by YAML loaders and
+compiler pipelines, ensuring that declarative models can be referenced by
+qualified names across project boundaries.
 """
 
 # =============================================================================

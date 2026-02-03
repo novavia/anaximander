@@ -4,7 +4,18 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Defines the Declarator class and its subclasses."""
+"""Define declarators, protodescriptors, and metadescriptors for AML.
+
+Declarators are the core semantic building blocks of AML: they capture the
+metadata, field, and validation contracts that declarative class bodies express.
+This module defines the base declarator hierarchy, the metadescriptors that live
+under the ``nx`` inner interface, and the protodescriptors that materialize
+instance-level fields such as data and links.
+
+The declarator z-ordering encoded here drives manifest serialization and the
+ordering of handle signatures. It therefore acts as a source of truth for the
+user-facing DSL surface and for downstream compiler expectations.
+"""
 
 # =============================================================================
 # Imports

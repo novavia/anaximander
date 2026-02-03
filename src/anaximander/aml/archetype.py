@@ -4,7 +4,13 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Declare the archetype decorator for AML prototype classes."""
+"""Declare the archetype decorator for AML prototype classes.
+
+Archetypes define the root behavioral contracts that concrete AML prototypes
+inherit. The decorator assigns the archetype role, wires metadata used by the
+prototype metaclass, and merges archetype-level declarator types so that
+downstream subclasses inherit the correct declarator surface.
+"""
 
 # =============================================================================
 # Imports

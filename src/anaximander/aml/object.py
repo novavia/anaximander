@@ -4,7 +4,11 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Define the base AML object archetype."""
+"""Define the base AML object archetype.
+
+``Object`` is the foundational archetype in AML. It establishes the minimal
+prototype contract on which all other archetypes (data, model, traits) build.
+"""
 
 # =============================================================================
 # Imports

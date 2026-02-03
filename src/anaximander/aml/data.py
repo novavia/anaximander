@@ -4,7 +4,15 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Define AML data archetypes and traits."""
+"""Define AML data archetypes and traits.
+
+Data archetypes represent the elemental scalar types that model fields are built
+from. This module defines the core ``Data`` hierarchy, including scalar concrete
+types and the ``Measurement`` trait/archetype used to attach physical units.
+
+These archetypes are intentionally small but form the base vocabulary for field
+typing and for declarator validation across the AML model layer.
+"""
 
 # =============================================================================
 # Imports

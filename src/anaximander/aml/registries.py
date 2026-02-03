@@ -4,7 +4,16 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Provide registry implementations for AML declarators, bindings, and modules."""
+"""Provide registry implementations for AML declarators, bindings, and modules.
+
+Registries are the in-memory catalog for declarators and their bound values.
+They make declarative types queryable by name, handle, and namespace, and they
+power resolution of AML types across modules and projects.
+
+This module defines the base registry abstractions, declarator/binding registries,
+and multi-registry coordination that the prototype system and YAML serialization
+rely on.
+"""
 
 # =============================================================================
 # Imports

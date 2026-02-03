@@ -4,7 +4,12 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Declare the trait decorator for AML prototype classes."""
+"""Declare the trait decorator for AML prototype classes.
+
+Traits are mixins that contribute declarators and behavior to prototypes while
+remaining distinct from archetypes. The trait decorator enforces the role rules
+and blocks protodescriptor declarations that would violate trait semantics.
+"""
 
 # =============================================================================
 # Imports

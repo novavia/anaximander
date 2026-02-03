@@ -4,7 +4,13 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Define base types and helpers for AML data and metadata."""
+"""Define base types and helpers for AML data and metadata.
+
+This module captures the admissible Python-level scalar and collection types
+used in AML annotations and metadata. It also provides runtime validation helpers
+for PyData and metadata compatibility, which are referenced by declarators and
+type-checking logic elsewhere in the AML stack.
+"""
 
 # =============================================================================
 # Imports

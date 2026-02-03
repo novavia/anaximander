@@ -4,7 +4,26 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Provide handle objects for AML declarators and metadata bindings."""
+"""Provide AML declarator handles that implement the surface DSL.
+
+This module defines the singleton handle objects (``nx.data``, ``nx.link``,
+``nx.backlink``, ``nx.meta``, ``nx.option``, ``nx.nxfield``, ``nx.parser``,
+``nx.validator``) that developers use inside declarative class bodies. Each
+handle bridges AML syntax to declarator instances by registering declarations
+in the active declarative namespace and binding values to those declarations.
+
+Handles encode the contract for how declarator arguments map to declarator
+fields, including ordering, defaults, and validation hooks. They are the main
+UX surface for AML and must mirror the declarator z-ordering so manifests,
+YAML serialization, and compiler expectations remain consistent.
+
+Handle calls also encode the semantic defaults that are not expressible purely
+through type hints: required vs nullable fields, uniqueness vs identity, key
+and sequence shortcuts, record time semantics, spatial semantics, and link
+relationship behavior. This module therefore sits at the boundary between the
+AML design vocabulary (declarators, protodescriptors, metadescriptors) and the
+ergonomic Python DSL used in model definitions.
+"""
 
 # =============================================================================
 # Imports
@@ -162,15 +181,16 @@ class AssignableMetadescriptorHandle[DT](DeclaratorHandle[AssignableMetadescript
         self.bind(name, value)
 
     def _declare(
-            self,
-            name: str, *,
-            type: type,
-            nullable: bool = False,
-            default: Any = MISSING,
-            factory: Callable[[], Any] | Missing = MISSING,
-            validator: Callable[[Any], bool] | Missing = MISSING,
-            doc: str | Missing = MISSING,
-            config: Mapping[str, Any] | Missing = MISSING
+        self,
+        name: str,
+        *,
+        type: type,
+        nullable: bool = False,
+        default: Any = MISSING,
+        factory: Callable[[], Any] | Missing = MISSING,
+        validator: Callable[[Any], bool] | Missing = MISSING,
+        doc: str | Missing = MISSING,
+        config: Mapping[str, Any] | Missing = MISSING,
     ) -> AssignableMetadescriptor:
         """Declare a named declarator without binding it as a class attribute.
 
@@ -235,11 +255,11 @@ class MetadataHandle(AssignableMetadescriptorHandle[MetadataDeclarator]):
         """Declare domain metadata for use in class assignments.
 
         Args:
-            default: Default metadata value.
-            factory: Factory callable for default values.
-            validator: Optional validator callable.
-            doc: Optional documentation string.
-            config: Optional configuration mapping.
+            default: Default metadata value for the declarator.
+            factory: Factory callable for default values (evaluated at bind time).
+            validator: Inline predicate to validate bound metadata values.
+            doc: Optional documentation string for manifests and tooling.
+            config: Optional extra configuration stored on the declarator.
 
         Returns:
             A metadata declarator instance.
@@ -269,13 +289,13 @@ class MetadataHandle(AssignableMetadescriptorHandle[MetadataDeclarator]):
 
         Args:
             name: Declarator name to register.
-            type: Declared metadata type.
-            nullable: Whether the metadata is nullable.
-            default: Default value for the metadata.
-            factory: Factory callable for default values.
-            validator: Optional validator callable.
-            doc: Optional documentation string.
-            config: Optional configuration mapping.
+            type: Declared metadata type (metadata-compatible).
+            nullable: Whether the metadata may be bound to None.
+            default: Default metadata value for the declarator.
+            factory: Factory callable for default values (evaluated at bind time).
+            validator: Inline predicate to validate bound metadata values.
+            doc: Optional documentation string for manifests and tooling.
+            config: Optional extra configuration stored on the declarator.
 
         Returns:
             The created metadata declarator.
@@ -318,13 +338,13 @@ class OptionHandle(AssignableMetadescriptorHandle[OptionDeclarator]):
 
         Args:
             name: Declarator name to register.
-            type: Declared option type.
-            nullable: Whether the option is nullable.
-            default: Default value for the option.
-            factory: Factory callable for default values.
-            validator: Optional validator callable.
-            doc: Optional documentation string.
-            config: Optional configuration mapping.
+            type: Declared option type (metadata-compatible).
+            nullable: Whether the option may be bound to None.
+            default: Default option value for the declarator.
+            factory: Factory callable for default values (evaluated at bind time).
+            validator: Inline predicate to validate bound option values.
+            doc: Optional documentation string for manifests and tooling.
+            config: Optional extra configuration stored on the declarator.
 
         Returns:
             The created option declarator.
@@ -362,9 +382,9 @@ class NxFieldHandle(AssignableMetadescriptorHandle[NxFieldDeclarator]):
 
         Args:
             name: Declarator name to register.
-            fieldtype: Expected field type.
-            doc: Optional documentation string.
-            config: Optional configuration mapping.
+            fieldtype: Expected type of the concrete field this nxfield references.
+            doc: Optional documentation string for manifests and tooling.
+            config: Optional extra configuration stored on the declarator.
 
         Returns:
             The created nxfield declarator.
@@ -434,35 +454,45 @@ class DataHandle(FieldHandle[DataProtodescriptor]):
         doc: str | Missing = MISSING,
         config: Mapping[str, Any] | Missing = MISSING,
     ) -> Any:
-        """Construct a data protodescriptor with current AML field semantics.
+        """Construct a data protodescriptor with AML field semantics.
 
         Args:
-            default: Default value to assign.
-            factory: Factory callable for default values.
-            typekey: Whether the field participates in type-keying.
-            required: Whether the field is required.
-            load: Load strategy for related data.
-            unique: Whether the field is unique.
-            index: Whether the field is indexed.
-            key: Whether the field is part of a key.
-            sequence: Whether the field is sequence-indexed.
-            timestamp: Whether the field is a timestamp.
-            start_time: Whether the field is a start time.
-            end_time: Whether the field is an end time.
-            period: Whether the field is a period.
-            location: Whether the field is a location.
-            geom: Whether the field is a geometry field.
-            validator: Optional validator callable.
-            gt: Lower bound (strict).
-            ge: Lower bound (inclusive).
-            lt: Upper bound (strict).
-            le: Upper bound (inclusive).
-            min_length: Minimum length constraint.
-            max_length: Maximum length constraint.
-            pattern: Regex pattern constraint.
-            repr: Representation control.
-            doc: Optional documentation string.
-            config: Optional configuration mapping.
+            default: Default value to bind for classvar data fields.
+            factory: Factory callable for default values (evaluated at bind time).
+            typekey: Mark a classvar discriminator that selects a concrete subtype in
+                polymorphic models (used for typekey-based lookup and manifests).
+            required: Require the field to be present when materializing instances,
+                independently of nullability (no partial-load omission).
+            load: Default loading policy for this field when partial loading is
+                supported (``eager`` materializes immediately, ``lazy`` defers).
+            unique: Enforce uniqueness across instances; for nullable fields the
+                constraint applies to non-null values only.
+            index: Emit an index even when not implied by key/sequence flags.
+            key: Include this field in the model's logical key definition (shortcut
+                for a schema key descriptor).
+            sequence: Include this field in record sequencing order (shortcut for a
+                schema sequence descriptor).
+            timestamp: Designate the time index for sample/event-style records; the
+                field must be time-like and encodes point-in-time semantics.
+            start_time: Designate the start time for session/phase-style records;
+                used with ``end_time`` for interval semantics.
+            end_time: Designate the end time for session/phase-style records.
+            period: Mark a period field for journal/interval-style records where
+                timestamps represent time windows rather than points.
+            location: Mark a geo-referenced location field (spatial semantics and
+                spatial index eligibility when supported by a compiler).
+            geom: Mark a geometry payload field for spatial storage/indexing.
+            validator: Inline predicate used to validate bound values.
+            gt: Strict lower bound for numeric values.
+            ge: Inclusive lower bound for numeric values.
+            lt: Strict upper bound for numeric values.
+            le: Inclusive upper bound for numeric values.
+            min_length: Minimum length for string/sequence values.
+            max_length: Maximum length for string/sequence values.
+            pattern: Regex pattern constraint for string values.
+            repr: Control inclusion/formatting in default representations.
+            doc: Optional documentation string for manifests and tooling.
+            config: Optional extra configuration stored on the declarator.
 
         Returns:
             The created data protodescriptor.
@@ -511,27 +541,33 @@ class LinkHandle(FieldHandle[LinkProtodescriptor]):
         self,
         *,
         required: bool = False,
-        on_delete: Literal["restrict", "set_null", "cascade"] = "restrict",
         load: Literal["eager", "lazy"] | Missing = MISSING,
         unique: bool = False,
         key: bool = False,
+        on_delete: Literal["restrict", "set_null", "cascade"] = "restrict",
         validator: Callable[[Any], bool] | Missing = MISSING,
         repr: bool | Callable | str | Missing = MISSING,
         doc: str | Missing = MISSING,
         config: Mapping[str, Any] | Missing = MISSING,
     ) -> Any:
-        """Construct a link protodescriptor with current AML field semantics.
+        """Construct a link protodescriptor with AML field semantics.
 
         Args:
-            required: Whether the link is required.
-            on_delete: Deletion behavior for linked entities.
-            load: Load strategy for related data.
-            unique: Whether the link is unique.
-            key: Whether the link is part of a key.
-            validator: Optional validator callable.
-            repr: Representation control.
-            doc: Optional documentation string.
-            config: Optional configuration mapping.
+            required: Require the foreign key value when materializing instances,
+                independently of nullability (no partial-load omission).
+            load: Default loading policy for the related entity reference when
+                partial loading is supported (``eager`` vs ``lazy``).
+            unique: Enforce a one-to-one relationship on the owner side; for
+                nullable links, uniqueness applies to non-null values.
+            key: Include the foreign key in the model's logical key (shortcut for
+                a schema key descriptor).
+            on_delete: Delete behavior for the referenced entity (``restrict``
+                prevents deletion, ``set_null`` nulls the FK, ``cascade`` deletes
+                the owner row).
+            validator: Inline predicate used to validate bound values.
+            repr: Control inclusion/formatting in default representations.
+            doc: Optional documentation string for manifests and tooling.
+            config: Optional extra configuration stored on the declarator.
 
         Returns:
             The created link protodescriptor.
@@ -564,16 +600,18 @@ class BacklinkHandle(DeclaratorHandle[BackLinkProtodescriptor]):
         doc: str | Missing = MISSING,
         config: Mapping[str, Any] | Missing = MISSING,
     ) -> Any:
-        """Construct a backlink protodescriptor with current AML field semantics.
+        """Construct a backlink protodescriptor with AML field semantics.
 
         Args:
-            load: Load strategy for related data.
-            unique: Whether the backlink is unique.
-            via: Link type used for backlinking.
-            limit: Maximum number of related items.
-            repr: Representation control.
-            doc: Optional documentation string.
-            config: Optional configuration mapping.
+            load: Default loading policy for reverse materialization when partial
+                loading is supported (``eager`` vs ``lazy``).
+            unique: Enforce a singular reverse relation (0:1 semantics) instead of
+                the default collection cardinality.
+            via: Optional association model to traverse many-to-many relationships.
+            limit: Default cap on collection materialization size.
+            repr: Control inclusion/formatting in default representations.
+            doc: Optional documentation string for manifests and tooling.
+            config: Optional extra configuration stored on the declarator.
 
         Returns:
             The created backlink protodescriptor.

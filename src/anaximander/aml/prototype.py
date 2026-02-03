@@ -4,7 +4,16 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""This module defines the Prototype metaclass for the Anaximander Modeling Language (AML)."""
+"""Define the prototype metaclass and prototype-level registries for AML.
+
+Prototypes are the concrete AML classes created by the ``prototype`` metaclass.
+They aggregate declarators from archetypes and traits, normalize inheritance,
+and expose merged registries for declarations and bindings.
+
+This module implements the registries used by prototypes and the metaclass
+behavior that merges traits, validates declarators, and establishes runtime
+metadata used by compilers and the digital twin interface.
+"""
 
 # =============================================================================
 # Imports

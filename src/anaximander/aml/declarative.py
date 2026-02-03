@@ -4,7 +4,18 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Define the declarative metaclass and namespace machinery for AML."""
+"""Define the declarative metaclass and namespace machinery for AML.
+
+AML classes are declared with a custom metaclass that intercepts class body
+execution, collects declarators, and records bindings in a controlled namespace.
+This module implements that namespace and the ``declarative`` metaclass that
+drives how AML classes are assembled from those declarations.
+
+The declarative namespace is the gatekeeper for AML's DSL: it ensures that only
+declarator declarations and bindings are accepted in strict mode, and it provides
+the structured state that later phases (registry binding, AST capture, validation)
+depend on.
+"""
 
 # =============================================================================
 # Imports

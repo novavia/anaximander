@@ -4,7 +4,16 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Define archetypes and helpers for AML models."""
+"""Define archetypes and helpers for AML models.
+
+Models are structured data types composed of declarative fields, links, and
+schema descriptors. This module defines the ``Model`` archetype and the
+validation logic that enforces data field constraints, nxfield bindings, and
+type-hint compatibility.
+
+Model validation is a key bridge between declarator metadata and the semantic
+contracts expected by downstream compilers and the digital twin interface.
+"""
 
 # =============================================================================
 # Imports

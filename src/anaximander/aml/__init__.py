@@ -4,7 +4,15 @@
 #
 # Copyright © 2024–2026 Novavia Solutions, LLC
 
-"""Expose the public Anaximander Modeling Language (AML) API surface."""
+"""Expose the public Anaximander Modeling Language (AML) API surface.
+
+This package exports the core AML decorators, archetypes, and declarator handles
+that define the user-facing DSL. Importing AML also finalizes the base modules
+so that declarators and prototype registries are ready for downstream use.
+
+The intent is to provide a concise, stable surface while keeping the underlying
+metaclass machinery and registries encapsulated within the package.
+"""
 
 # =============================================================================
 # Imports
