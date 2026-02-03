@@ -1,0 +1,165 @@
+A brief survey of personality type systems
+JD Margulici, April 2023
+This short article introduces a handful of personality type systems that I have found useful to better 
+understand both myself and other people. What is striking about these different systems is that they 
+adopt widely varying perspectives on the nature of the human psyche and end up providing 
+complementary rather than competing depictions. However, by the same token, none of the systems has 
+strong scientific backing, with the exception of the Positive Psychology framework, and both the Myers-
+Briggs and the Enneagram deservedly get called “pseudo-science” -and hence their value is ultimately 
+subjective. A more academically grounded system of personality types is the so-called Big Five 
+personality traits model. I don’t review it here, primarily because it is rather plain and self-explanatory, 
+and interested readers can consult the Wikipedia article.
+I give my own take on each system with a short description of its tenets and structure, and I additionally 
+include resources for those interested in diving in. Online self-assessments designed to determine one’s 
+personality type or traits within each system are available, some free, some fee-based, and professional 
+assistance can be obtained as well. The systems that I cover are:
+•	The Myers-Briggs Type Indicator (MBTI)
+•	The Enneagram
+•	Positive Psychology’s Character Strengths
+•	Clifton Strengths
+Myers-Briggs Type Indicator
+The Myers-Briggs Type Indicator (MBTI), often abbreviated as simply Myers-Briggs, is assuredly the 
+better-known personality type system presented here. It was developed in the middle of the 20th 
+Century by Katharine Cook Briggs and her daughter Isabel Briggs Myers, inspired by Carl Jung’s own 
+theories of personality types.
+The MBTI framework is neatly structured around four personality functions, each of which is modeled as 
+a pair of opposing polarities, as follows:
+•	Introversion/Extroversion (I/E): This is generally the most easily understood function. However, it 
+is important to emphasize that it does not necessarily describe one’s behavior, as in being shy or 
+outgoing. Rather, extroverts are those who feel energized by social interactions, whereas 
+introverts must expend energy in social situations, and need solitude to recharge.
+•	Sensing/Intuition (S/N): Some people apprehend the world primarily through their sensory 
+inputs, and that anchors them into a more present and evidence-based outlook. By contrast, 
+those who tend toward intuition draw on past experiences and fit information into patterns. As a 
+result, sensing types tend to reason through bottom-up inferences, whereas intuitive types tend 
+toward a top-down process. This trait also conditions communication styles, with sensing types 
+preferring concrete language and intuitive types using more abstract concepts.
+•	Thinking/Feeling (T/F): The thinking-feeling function deals with decision making. As one would 
+expect, thinkers prioritize logic and consistency to attain rational objectives. Feelers rely more on 
+their heart and connect to situations through feelings and empathy, generally seeking harmony.
+•	Judging/Perceiving (J/P): The last function determines whether we tend to more often manifest 
+decision-making (judging) or information gathering (perceiving) in outward behavior. In each 
+case, the behavior is conditioned by one’s corresponding functional preference (T/F for decision-
+making, or S/N for information gathering): hence a TJ type will outwardly demonstrate rational 
+decision making, whereas a NP type appears to intuitively absorb their environment. 
+Supposedly, we manifest the opposing tendency in our inner world, so the TJ type may use 
+solitude to sort out information, and the NP type may channel observations toward privately 
+making decisions. Generally, J types appear more organized and task-oriented, whereas P types 
+appear more casual and adaptive.
+While every individual’s natural inclination lies somewhere between the two extremes in each function, 
+one side will generally be favored. This theoretically leads to 24=16 possible personality types. The types 
+are described by combinations of letters (e.g. ISTJ, ENFP, etc.), but some authors add a qualifier to 
+succinctly describe each type -a simple web search will readily return several examples. I will not attempt 
+to describe individual types, since this is best left to experts and would occupy more space than I intend. 
+However, two salient facts deserve mention. The first one is that each type is markedly distinct from the 
+others, even though as one would expect, adjacent types (e.g. ESTJ and ESFJ) bear more resemblance to 
+one another than do those that differ in every dimension (e.g. ESTJ and INFP). The second point worth 
+mentioning is that the types are not equally distributed across a randomly sampled population, and 
+some types are more frequent than others -INTJ and INFJ types are the rarest types, representing 1-2% 
+of a western population, whereas each of the ISTJ, ISFJ, ESTJ and ESFJ types gather 10% or more.
+One author, David Keirsey, and his co-author Marilyn Bates, group the types into four broad 
+temperament types. I mention this here as it can help make sense of the overall system through a more 
+tractable set of archetypes than the fully expanded 16 types:
+•	SPs (ISTP, ISFP, ESTP, ESFP), dubbed artisans, tend to focus on concrete, tactical skills. They are 
+athletes, musicians, mechanics, surgeons, and so on.
+•	SJs (ISTJ, ISFJ, ESTJ, ESFJ), nicknamed guardians, value institutions and excel as logisticians. They 
+are the most common category, and tend toward professions that sustain the social fabric, such 
+as teachers or corporate managers.
+•	NTs (INTJ, ENTP, INTP, ENTJ) are called rationals. They trust their intellectual intuitions and are 
+natural strategists, many choosing scientific careers.
+•	NFs (INFJ, ENFP, INFP, ENFJ) are the idealists, who are drawn to imagination and empathy. They 
+excel at diplomacy and gravitate toward people-oriented roles.
+Resources:
+•	The Myers & Briggs Foundation – as official as it gets!
+•	16personalities.com – a hip, UX-focused version
+The Enneagram of Personality
+Whereas the MBTI provides a logically organized set of categories derived from its component functions, 
+the Enneagram exudes esoterism. The system defines nine basic personality types, universally numbered 
+1 through 9, though some authors attach a nickname to each type. In its modern form, the Enneagram 
+was initially proposed by Bolivian philosopher Oscar Ichazo, and subsequently developed by Claudio 
+Naranjo, a Chilean-born psychiatrist. However, the Enneagram has been linked to multiple mythological 
+and mystic traditions, including early Christian mysticism, the myth of Odysseus, whose journey home 
+comprises nine adventures that symbolize the personality types, and the nine circles of Inferno in 
+Dante’s Divine Comedy.
+One interpretation of the Enneagram is that it represents the primary human neuroses or essential sins, 
+all of which afflict each of us to some degree. At the same time, one unconsciously gravitates toward a 
+dominant passion, which drives our ego and compulsions, but also determines the path to our salvation -
+if we can integrate our shadow side and sublimate vice into virtue. As many spiritual and psychological 
+authors have remarked, self-actualization is largely a matter of knowing oneself. According to the 
+Enneagram system, this journey of the soul follows one of nine archetypical profiles. Hence, discovering 
+one’s Enneagram type is a way to access a tailored template to guide psychological work. This can be 
+particularly useful considering that the features of our type tend to stay hidden from consciousness, 
+which is what gives them power over our personality.
+The nine types of the Enneagram are depicted as evenly distributed points lined around a circle. This 
+structure defines relationships between the types that add meaning and complexity to their 
+interpretation. One of these relationships is a grouping of types into three triads of three types each. The 
+triads identify three ‘centers of intelligence’, roughly defined as body center (types 8, 9 and 1), heart 
+center (types 2, 3 and 4) and intellectual center (types 5, 6, and 7). This doesn’t necessarily mean that 
+type 5, 6 and 7 are more cerebral than other types. Rather, it points to the necessary path toward 
+integration. In this view, intellectual center types will find redemption by focusing on their mind, heart 
+center types must focus on their emotions, and body center types must pay attention to the physical 
+plane.
+Each Enneagram type is further divided into three subtypes, which pertain to the individual’s social 
+orientation -either “self-preserving” (introverted), “intimate” (focused on key relationships) or “social” 
+(extroverted). Another possible type variation comes from the adjacency between neighboring types, 
+which can add so-called wings to one’s personality. For instance, a type 9 may feature either an 8-wing, a 
+1-wing, both simultaneously, or neither. Finally, types are linked across the circle by connecting lines. 
+These lines represent a sort of intrinsic evolutionary flow between the types. Each type is connected to 
+two other types on the circle, with one type corresponding to progress or integration, and the other type 
+corresponding to stress and regression. As an individual actualizes, they tend to behave more like their 
+integration type, although the primary type still dominates. Conversely, when one gets stuck by 
+circumstances, their behavior tends toward their stress type. Hence the connecting lines add a dynamic 
+dimension to one’s soul journey, where the stress and integration points can be interpreted as origin and 
+destination.
+As can probably be inferred from this description, the Enneagram stands out as a personality type 
+system. While it is rooted in psychological characteristics, it also bears accents of astrology in that it 
+suggests an ordained destiny. It is only natural to approach personality types as a means to obtain 
+answers about who we are and how we fit into the world. With the Enneagram, however, one should 
+initially expect more questions than answers. From my experience, it must be construed as an invitation 
+to embark on a journey of personal discovery and growth, belying a spiritual orientation that is different 
+from the resolutely more business mindedness of other systems. 
+Resources:
+•	The Enneagram Institute – Great descriptions of the different types, and an online assessment
+•	The Complete Enneagram by Beatrice Chestnut, in-depth and engaging read
+•	The Sacred Enneagram by Christopher Heuertz, deeply spiritual and slightly esoteric, this one got 
+me hooked!
+Positive Psychology’s Character Strengths
+Christopher Peterson and Martin Seligman popularized the field of positive psychology and published 
+their Character Strengths and Virtues Handbook in 2004. This work inventories 24 character strengths 
+grouped under six virtues (wisdom & knowledge, courage, humanity, justice, temperance and 
+transcendence), and is motivated by the core tenet of the positive psychology movement, which is to 
+leverage psychological research to help people attain well-being and self-actualization -thus contrasting 
+with the traditional focus of psychological science on pathologies, and building on the foundations set by 
+earlier authors such as Maslow, Rollo May and Carl Rogers.
+The handbook does not readily provide the means for self-assessment. Its theories are embodied into a 
+proprietary operational framework that is commercialized under a ‘freemium’ business model as the VIA 
+Inventory of Strengths (VIA-IS). VIA offers a self-service online assessment that allows one to discover 
+their signature strengths. The result is a ranking that indicates a participant’s relative affinity to each of 
+the 24 strengths. Positive psychology posits that low-ranked strengths are not what an individual should 
+focus on -in other words, don’t turn these into weaknesses requiring improvement. Instead, the top 
+handful of strengths, dubbed signature strengths, point us to our natural inclinations, where our 
+potential for further development is the greatest.
+Unlike the Myers-Briggs and the Enneagram, the character strengths have been developed under a 
+somewhat rigorous experimental framework, though the assessment is by no means perfect in terms of 
+its reliability and validity. Also, given its format as an ordered list of signature strengths picked among a 
+relatively large set, the inventory of strengths does not exactly deliver a type or category -an arguably 
+rigid and unrealistic feature of type systems. Rather, the assessment provides a highly individualized map 
+for people to better understand how they can thrive, both intimately and socially.
+Resources:
+•	VIA Institute on Character – the destination for an online self-assessment
+•	Authentic Happiness by Martin Seligman – the foundational bible, if you will
+Clifton Strengths
+Clifton Strengths closely resembles the VIA Inventory of Strengths in its format and philosophy. This 
+framework was initially developed by Donald O. Clifton, another positive psychology researcher and 
+entrepreneur. It is the intellectual property of Gallup, Inc., which commercializes it as a personality type 
+assessment under the name CliftonStrengths.
+Both the methods of self-assessment and the interpretation of results align with the VIA-IS. However, 
+probably because of Gallup’s core business as a management consulting organization, the Clifton 
+Strengths test is deliberately more oriented toward professional endeavors. There are 34 strengths, 
+actually called themes, that are divided into four domains: strategic thinking, relationship building, 
+influencing, and executing. Further, the results of the test can be leveraged by individuals but are also 
+frequently shared at the level of work teams or entire organizations, as a means to foster more effective 
+collaboration. Note that some consulting organizations use the MBTI for the same purpose, in effect 
+looking at personality profiles to build stronger teams.
+Resources:
+•	Gallup CliftonStrengths – commercial self-assessment

@@ -9,11 +9,10 @@ from pathlib import Path
 
 import dotenv
 
-from .utilities.functions import boolean
-from .utilities.nxyaml import NxYAML, yaml
+from .dataobjects import *
 from .descriptors import *
 from .meta import *
-from .dataobjects import *
+from .utilities.functions import boolean
 
 # =========================================================================== #
 #                            environment variables                            #
@@ -31,7 +30,7 @@ REPO = CODEDIR.parent  # Git repository directory
 DATAPATH = REPO / "data"  # Local data directory
 WORKPATH = REPO / "work"  # Work directory
 CACHEPATH = WORKPATH / ".cache"  # Document cache
-TESTDIR = REPO / "test"  # Test directory
+TESTDIR = REPO / "tests"  # Test directory
 TESTDATA = TESTDIR / "data"  # Test data directory
 TESTWORK = TESTDIR / "work"  # Test work directory
 
