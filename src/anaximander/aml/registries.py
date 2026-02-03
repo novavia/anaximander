@@ -35,11 +35,11 @@ class Registry[T](Mapping[str, T]):
     """A base registry class for declarator and binding registries."""
 
     def __init__(self,
-        data: Mapping[str, T] | Iterable[tuple[str, T]] | None = None,
+        _data: Mapping[str, T] | Iterable[tuple[str, T]] | None = None, /,
         **kwargs: T
     ) -> None:
         """Initialize the data with an optional mapping."""
-        self._data: dict[str, T] = dict(data or {}, **kwargs)
+        self._data: dict[str, T] = dict(_data or {}, **kwargs)
 
     def __getitem__(self, key: str) -> T:
         try:
@@ -101,9 +101,10 @@ class DeclarativeTypeRegistry[M: ModuleType, DT: declarative](Registry[M]):
     from a module (e.g., via module attributes or cached prototype lists).
     """
 
-    def __init__(self, data: Mapping[str, M] | Iterable[tuple[str, M]] | None = None, **kwargs: M) -> None:  # noqa
+    def __init__(self, _data: Mapping[str, M] | Iterable[tuple[str, M]] | None = None, /,
+                 **kwargs: M) -> None:
         """Initialize the registry with optional module mappings."""
-        super().__init__(data, **kwargs)
+        super().__init__(_data, **kwargs)
         self.prototype_to_module: dict[DeclarativeTypeKey, M] = {}
         self.name_to_prototypes: dict[str, set[DeclarativeTypeKey]] = {}
 
@@ -208,12 +209,11 @@ class DeclaratorRegistry[D: Declarator](Registry[D]):
                                 "also subclasses of the base registry's __types__.")
 
     def __init__(self,
-        data: Mapping[str, D] | Iterable[tuple[str, D]] | None = None,
+        _data: Mapping[str, D] | Iterable[tuple[str, D]] | None = None, /,
         **kwargs: D
     ) -> None:
         """Initialize the declarator registry with an optional mapping or iterable of pairs."""
-        super().__init__(data, **kwargs)
-
+        super().__init__(_data, **kwargs)
     def __copy__(self) -> Self:
         """Create a shallow copy of the registry."""
         new_registry = self.__class__()
@@ -262,7 +262,7 @@ class BindingRegistry[D: Declarator](Registry[Any]):
     """Registry for bindings."""
 
     def __init__(self,
-        data: Mapping[str, Any] | Iterable[tuple[str, Any]] | None = None,
+        _data: Mapping[str, Any] | Iterable[tuple[str, Any]] | None = None, /,
         *,
         _declarators: DeclaratorRegistry[D],
         **kwargs: Any
@@ -271,7 +271,7 @@ class BindingRegistry[D: Declarator](Registry[Any]):
         if "_declarators" in kwargs:
             raise ValueError("Declarators cannot be passed as a keyword argument.")
         self._declarators = _declarators
-        bindings = dict(data or {}, **kwargs)
+        bindings = dict(_data or {}, **kwargs)
         self._data: dict[str, Any] = {}
         for key, item in bindings.items():
             self.register(key, item)
@@ -381,7 +381,11 @@ class MultiRegistry[R: Registry](Mapping[str, R]):
 
     def to_dict(self, *, compact: bool = True) -> dict[str, dict[str, Any]]:
         """Convert to a plain nested dict suitable for serialization."""
-        return {handle: registry.to_dict(compact=compact) for handle, registry in self._registries.items() if registry}
+        return {
+            handle: registry.to_dict(compact=compact)
+            for handle, registry in self._registries.items()
+            if registry
+        }
 
     def to_yaml(self, *, compact: bool = True) -> str:
         """YAML-style pretty print."""

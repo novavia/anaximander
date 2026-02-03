@@ -28,7 +28,7 @@ The initial development will be conducted in VS Code, using GitHub Copilot for A
 - **Type Annotations**: Use built-in types for annotations (e.g., `list` instead of `List` from `typing`).
 - **Docstrings**: Use triple double-quoted (`"""`) docstrings for all public modules, classes, methods, and functions. Please refer to detailed docstring conventions in the next section.
 - **Docstrings Content**: Every module must have a docstring at the top describing its purpose and contents. Shoot for approximately one line of text per 50 lines of code. For classes, methods and functions, the purpose and design must be described in the docstring, besides following the templates provided in the docstring conventions section for arguments, return values, and exceptions.
-- **Section Comments**: Use AML-style section banners and regions for module sections, e.g.:
+- **Code Sections**: Use AML-style section banners and regions for major module sections, e.g.:
 
 ```python
 # =============================================================================
@@ -40,6 +40,8 @@ The initial development will be conducted in VS Code, using GitHub Copilot for A
   
 # endregion
 ```
+
+Insert section banners for major sections of the module, such as imports, constants and helpers, and semantic grouping of classes and functions. Do not use banners inside classes or functions. For minor sections, optionally use a simple comment line.
 
 - **Code Comments**: Use inline comments for every code block to explain the intent and rationale. Make it such that either a human or AI reader can understand the purpose of the code without delving into implementation details. Shoot for approximately one comment per 10 lines of code.
 - **License Header**: Every source file must begin with this standard license header:
