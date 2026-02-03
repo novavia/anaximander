@@ -12,6 +12,7 @@ from ..descriptors.base import DescriptorRegistry
 from ..descriptors.schema import DataSchema
 from ..descriptors import metadata, metamethod, metaproperty
 
+
 from ..meta import archetype, metamorph, trait
 
 from .base import DataObject

@@ -92,7 +92,9 @@ class nxfieldtype(type):
                 return types.pop()
         origin = typing.get_origin(hint)
         args = typing.get_args(hint)
-        if origin in mcl.__typing_collections__:
+        if origin is type:
+            return hint
+        elif origin in mcl.__typing_collections__:
             return mcl.__typing_collections__[origin]
         elif origin in mcl.__collections__:
             # We validate the hint because there is no enforcement

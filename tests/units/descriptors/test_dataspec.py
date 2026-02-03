@@ -1,6 +1,4 @@
 import datetime as dt
-from typing import Type
-from attr import validate
 import pytest
 from pydantic import ValidationError
 
