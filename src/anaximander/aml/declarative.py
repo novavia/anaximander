@@ -29,6 +29,16 @@ from itertools import chain, count
 from typing import Any, ClassVar
 
 from .declarators import DeclarativeTypeKey, Declarator
+from .diagnostics import (
+    BindingAlreadyRegistered,
+    DeclarativeNamespaceDeletion,
+    DeclarativeNamespaceRedefinition,
+    DeclaratorExpected,
+    DeclaratorNameConflict,
+    DeclaratorNameInvalid,
+    PrototypeDiagnosticBag,
+    UnnamedDeclaratorRegistration,
+)
 
 # endregion
 
@@ -55,7 +65,13 @@ class DeclarativeNamespace(dict[str, Any]):
     """Collect class body declarations for declarative types."""
     context_token: Token
 
-    def __init__(self, *, strict: bool = True, bindable_domain_names: set[str] | None = None):
+    def __init__(
+        self,
+        *,
+        strict: bool = True,
+        bindable_domain_names: set[str] | None = None,
+        provisional_name: str | None = None,
+    ):
         """Initialize the namespace with declarator/binding tracking.
 
         Args:
@@ -66,6 +82,7 @@ class DeclarativeNamespace(dict[str, Any]):
         self.strict = strict
         self.bindable_domain_names = bindable_domain_names or set()
         self.declaration_index = count(start=1)
+        self.__diagnostics__ = PrototypeDiagnosticBag(self, provisional_name=provisional_name)
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Register declarations or bindings before assignment.
@@ -78,7 +95,10 @@ class DeclarativeNamespace(dict[str, Any]):
             RuntimeError: If the name already exists in the namespace.
         """
         if key in self:
-            raise RuntimeError(f"Cannot redefine name '{key}' in declarative namespace.")
+            DeclarativeNamespaceRedefinition.report(
+                f"Cannot redefine name '{key}' in declarative namespace."
+            )
+            return
         elif isinstance(value, Declarator):
             self.register_declarator(value, name=key)
         elif key in self.bindable_domain_names:
@@ -87,7 +107,10 @@ class DeclarativeNamespace(dict[str, Any]):
 
     def __delitem__(self, key: Any) -> None:
         """Prevent deletion within declarative namespaces."""
-        raise RuntimeError("Cannot delete items from a declarative namespace.")
+        DeclarativeNamespaceDeletion.report(
+            "Cannot delete items from a declarative namespace."
+        )
+        return
 
     def register_declarator(self, declarator: Declarator, *, name: str | None = None) -> None:
         """Registers a declarator in this namespace.
@@ -100,11 +123,15 @@ class DeclarativeNamespace(dict[str, Any]):
         if declarator in declarators.values():
             return
         if not isinstance(declarator, Declarator):
-            raise TypeError(f"Expected a Declarator instance, got {declarator}.")
+            DeclaratorExpected.report(
+                f"Expected a Declarator instance, got {declarator!r}."
+            )
+            return
         if name is not None:
             # Sentinel to fail fast if name contains a forbidden dot.
             if "." in name:
-                raise ValueError("Declarator names cannot contain '.'.")
+                DeclaratorNameInvalid.report("Declarator names cannot contain '.'.")
+                return
             # Check for name conflicts, refined at the namespace level if needed.
             if name in (d.name for d in declarators.values()):
                 declarator_handle = declarator.handle
@@ -113,7 +140,10 @@ class DeclarativeNamespace(dict[str, Any]):
                     msg = f"Duplicate declaration for name '{name}'"
                     if declarator_handle:
                         msg += f" and handle '{declarator_handle}'."
-                    raise KeyError(msg)
+                    DeclaratorNameConflict.report(
+                        f"Duplicate declaration for name '{name}'."
+                    )
+                    return
             declarator._set_once("name", name, treat_none_as_unset=True)
         ordinal = next(self.declaration_index)
         declarators[ordinal] = declarator
@@ -131,11 +161,17 @@ class DeclarativeNamespace(dict[str, Any]):
         if handle is not None:
             binding_key = f"{handle}.{key}"
             if binding_key in bindings:
-                raise KeyError(f"Binding '{key}' is already registered in with handle '{handle}'.")
+                BindingAlreadyRegistered.report(
+                    f"Binding '{key}' is already registered in handle '{handle}'."
+                )
+                return
         else:
             binding_key = key
             if binding_key in bindings:
-                raise KeyError(f"Binding '{key}' is already registered in this namespace.")
+                BindingAlreadyRegistered.report(
+                    f"Binding '{key}' is already registered in this namespace."
+                )
+                return
         bindings[binding_key] = value
 
     def close(self) -> None:
@@ -149,9 +185,10 @@ class DeclarativeNamespace(dict[str, Any]):
                         and key not in self["__raw_declarators__"]
                         and key not in self["__raw_bindings__"]
                     ):  # noqa
-                        raise RuntimeError(
+                        DeclarativeNamespaceRedefinition.report(
                             f"Name '{key}' is neither a declaration nor a binding in strict mode."
                         )
+                        return
         finally:
             DECLARATIVE_NAMESPACE.reset(self.context_token)
 
@@ -171,6 +208,7 @@ class declarative(type):
     __raw_bindings__: dict[str, Any]  # Bindings made in this type
     __strict__: bool = False  # Whether this type uses strict declaration rules
     __ast__: ast.ClassDef | None  # Holds the type's parsed abstract syntax tree
+    __diagnostics__: DiagnosticBag  # Holds diagnostics for this declarative type
 
     @property
     def __key__(cls) -> DeclarativeTypeKey:
@@ -199,6 +237,7 @@ class declarative(type):
         namespace = DeclarativeNamespace(
             strict=mcls.__strict__,
             bindable_domain_names=bindable_domain_names,
+            provisional_name=name,
         )
         token = DECLARATIVE_NAMESPACE.set(namespace)
         namespace.context_token = token
@@ -210,11 +249,16 @@ class declarative(type):
             cls = super().__new__(mcls, name, bases, dict(namespace))
         finally:
             namespace.close()
+        cls.__diagnostics__ = namespace.__diagnostics__
+        cls.__diagnostics__.rebind_owner(cls)
         for declarator in cls.__raw_declarators__.values():
             if declarator.owner is None:
                 name = getattr(declarator, "name", None)
                 if name is None:
-                    raise RuntimeError("Unnamed declarator registered outside class assignment.")
+                    UnnamedDeclaratorRegistration.report(
+                        "Unnamed declarator registered outside class assignment."
+                    )
+                    return
                 declarator.__set_name__(cls, name)
         # Run declarator validation hooks.
         for declarator in cls.__raw_declarators__.values():
