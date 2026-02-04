@@ -1,4 +1,4 @@
-# THIS README PREFACES A DEPRECATED AND FROZEN BRANCH
+# DEPRECATED AND FROZEN BRANCH
 
 It represents the final version of the Anaximander 0.4 / nx4 prototype of the Anaximander framework, which was developed in the 2021-2022 time frame. It is being parked on the `nx4` branch of the main Anaximander repo. No further changes, features or bug fixes are expected.
 
