@@ -24,7 +24,8 @@ from __future__ import annotations
 import weakref
 from contextvars import ContextVar
 from dataclasses import dataclass, fields
-from typing import ClassVar, Literal
+from functools import wraps
+from typing import Any, Callable, ClassVar, Literal, TypeVar, cast
 from contextlib import contextmanager
 
 from loguru import logger
@@ -125,10 +126,11 @@ class Diagnostic:
         raise ValueError("Diagnostic has neither message nor template")
 
     @classmethod
-    def report(cls, **kwargs) -> "Diagnostic":
+    def report(cls, message: str | None = None, **kwargs) -> "Diagnostic":
         """Instantiate, emit, and collect a diagnostic in the active context.
 
         Args:
+            message: Explicit diagnostic message override.
             **kwargs: Diagnostic initialization parameters.
 
         Returns:
@@ -138,18 +140,29 @@ class Diagnostic:
             AMLCompilationError: If the diagnostic is fatal.
         """
         # Instantiate the diagnostic before context selection or logging.
+        if message is not None:
+            kwargs.setdefault("_message", message)
+        if "message" in kwargs:
+            kwargs.setdefault("_message", kwargs["message"])
+            kwargs.pop("message", None)
+        if "_message" in kwargs:
+            try:
+                diag = cls(**kwargs)
+            except TypeError:
+                diag = cls(kwargs["_message"])  # type: ignore[call-arg]
+            return cls._finalize_report(diag)
         diag = cls(**kwargs)
-        # Select the current diagnostic bag with declarator-first precedence.
+        return cls._finalize_report(diag)
+
+    @classmethod
+    def _finalize_report(cls, diag: "Diagnostic") -> "Diagnostic":
+        """Attach, emit, and escalate a diagnostic after instantiation."""
         bag = _select_bag()
-        # Append to the bag if one is active.
         if bag is not None:
             bag.add(diag)
-        # Emit a single structured log record.
         diag._emit()
-        # Escalate immediately for fatal diagnostics.
         if diag.severity == "fatal":
             raise AMLCompilationError([diag])
-        # Return the diagnostic for optional caller inspection.
         return diag
 
     def _emit(self) -> None:
@@ -176,9 +189,7 @@ class DeclarativeNamespaceRedefinition(Diagnostic):
     """Report attempts to redefine a name in a declarative namespace."""
 
     severity = "error"
-    template = "Cannot redefine name '{name}' in declarative namespace."
 
-    name: str
 
 
 @dataclass(slots=True, kw_only=True)
@@ -186,7 +197,6 @@ class DeclarativeNamespaceDeletion(Diagnostic):
     """Report attempts to delete a name from a declarative namespace."""
 
     severity = "error"
-    template = "Cannot delete items from a declarative namespace."
 
 
 @dataclass(slots=True, kw_only=True)
@@ -194,9 +204,7 @@ class DeclaratorExpected(Diagnostic):
     """Report when a non-declarator is used where a declarator is required."""
 
     severity = "error"
-    template = "Expected a Declarator instance, got {value!r}."
 
-    value: object
 
 
 @dataclass(slots=True, kw_only=True)
@@ -204,7 +212,6 @@ class DeclaratorNameInvalid(Diagnostic):
     """Report invalid declarator names."""
 
     severity = "error"
-    template = "Declarator names cannot contain '.'."
 
 
 @dataclass(slots=True, kw_only=True)
@@ -212,9 +219,7 @@ class DeclaratorNameConflict(Diagnostic):
     """Report duplicate declarator names."""
 
     severity = "error"
-    template = "Duplicate declaration for name '{name}'."
 
-    name: str
 
 
 @dataclass(slots=True, kw_only=True)
@@ -222,10 +227,7 @@ class BindingAlreadyRegistered(Diagnostic):
     """Report duplicate bindings in a declarative namespace."""
 
     severity = "error"
-    template = "Binding '{name}' is already registered in {scope}."
 
-    name: str
-    scope: str
 
 
 @dataclass(slots=True, kw_only=True)
@@ -233,7 +235,62 @@ class UnnamedDeclaratorRegistration(Diagnostic):
     """Report declarators registered outside class assignment."""
 
     severity = "error"
-    template = "Unnamed declarator registered outside class assignment."
+
+# endregion
+
+# =============================================================================
+# Declarator diagnostics
+# =============================================================================
+# region Declarator diagnostics
+
+
+@dataclass(slots=True, kw_only=True)
+class DeclaratorInvariantViolation(Diagnostic):
+    """Report internal declarator invariant violations."""
+
+    severity = "fatal"
+
+
+@dataclass(slots=True, kw_only=True)
+class DeclaratorHandleInvalid(Diagnostic):
+    """Report invalid declarator handles."""
+
+    severity = "error"
+
+
+@dataclass(slots=True, kw_only=True)
+class DeclaratorHandleConflict(Diagnostic):
+    """Report conflicting declarator handles."""
+
+    severity = "error"
+
+
+@dataclass(slots=True, kw_only=True)
+class DeclaratorTypeConstraintViolation(Diagnostic):
+    """Report declarator type/shape constraints."""
+
+    severity = "error"
+
+
+@dataclass(slots=True, kw_only=True)
+class DeclaratorNullabilityViolation(Diagnostic):
+    """Report nullability violations for declarators."""
+
+    severity = "error"
+
+
+@dataclass(slots=True, kw_only=True)
+class DeclaratorOverrideViolation(Diagnostic):
+    """Report invalid declarator overrides or bindings."""
+
+    severity = "error"
+
+
+@dataclass(slots=True, kw_only=True)
+class DeclaratorReassignmentViolation(Diagnostic):
+    """Report declarator reassignment violations."""
+
+    severity = "error"
 
 # endregion
 
@@ -247,107 +304,84 @@ class UnnamedDeclaratorRegistration(Diagnostic):
 class InvalidPrototypeBase(Diagnostic):
     """Report invalid prototype base classes."""
 
-    severity = "fatal"
-    template = "Base class {base!r} is not a valid AML prototype base."
+    severity = "error"
 
-    base: object
 
 
 @dataclass(slots=True, kw_only=True)
 class MultipleInheritanceUnsupported(Diagnostic):
     """Report unsupported multiple inheritance for prototypes."""
 
-    severity = "fatal"
-    template = "Prototypes do not support multiple inheritance."
+    severity = "error"
 
 
 @dataclass(slots=True, kw_only=True)
 class PrototypeInstantiationForbidden(Diagnostic):
     """Report attempts to instantiate AML prototypes directly."""
 
-    severity = "fatal"
-    template = "Archetypes, traits and prototypes cannot be instantiated directly."
+    severity = "error"
 
 
 @dataclass(slots=True, kw_only=True)
 class ArchetypeTraitExpected(Diagnostic):
     """Report when a trait or archetype type is expected."""
 
-    severity = "fatal"
-    template = "Expected an {expected} type, got {actual!r}."
+    severity = "error"
 
-    expected: str
-    actual: object
 
 
 @dataclass(slots=True, kw_only=True)
 class DeclaratorNotAllowedInArchetype(Diagnostic):
     """Report declarators that violate archetype constraints."""
 
-    severity = "fatal"
-    template = "{declarator!r} is not allowed in archetype {archetype!r}."
+    severity = "error"
 
-    declarator: object
-    archetype: object
 
 
 @dataclass(slots=True, kw_only=True)
 class MetadataNotDeclared(Diagnostic):
     """Report metadata bindings for undeclared metadata."""
 
-    severity = "fatal"
-    template = "Metadata '{name}' is not declared for prototype {prototype!r}."
+    severity = "error"
 
-    name: str
-    prototype: object
 
 
 @dataclass(slots=True, kw_only=True)
 class MetadataDomainBindingForbidden(Diagnostic):
     """Report domain metadata bindings in class headers."""
 
-    severity = "fatal"
-    template = "Cannot set domain metadata '{name}' in class header of {prototype!r}."
+    severity = "error"
 
-    name: str
-    prototype: object
 
 
 @dataclass(slots=True, kw_only=True)
 class TraitSupertraitForbidden(Diagnostic):
     """Report invalid supertrait access."""
 
-    severity = "fatal"
-    template = "Only trait types have a supertrait."
+    severity = "error"
 
 
 @dataclass(slots=True, kw_only=True)
 class InvalidViewSelection(Diagnostic):
     """Report invalid view selectors for trait/declarator/binding access."""
 
-    severity = "fatal"
-    template = "Invalid view '{view}'. Expected {expected}."
+    severity = "error"
 
-    view: str
-    expected: str
 
 
 @dataclass(slots=True, kw_only=True)
 class AnnotatableDeclaratorUnnamed(Diagnostic):
     """Report annotatable declarators missing a name during annotation binding."""
 
-    severity = "fatal"
-    template = "Annotatable declarators must be named before annotation binding."
+    severity = "error"
 
 
 @dataclass(slots=True, kw_only=True)
 class DeclaratorAnnotationMissing(Diagnostic):
     """Report missing annotations for annotatable declarators."""
 
-    severity = "fatal"
-    template = "Missing annotation for declarator {declarator!r}."
+    severity = "error"
 
-    declarator: object
 
 # endregion
 
@@ -361,11 +395,8 @@ class DeclaratorAnnotationMissing(Diagnostic):
 class TraitConformanceViolation(Diagnostic):
     """Report when a trait does not conform to an archetype."""
 
-    severity = "fatal"
-    template = "Trait {trait!r} does not conform to archetype {archetype!r}."
+    severity = "error"
 
-    trait: object
-    archetype: object
 
 # endregion
 # =============================================================================
@@ -378,80 +409,63 @@ class TraitConformanceViolation(Diagnostic):
 class ReferenceMissingOwnerMember(Diagnostic):
     """Report references that omit an owner/member component."""
 
-    severity = "fatal"
-    template = "Reference '{reference}' must include owner and member."
+    severity = "error"
 
-    reference: str
 
 
 @dataclass(slots=True, kw_only=True)
 class ReferenceKindInvalid(Diagnostic):
     """Report unknown reference kinds."""
 
-    severity = "fatal"
-    template = "Unknown reference kind '{kind}'."
+    severity = "error"
 
-    kind: str
 
 
 @dataclass(slots=True, kw_only=True)
 class ReferenceInvalid(Diagnostic):
     """Report invalid AML references."""
 
-    severity = "fatal"
-    template = "Invalid reference '{reference}'."
+    severity = "error"
 
-    reference: str
 
 
 @dataclass(slots=True, kw_only=True)
 class DisallowedModuleStatement(Diagnostic):
     """Report disallowed module or class-level statements."""
 
-    severity = "fatal"
-    template = "AML disallows statement: {statement}."
+    severity = "error"
 
-    statement: str
 
 
 @dataclass(slots=True, kw_only=True)
 class ModuleSourceMissing(Diagnostic):
     """Report modules without a resolvable source."""
 
-    severity = "fatal"
-    template = "Module {module!r} has no file origin to parse."
+    severity = "error"
 
-    module: object
 
 
 @dataclass(slots=True, kw_only=True)
 class TypeHintResolutionFailed(Diagnostic):
     """Report failures when resolving type hints."""
 
-    severity = "fatal"
-    template = "Failed to resolve type hints for {prototype!r}: {error}."
+    severity = "error"
 
-    prototype: object
-    error: object
 
 
 @dataclass(slots=True, kw_only=True)
 class InvalidTypeRole(Diagnostic):
     """Report archetype/trait/prototype role mismatches."""
 
-    severity = "fatal"
-    template = "{prototype!r} must have role {role}."
+    severity = "error"
 
-    prototype: object
-    role: str
 
 
 @dataclass(slots=True, kw_only=True)
 class PrototypeMetadescriptorForbidden(Diagnostic):
     """Report metadescriptor declarations on prototypes."""
 
-    severity = "fatal"
-    template = "Prototypes cannot declare metadescriptors."
+    severity = "error"
 
 
 @dataclass(slots=True, kw_only=True)
@@ -459,12 +473,6 @@ class BindingInvalidValue(Diagnostic):
     """Report invalid bound values for a declarator."""
 
     severity = "error"
-    template = "Binding '{name}' with value '{value}' is not valid for {declarator!r} in {prototype!r}."  # noqa: E501
-
-    name: str
-    value: object
-    declarator: object
-    prototype: object
 
 
 @dataclass(slots=True, kw_only=True)
@@ -472,12 +480,6 @@ class ValidatorFailed(Diagnostic):
     """Report failed validator checks."""
 
     severity = "error"
-    template = "Binding '{name}' with value '{value}' failed validation by {validator!r} in {prototype!r}."  # noqa: E501
-
-    name: str
-    value: object
-    validator: object
-    prototype: object
 
 
 @dataclass(slots=True, kw_only=True)
@@ -485,10 +487,6 @@ class PrototypeValidatorFailed(Diagnostic):
     """Report failed prototype validators."""
 
     severity = "error"
-    template = "Prototype {prototype!r} failed validation by {validator!r}."
-
-    prototype: object
-    validator: object
 
 
 @dataclass(slots=True, kw_only=True)
@@ -496,9 +494,6 @@ class EnumerationInvalid(Diagnostic):
     """Report invalid enumeration members or configuration."""
 
     severity = "error"
-    template = "{message}"
-
-    message: str
 
 # endregion
 
@@ -527,6 +522,10 @@ class DiagnosticBag:
         """Return the owning object, if it is still alive."""
         return self._owner_ref()
 
+    def rebind_owner(self, owner: object) -> None:
+        """Rebind the bag to a new owner."""
+        self._owner_ref = weakref.ref(owner)
+
     def add(self, diag: Diagnostic) -> None:
         """Append a diagnostic to the bag."""
         # Append diagnostics in the order they are reported.
@@ -536,6 +535,63 @@ class DiagnosticBag:
     def messages(self) -> list[Diagnostic]:
         """Return collected diagnostics."""
         return self._messages
+
+# endregion
+
+# =============================================================================
+# Diagnostic bag specializations
+# =============================================================================
+# region Diagnostic bag specializations
+
+
+class ProjectDiagnosticBag(DiagnosticBag):
+    """Diagnostic bag for project scope."""
+
+    def __repr__(self) -> str:
+        owner = self.owner
+        name = getattr(owner, "name", None) if owner is not None else None
+        return f"<ProjectDiagnosticBag {name or 'unbound'}>"
+
+
+class ModuleDiagnosticBag(DiagnosticBag):
+    """Diagnostic bag for module scope."""
+
+    def __repr__(self) -> str:
+        owner = self.owner
+        name = getattr(owner, "__name__", None) if owner is not None else None
+        return f"<ModuleDiagnosticBag {name or 'unbound'}>"
+
+
+class PrototypeDiagnosticBag(DiagnosticBag):
+    """Diagnostic bag for prototype scope with provisional labeling support."""
+
+    def __init__(self, owner: object, *, provisional_name: str | None = None):
+        super().__init__(owner)
+        self._provisional_name = provisional_name
+
+    def __repr__(self) -> str:
+        owner = self.owner
+        if owner is None:
+            name = self._provisional_name or "unbound"
+        else:
+            name = getattr(owner, "__name__", None) or self._provisional_name or "unbound"
+        return f"<PrototypeDiagnosticBag {name}>"
+
+
+class DeclaratorDiagnosticBag(DiagnosticBag):
+    """Diagnostic bag for declarator scope."""
+
+    def __repr__(self) -> str:
+        owner = self.owner
+        if owner is None:
+            return "<DeclaratorDiagnosticBag unbound>"
+        name = getattr(owner, "name", None)
+        owner_name = getattr(getattr(owner, "owner", None), "__name__", None)
+        if name and owner_name:
+            return f"<DeclaratorDiagnosticBag {owner_name}.{name}>"
+        if name:
+            return f"<DeclaratorDiagnosticBag {name}>"
+        return "<DeclaratorDiagnosticBag>"
 
 # endregion
 
@@ -606,12 +662,53 @@ def raise_on_errors(bag: DiagnosticBag) -> None:
 
 
 @contextmanager
-def diagnostic_context(bag: DiagnosticBag, selector: ContextVar[DiagnosticBag | None]):
-    """Temporarily bind a diagnostic bag to a context variable."""
+def diagnostic_context(owner: object):
+    """Temporarily bind diagnostics based on the owner type."""
+    bag, selector = _resolve_context(owner)
     token = selector.set(bag)
     try:
         yield
     finally:
         selector.reset(token)
+
+# endregion
+
+# =============================================================================
+# Context helpers
+# =============================================================================
+# region Context helpers
+
+
+def _resolve_context(owner: object) -> tuple[DiagnosticBag, ContextVar[DiagnosticBag | None]]:
+    """Resolve the diagnostic bag and selector for a given owner."""
+    if hasattr(owner, "__diagnostics__"):
+        bag = owner.__diagnostics__
+    elif isinstance(owner, DiagnosticBag):
+        bag = owner
+    else:
+        raise TypeError(f"Unsupported diagnostics owner: {owner!r}.")
+    if isinstance(bag, DeclaratorDiagnosticBag):
+        return bag, DECLARATOR_DIAGNOSTICS
+    if isinstance(bag, PrototypeDiagnosticBag):
+        return bag, PROTOTYPE_DIAGNOSTICS
+    if isinstance(bag, ModuleDiagnosticBag):
+        return bag, MODULE_DIAGNOSTICS
+    if isinstance(bag, ProjectDiagnosticBag):
+        return bag, PROJECT_DIAGNOSTICS
+    raise TypeError(f"Unsupported diagnostics bag: {bag!r}.")
+
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def with_diagnostics(fn: F) -> F:
+    """Decorate a method to apply diagnostic context for its owner."""
+
+    @wraps(fn)
+    def wrapper(owner, *args, **kwargs):
+        with diagnostic_context(owner):
+            return fn(owner, *args, **kwargs)
+
+    return cast(F, wrapper)
 
 # endregion

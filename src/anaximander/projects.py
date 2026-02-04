@@ -22,7 +22,7 @@ from typing import cast
 import attrs
 from cookiecutter.main import cookiecutter
 
-from .aml.diagnostics import DiagnosticBag, PROJECT_DIAGNOSTICS, raise_on_errors
+from .aml.diagnostics import ProjectDiagnosticBag, PROJECT_DIAGNOSTICS, raise_on_errors
 from .aml.modules import NxModuleType, finalize_module
 from .utils import Config, private_field
 from .utils.funcs import workdir
@@ -75,11 +75,11 @@ class Project:
 
     path: Path = attrs.field(converter=Path)
     _config: ProjectConfig | None = private_field(default=None)
-    __diagnostics__: DiagnosticBag = private_field()
+    __diagnostics__: ProjectDiagnosticBag = private_field()
 
     def __attrs_post_init__(self):
         """Finalize initialization by registering the import path."""
-        self.__diagnostics__ = DiagnosticBag(self)
+        self.__diagnostics__ = ProjectDiagnosticBag(self)
         self.set_import_path()
 
     @classmethod

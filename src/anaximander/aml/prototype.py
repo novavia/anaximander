@@ -50,6 +50,7 @@ from .declarators import (
     SchemaDeclarator,
 )
 from .diagnostics import (
+    PROTOTYPE_DIAGNOSTICS,
     AnnotatableDeclaratorUnnamed,
     ArchetypeTraitExpected,
     DeclaratorAnnotationMissing,
@@ -61,7 +62,6 @@ from .diagnostics import (
     MetadataNotDeclared,
     MultipleInheritanceUnsupported,
     PrototypeInstantiationForbidden,
-    PROTOTYPE_DIAGNOSTICS,
     TraitConformanceViolation,
     TraitSupertraitForbidden,
 )
@@ -303,9 +303,9 @@ def is_trait(cls: type[Any]) -> TypeGuard[Trait]:
 def conforms(trait: Trait, archetype: Archetype) -> bool:
     """Checks if a trait conforms to the specified archetype."""
     if not is_trait(trait):
-        ArchetypeTraitExpected.report(expected="Trait", actual=trait)
+        ArchetypeTraitExpected.report(f"Expected a Trait type, got {trait!r}.")
     if not is_archetype(archetype):
-        ArchetypeTraitExpected.report(expected="Archetype", actual=archetype)
+        ArchetypeTraitExpected.report(f"Expected an Archetype type, got {archetype!r}.")
     # The trait conforms if its archetype is a parent of the specified archetype
     trait_archetype = trait.__archetype__
     return trait_archetype in archetype.mro()
@@ -333,7 +333,9 @@ class Arche(metaclass=declarative):
     __diagnostics__: ClassVar["DiagnosticBag"]
 
     def __new__(cls, *args, **kwargs):
-        PrototypeInstantiationForbidden.report()
+        PrototypeInstantiationForbidden.report(
+            "Archetypes, traits and prototypes cannot be instantiated directly."
+        )
         return super().__new__(cls)
 
     @classmethod
@@ -381,9 +383,11 @@ class prototype(declarative):
     def __new__(mcls, name, bases, namespace: DeclarativeNamespace, traits=(), **metadata):
         base = bases[0]
         if not (isinstance(base, prototype) or base is Arche):
-            InvalidPrototypeBase.report(base=base)
+            InvalidPrototypeBase.report(f"Base class {base} is not a valid AML prototype base.")
         if any(isinstance(base, prototype) for base in bases[1:]):
-            MultipleInheritanceUnsupported.report()
+            MultipleInheritanceUnsupported.report(
+                "Prototypes do not support multiple inheritance."
+            )
         cls = super().__new__(mcls, name, bases, namespace)
         # Phase: set type annotations on annotatable declarators.
         with _prototype_diagnostics(cls):
@@ -410,8 +414,7 @@ class prototype(declarative):
             for declarator in cls.__raw_declarators__.values():
                 if not isinstance(declarator, allowed_declarator_types):
                     DeclaratorNotAllowedInArchetype.report(
-                        declarator=declarator,
-                        archetype=archetype,
+                        f"{declarator!r} is not allowed in archetype {archetype!r}."
                     )
         # Phase: register declarators and bindings.
         with _prototype_diagnostics(cls):
@@ -440,9 +443,14 @@ class prototype(declarative):
             for name, value in metadata.items():
                 declarator = merged_declarators.metadata.get(name)
                 if declarator is None or not isinstance(declarator, MetadataDeclarator):
-                    MetadataNotDeclared.report(name=name, prototype=cls)
+                    MetadataNotDeclared.report(
+                        f"Metadata '{name}' is not declared for prototype {cls!r}."
+                    )
                 elif declarator.domain is True:
-                    MetadataDomainBindingForbidden.report(name=name, prototype=cls)
+                    MetadataDomainBindingForbidden.report(
+                        (f"Cannot set domain metadata '{name}' in class header of "
+                         f"{cls!r}.")
+                    )
                 cls.__bindings__.register(name, value, handle="metadata")
             # Merge local and inherited bindings.
             merged_bindings = PrototypeBindingRegistry(cls.__merged_declarators__)
@@ -488,7 +496,9 @@ class prototype(declarative):
         return bindable_domain_names
 
     def __call__(cls, *args, **kwargs):
-        PrototypeInstantiationForbidden.report()
+        PrototypeInstantiationForbidden.report(
+            "Archetypes, traits and prototypes cannot be instantiated directly."
+        )
         return None
 
     def _normalize_traits(cls, *traits: Trait) -> tuple[Trait, ...]:
@@ -546,7 +556,7 @@ class prototype(declarative):
     def supertrait(cls) -> Trait | None:
         """The supertrait of this trait, if any."""
         if cls.__role__ != TypeRole.TRAIT:
-            TraitSupertraitForbidden.report()
+            TraitSupertraitForbidden.report("Only trait types have a supertrait.")
         base: prototype = cls.__bases__[0]
         if base.__role__ == TypeRole.TRAIT:
             return cast(Trait, base)
@@ -558,7 +568,9 @@ class prototype(declarative):
             return metatype in cls.__archetype__.mro()
 
         if not is_trait(metatype):
-            ArchetypeTraitExpected.report(expected="Archetype or Trait", actual=metatype)
+            ArchetypeTraitExpected.report(
+                f"Expected an Archetype or Trait type, got {metatype!r}."
+            )
 
         for trait in cls.__merged_traits__:
             # direct match
@@ -586,7 +598,9 @@ class prototype(declarative):
         elif view == "merged":
             return cls.__merged_traits__
         else:
-            InvalidViewSelection.report(view=view, expected="'local' or 'merged'")
+            InvalidViewSelection.report(
+                f"Invalid view '{view}'. Expected 'local' or 'merged'."
+            )
 
     def declarators(cls, view: Literal["local", "merged", "resolved"]) -> PrototypeDeclaratorRegistry:  # noqa
         """The declarators of this type.
@@ -605,7 +619,9 @@ class prototype(declarative):
         elif view == "resolved":
             return NotImplemented
         else:
-            InvalidViewSelection.report(view=view, expected="'local', 'merged', or 'resolved'")
+            InvalidViewSelection.report(
+                f"Invalid view '{view}'. Expected 'local', 'merged', or 'resolved'."
+            )
 
     def bindings(cls, view: Literal["local", "merged", "resolved"]) -> PrototypeBindingRegistry:  # noqa
         """The bindings of this type.
@@ -625,7 +641,9 @@ class prototype(declarative):
         elif view == "resolved":
             return NotImplemented
         else:
-            InvalidViewSelection.report(view=view, expected="'local', 'merged', or 'resolved'")
+            InvalidViewSelection.report(
+                f"Invalid view '{view}'. Expected 'local', 'merged', or 'resolved'."
+            )
 
     @staticmethod
     def __unwrap_optional_type__(type_hint: Any) -> tuple[Any, bool]:
@@ -651,7 +669,9 @@ class prototype(declarative):
         for declarator in annotatable_declarators:
             # This is a sentinel, as we expect all annotatable declarators to be named at this stage # noqa
             if (name := declarator.name) is None:
-                AnnotatableDeclaratorUnnamed.report()
+                AnnotatableDeclaratorUnnamed.report(
+                    "Annotatable declarators must be named before annotation binding."
+                )
             # Then we distinguish between declarators that were declared through assignment vs
             # those that relied on the DeclaratorHandle.declare method
             is_assigned = getattr(cls, name, None) is declarator
@@ -659,7 +679,9 @@ class prototype(declarative):
                 continue
             # For assigned declarators, we enforce that an annotation must be present
             if name not in annotation_values and name not in annotation_strings:
-                DeclaratorAnnotationMissing.report(declarator=declarator)
+                DeclaratorAnnotationMissing.report(
+                    f"Missing annotation for declarator {declarator!r}."
+                )
             annotation_value = annotation_values[name]
             annotation_string = annotation_strings[name]
             if isinstance(annotation_value, str):
@@ -690,8 +712,8 @@ class prototype(declarative):
 @contextmanager
 def _prototype_diagnostics(cls: prototype):
     """Set prototype diagnostics context for a single lifecycle phase."""
-    if not hasattr(cls, "__diagnostics__"):
-        cls.__diagnostics__ = DiagnosticBag(cls)
+    # if not hasattr(cls, "__diagnostics__"):
+    #     cls.__diagnostics__ = DiagnosticBag(cls)
     token = PROTOTYPE_DIAGNOSTICS.set(cls.__diagnostics__)
     try:
         yield

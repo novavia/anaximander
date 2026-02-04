@@ -57,7 +57,17 @@ from ..utils.yaml import (
     nx_yaml_dump,
 )
 from .basetypes import is_metadata_type
-from .diagnostics import DECLARATOR_DIAGNOSTICS, DiagnosticBag
+from .diagnostics import (
+    DECLARATOR_DIAGNOSTICS,
+    DeclaratorDiagnosticBag,
+    DeclaratorHandleConflict,
+    DeclaratorHandleInvalid,
+    DeclaratorInvariantViolation,
+    DeclaratorNullabilityViolation,
+    DeclaratorOverrideViolation,
+    DeclaratorReassignmentViolation,
+    DeclaratorTypeConstraintViolation,
+)
 
 # endregion
 
@@ -117,7 +127,8 @@ class _MissingSentinel:
 
     def __bool__(self) -> bool:
         """Disallow truthiness for the sentinel."""
-        raise TypeError("MISSING has no truth value")
+        DeclaratorInvariantViolation.report("MISSING has no truth value")
+        return False
 
     def __eq__(self, other: object) -> bool:
         """Return identity equality for the sentinel."""
@@ -345,18 +356,19 @@ class Declarator(ABC):
     name: str = field(init=False, default=None, z=100)  # Attribute or key name this declarator is assigned to # noqa
     owner: Declarative = field(init=False, default=None, z=110)  # Owning class of this declarator
     ordinal: int = field(init=False, default=None, z=120)  # Index of this declarator within the owning class # noqa
-    __ast__: ast.AST | None = field(init=False, default=None)  # AST node that declared this declarator # noqa
 
     # Init-time fields (immutable)
     doc: str | Missing = field(default=MISSING, z=900)  # Optional documentation string # noqa
     config: Mapping[str, ConfigValue] | Missing = field(factory=dict, z=910)  # Extraneous declarator configuration # noqa
-    __diagnostics__: DiagnosticBag = field(init=False, default=None, z=999)  # noqa
 
     @property
     def __key__(self) -> DeclaratorKey:
         """A unique key for identifying this declarator."""
         if self.owner is None or self.ordinal is None:
-            raise RuntimeError("Declarator must be bound to a class before accessing its key.")
+            DeclaratorInvariantViolation.report(
+                "Declarator must be bound to a class before accessing its key."
+            )
+            return DeclaratorKey(owner=DeclarativeTypeKey("anaximander", "unknown", "unknown"), ordinal=-1)  # noqa: E501
         return DeclaratorKey(
             owner=self.owner.__key__,
             ordinal=self.ordinal,
@@ -386,12 +398,14 @@ class Declarator(ABC):
 
     def __attrs_post_init__(self) -> None:
         """Post-initialization processing for the declarator."""
+        # Attach diagnostics immediately for IDE-visible availability.
+        if not hasattr(self, "__diagnostics__"):
+            object.__setattr__(self, "__diagnostics__", DeclaratorDiagnosticBag(self))
+        if not hasattr(self, "__ast__"):
+            object.__setattr__(self, "__ast__", None)
         # Freeze config to prevent accidental mutation.
         if isinstance(self.config, Mapping):
             object.__setattr__(self, "config", MappingProxyType(dict(self.config)))
-        # Attach diagnostics immediately for IDE-visible availability.
-        if self.__diagnostics__ is None:
-            self._set_once("__diagnostics__", DiagnosticBag(self), treat_none_as_unset=True)
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -405,19 +419,26 @@ class Declarator(ABC):
                     isinstance(pattern, (str, re.Pattern)) for pattern in cls.__reserved_patterns__
                 )
             except AssertionError:
-                raise TypeError(
-                    "All elements of __reserved_patterns__ must be instances of str or re.Pattern"
+                DeclaratorTypeConstraintViolation.report(
+                    "All elements of __reserved_patterns__ must be instances of str or re.Pattern."
                 )
+                return
             cls.__reserved_patterns__ = reserved_patterns | set(cls.__reserved_patterns__)
         else:
             cls.__reserved_patterns__ = reserved_patterns
         # Register and resolve handles
         if cls.__handle__ == "" and any(b.__handle__ != "" for b in base_declarators):  # noqa
-            raise ValueError("Declarator subclasses cannot define an empty __handle__ if any base class does not.")  # noqa
+            DeclaratorHandleInvalid.report(
+                "Declarator subclasses cannot define an empty __handle__ if any base class does not."
+            )
+            return
         if cls.__handle__ != "":
             if cls.__handle__ in cls.__handles__:
                 if cls.__handles__[cls.__handle__] not in cls.mro():
-                    raise ValueError(f"Declarator handle '{cls.__handle__}' is already registered.")  # noqa
+                    DeclaratorHandleConflict.report(
+                        f"Declarator handle '{cls.__handle__}' is already registered."
+                    )
+                    return
             cls.__handles__[cls.__handle__] = cls
         handles = []
         for base in reversed(cls.mro()):
@@ -432,9 +453,10 @@ class Declarator(ABC):
             object.__setattr__(self, attr, value)
             return
         if current != value:
-            raise RuntimeError(
+            DeclaratorInvariantViolation.report(
                 f"{self.__class__.__name__}.{attr} is already set."
             )
+            return
         # idempotent re-set
         object.__setattr__(self, attr, value)
 
@@ -446,24 +468,24 @@ class Declarator(ABC):
     ) -> None:
         """Validate a value against its expected runtime type."""
         if is_missing(value):
-            raise TypeError(
+            DeclaratorInvariantViolation.report(
                 f"{self.__class__.__name__}.{attr} is missing."
             )
+            return
 
         if not isinstance(value, expected):
             if isinstance(expected, tuple):
                 expected_name = " | ".join(t.__name__ for t in expected)
             else:
                 expected_name = expected.__name__
-            raise TypeError(
+            DeclaratorTypeConstraintViolation.report(
                 f"{self.__class__.__name__}.{attr} must be {expected_name}, "
                 f"got {type(value).__name__}."
             )
+            return
 
     def __set_name__(self, owner: type, name: str):
         """Attach the name and owner class to this declarator."""
-        if self.__diagnostics__ is None:
-            self._set_once("__diagnostics__", DiagnosticBag(self), treat_none_as_unset=True)
         token = DECLARATOR_DIAGNOSTICS.set(self.__diagnostics__)
         self._validate_value_type("name", name, str)
         self._validate_value_type("owner", owner, type)
@@ -474,19 +496,23 @@ class Declarator(ABC):
             pattern for pattern in self.__reserved_patterns__ if isinstance(pattern, re.Pattern)
         }
         if name in forbidden_names:
-            msg = f"Cannot use reserved name {name} for {self.typename}."
-            raise ValueError(msg)
+            DeclaratorTypeConstraintViolation.report(
+                f"Cannot use reserved name {name} for {self.typename}."
+            )
+            return
         if any(pattern.fullmatch(name) for pattern in forbidden_patterns):
-            msg = f"Cannot use reserved name {name} for {self.typename}."
-            raise ValueError(msg)
+            DeclaratorTypeConstraintViolation.report(
+                f"Cannot use reserved name {name} for {self.typename}."
+            )
+            return
         self._set_once("name", name, treat_none_as_unset=True)
         self._set_once("owner", owner, treat_none_as_unset=True)
         DECLARATOR_DIAGNOSTICS.reset(token)
 
     def __set_ast__(self, node: ast.AST | None) -> None:
         """Attach the AST node that declared this declarator (if any)."""
-        self._validate_value_type("__ast__", node, (ast.AST , type(None)))
-        self._set_once("__ast__", node, treat_none_as_unset=True)
+        self._validate_value_type("__ast__", node, (ast.AST, type(None)))
+        object.__setattr__(self, "__ast__", node)
 
     def __validate__(self) -> None:
         """Validate this declarator after it has been bound to a class namespace.
@@ -511,9 +537,10 @@ class Declarator(ABC):
         This method can be overridden by subclasses to customize the binding behavior.
         The default implementation raises an AttributeError.
         """
-        raise AttributeError(
+        DeclaratorOverrideViolation.report(
             f"Declarator of type {self.__class__.__name__} cannot be bound to a value."
         )
+        return previous
 
     @abstractmethod
     def __override__(self, override: "Declarator") -> None:
@@ -524,7 +551,10 @@ class Declarator(ABC):
         """
         if override == self:
             return
-        raise AttributeError(f"Declarator of type {self.__class__.__name__} cannot be overridden.")
+        DeclaratorOverrideViolation.report(
+            f"Declarator of type {self.__class__.__name__} cannot be overridden."
+        )
+        return
 
     def __validate_binding__(self, host: type, value: Any) -> bool:
         """Hook called to validate a bound value in the context of a hosting class.
@@ -548,8 +578,6 @@ class Declarator(ABC):
         attributes = attrs.fields(self.__class__)
         ordered = []
         for idx, attr in enumerate(attributes):
-            if attr.name == "__ast__":
-                continue
             z = attr.metadata.get("z", 1000)
             if not isinstance(z, int):
                 z = 1000
@@ -655,7 +683,9 @@ class EnumerationDeclarator(Declarator):
     def __validate__(self) -> None:
         self._validate_value_type("members", self.members, tuple)
         if any(not isinstance(member, str) for member in self.members):
-            raise TypeError("EnumerationDeclarator.members must be a tuple of strings.")
+            DeclaratorTypeConstraintViolation.report(
+                "EnumerationDeclarator.members must be a tuple of strings."
+            )
         return super().__validate__()
 
     def __init_subclass__(cls):
@@ -668,10 +698,11 @@ class EnumerationDeclarator(Declarator):
             try:
                 assert all(issubclass(t, base_type) for t in mbtypes for base_type in base_mbtypes)
             except AssertionError:
-                raise TypeError(
+                DeclaratorTypeConstraintViolation.report(
                     "__member_types__ must only contain types that are subclasses of all "
-                    + "admissible types from base classes."
+                    "admissible types from base classes."
                 )
+                return
 
 
 @declarator
@@ -717,49 +748,70 @@ class MetadataDeclarator(AssignableMetadescriptor):
     def __validate_annotation__(self, annotation: str | None, hint: Any | None) -> None:
         """Validate metadata annotations against the metadata type contract."""
         if hint is not None and not is_metadata_type(hint):
-            msg = f"Metadata '{self.name}' must be annotated as a metadata type."
-            raise TypeError(msg)
+            DeclaratorTypeConstraintViolation.report(
+                f"Metadata '{self.name}' must be annotated as a metadata type."
+            )
+            return
 
     def __validate_binding__(self, host: type, value: Any) -> bool:
         """Validate a metadata binding in the context of a host type."""
         # Missing bindings are not validated here; only bound values are checked.
         if value is None:
             if not self.nullable:
-                raise ValueError("Non-nullable metadata cannot be bound to None.")
+                DeclaratorNullabilityViolation.report(
+                    "Non-nullable metadata cannot be bound to None."
+                )
         elif self.type is not None:
             if not isinstance(value, self.type):
                 if not (isinstance(value, type) and issubclass(value, self.type)):
-                    raise TypeError("Cannot bind metadata of incompatible type.")
+                    DeclaratorTypeConstraintViolation.report(
+                        "Cannot bind metadata of incompatible type."
+                    )
         return True
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
         """Bind a metadata value, enforcing monotone tightening and inline validation."""
         if is_not_missing(previous) and value != previous:
             if not _tighten_bound_value(value, previous):
-                raise AttributeError(
+                DeclaratorReassignmentViolation.report(
                     f"Metadata '{self.name}' cannot be reassigned with a looser value."
                 )
+                return previous
         validator = self.validator
         if is_not_missing(validator) and not validator(value):
-            raise ValueError(
-                f"Inline validation failed for metadata '{self.name}' with value: {value}"
+            DeclaratorTypeConstraintViolation.report(
+                f"Inline validation failed for metadata '{self.name}' with value: {value}."
             )
+            return previous
         return value
 
     def __override__(self, override: Declarator) -> None:
         """Allow overrides that tighten type constraints only."""
         if type(override) is not type(self):
-            raise AttributeError("Metadata declarators can only be overridden by the same class.")
+            DeclaratorOverrideViolation.report(
+                "Metadata declarators can only be overridden by the same class."
+            )
+            return
         if override == self:
             return
         if self.domain != override.domain:
-            raise AttributeError("Metadata declarator 'domain' cannot be overridden.")
+            DeclaratorOverrideViolation.report(
+                "Metadata declarator 'domain' cannot be overridden."
+            )
+            return
         if not _tighten_type(self.type, override.type):
-            raise AttributeError("Metadata declarator type cannot be loosened.")
+            DeclaratorOverrideViolation.report("Metadata declarator type cannot be loosened.")
+            return
         if not _tighten_nullable(self.nullable, override.nullable):
-            raise AttributeError("Metadata declarator nullability cannot be loosened.")
+            DeclaratorOverrideViolation.report(
+                "Metadata declarator nullability cannot be loosened."
+            )
+            return
         if not _tighten_classvar(self.classvar, override.classvar):
-            raise AttributeError("Metadata declarator classvar cannot be overridden.")
+            DeclaratorOverrideViolation.report(
+                "Metadata declarator classvar cannot be overridden."
+            )
+            return
 
 
 @declarator
@@ -770,19 +822,25 @@ class OptionDeclarator(AssignableMetadescriptor):
     def __validate_annotation__(self, annotation: str | None, hint: Any | None) -> None:
         """Validate option annotations against the metadata type contract."""
         if hint is not None and not is_metadata_type(hint):
-            msg = f"Option '{self.name}' must be annotated as a metadata type."
-            raise TypeError(msg)
+            DeclaratorTypeConstraintViolation.report(
+                f"Option '{self.name}' must be annotated as a metadata type."
+            )
+            return
 
     def __validate_binding__(self, host: type, value: Any) -> bool:
         """Validate an option binding in the context of a host type."""
         # Missing bindings are not validated here; only bound values are checked.
         if value is None:
             if not self.nullable:
-                raise ValueError("Non-nullable option cannot be bound to None.")
+                DeclaratorNullabilityViolation.report(
+                    "Non-nullable option cannot be bound to None."
+                )
         elif self.type is not None:
             if not isinstance(value, self.type):
                 if not (isinstance(value, type) and issubclass(value, self.type)):
-                    raise TypeError("Cannot bind option of incompatible type.")
+                    DeclaratorTypeConstraintViolation.report(
+                        "Cannot bind option of incompatible type."
+                    )
         return True
 
 
@@ -799,34 +857,53 @@ class NxFieldDeclarator(AssignableMetadescriptor):
     def __validate_annotation__(self, annotation: str | None, hint: Any | None) -> None:
         """Validate nxfield annotations as string references."""
         if hint is not None and hint is not str:
-            msg = f"NxField '{self.name}' must be annotated as str."
-            raise TypeError(msg)
+            DeclaratorTypeConstraintViolation.report(
+                f"NxField '{self.name}' must be annotated as str."
+            )
+            return
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
         """Bind an nxfield value, disallowing reassignment in derived prototypes."""
         if is_not_missing(previous) and value != previous:
-            raise AttributeError(f"NxField '{self.name}' cannot be reassigned.")
+            DeclaratorReassignmentViolation.report(
+                f"NxField '{self.name}' cannot be reassigned."
+            )
+            return previous
         validator = self.validator
         if is_not_missing(validator) and not validator(value):
-            raise ValueError(
-                f"Inline validation failed for nxfield '{self.name}' with value: {value}"
+            DeclaratorTypeConstraintViolation.report(
+                f"Inline validation failed for nxfield '{self.name}' with value: {value}."
             )
+            return previous
         return value
 
     def __override__(self, override: Declarator) -> None:
         """Allow overrides that tighten fieldtype/type constraints only."""
         if type(override) is not type(self):
-            raise AttributeError("NxField declarators can only be overridden by the same class.")
+            DeclaratorOverrideViolation.report(
+                "NxField declarators can only be overridden by the same class."
+            )
+            return
         if override == self:
             return
         if not _tighten_type(self.fieldtype, override.fieldtype):
-            raise AttributeError("NxField declarator fieldtype cannot be loosened.")
+            DeclaratorOverrideViolation.report(
+                "NxField declarator fieldtype cannot be loosened."
+            )
+            return
         if not _tighten_type(self.type, override.type):
-            raise AttributeError("NxField declarator type cannot be loosened.")
+            DeclaratorOverrideViolation.report("NxField declarator type cannot be loosened.")
+            return
         if not _tighten_nullable(self.nullable, override.nullable):
-            raise AttributeError("NxField declarator nullability cannot be loosened.")
+            DeclaratorOverrideViolation.report(
+                "NxField declarator nullability cannot be loosened."
+            )
+            return
         if not _tighten_classvar(self.classvar, override.classvar):
-            raise AttributeError("NxField declarator classvar cannot be overridden.")
+            DeclaratorOverrideViolation.report(
+                "NxField declarator classvar cannot be overridden."
+            )
+            return
 
 
 # Metavalidators
@@ -937,21 +1014,34 @@ class FieldProtodescriptor(AnnotatableDeclarator, Protodescriptor):
         super().__validate__()
         if is_not_missing(self.load):
             if self.load not in {"eager", "lazy"}:
-                raise TypeError("Field protodescriptor's load attribute must be 'eager' or 'lazy'.")  # noqa
+                DeclaratorTypeConstraintViolation.report(
+                    "Field protodescriptor's load attribute must be 'eager' or 'lazy'."
+                )
+                return
         if is_not_missing(self.repr):
             self._validate_value_type("repr", self.repr, (bool, Callable, str))  # type: ignore[arg-type]
 
     def _validate_override_common(self, override: "FieldProtodescriptor") -> None:
         """Validate shared tightening rules for field protodescriptors."""
         if not _tighten_type(self.type, override.type):
-            raise AttributeError("Field protodescriptor type cannot be loosened.")
+            DeclaratorOverrideViolation.report("Field protodescriptor type cannot be loosened.")
+            return
         if not _tighten_nullable(self.nullable, override.nullable):
-            raise AttributeError("Field protodescriptor nullability cannot be loosened.")
+            DeclaratorOverrideViolation.report(
+                "Field protodescriptor nullability cannot be loosened."
+            )
+            return
         if not _tighten_classvar(self.classvar, override.classvar):
-            raise AttributeError("Field protodescriptor classvar cannot be overridden.")
+            DeclaratorOverrideViolation.report(
+                "Field protodescriptor classvar cannot be overridden."
+            )
+            return
         if is_not_missing(self.load) and is_not_missing(override.load):
             if self.load == "eager" and override.load != "eager":
-                raise AttributeError("Field protodescriptor load cannot be loosened.")
+                DeclaratorOverrideViolation.report(
+                    "Field protodescriptor load cannot be loosened."
+                )
+                return
 
 
 @declarator
@@ -1003,7 +1093,10 @@ class AssignableFieldEnumeration(EnumerationDeclarator):
     def __validate__(self) -> None:
         super().__validate__()
         if not self.members:
-            raise ValueError("AssignableFieldEnumeration must have at least one member.")
+            DeclaratorTypeConstraintViolation.report(
+                "AssignableFieldEnumeration must have at least one member."
+            )
+            return
 
 # endregion
 
@@ -1053,50 +1146,82 @@ class DataProtodescriptor(AssignableFieldProtodescriptor):
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
         """Bind a classvar data value, disallowing reassignment in subclasses."""
         if is_not_missing(previous) and value != previous:
-            raise AttributeError(f"Data field '{self.name}' cannot be reassigned.")
+            DeclaratorReassignmentViolation.report(
+                f"Data field '{self.name}' cannot be reassigned."
+            )
+            return previous
         validator = self.validator
         if is_not_missing(validator) and not validator(value):
-            raise ValueError(
-                f"Inline validation failed for data '{self.name}' with value: {value}"
+            DeclaratorTypeConstraintViolation.report(
+                f"Inline validation failed for data '{self.name}' with value: {value}."
             )
+            return previous
         return value
 
     def __override__(self, override: Declarator) -> None:
         """Allow overrides that tighten data constraints only."""
         if type(override) is not type(self):
-            raise AttributeError("Data protodescriptors can only be overridden by the same class.")
+            DeclaratorOverrideViolation.report(
+                "Data protodescriptors can only be overridden by the same class."
+            )
+            return
         if override == self:
             return
         self._validate_override_common(override)
         for attr in ("index", "required", "typekey", "key", "sequence", "timestamp",
                      "start_time", "end_time", "period", "location", "geom", "unique"):
             if not _tighten_bool(getattr(self, attr), getattr(override, attr)):
-                raise AttributeError(f"Data protodescriptor '{attr}' cannot be loosened.")
+                DeclaratorOverrideViolation.report(
+                    f"Data protodescriptor '{attr}' cannot be loosened."
+                )
+                return
         if not _tighten_lower(self.gt, self.ge, override.gt, override.ge):
-            raise AttributeError("Data protodescriptor lower bound cannot be loosened.")
+            DeclaratorOverrideViolation.report(
+                "Data protodescriptor lower bound cannot be loosened."
+            )
+            return
         if not _tighten_upper(self.lt, self.le, override.lt, override.le):
-            raise AttributeError("Data protodescriptor upper bound cannot be loosened.")
+            DeclaratorOverrideViolation.report(
+                "Data protodescriptor upper bound cannot be loosened."
+            )
+            return
         if is_not_missing(self.min_length) and is_not_missing(override.min_length):
             if override.min_length < self.min_length:
-                raise AttributeError("Data protodescriptor min_length cannot be loosened.")
+                DeclaratorOverrideViolation.report(
+                    "Data protodescriptor min_length cannot be loosened."
+                )
+                return
         if is_not_missing(self.max_length) and is_not_missing(override.max_length):
             if override.max_length > self.max_length:
-                raise AttributeError("Data protodescriptor max_length cannot be loosened.")
+                DeclaratorOverrideViolation.report(
+                    "Data protodescriptor max_length cannot be loosened."
+                )
+                return
         if is_not_missing(self.pattern) and is_not_missing(override.pattern):
             if override.pattern != self.pattern:
-                raise AttributeError("Data protodescriptor pattern cannot be overridden.")
+                DeclaratorOverrideViolation.report(
+                    "Data protodescriptor pattern cannot be overridden."
+                )
+                return
 
     def __validate_binding__(self, host: type, value: Any) -> bool:
         """Validate a data binding in the context of a host type."""
         if not self.classvar:
-            raise AttributeError("Only data descriptors typed as class variables can be bound.")
+            DeclaratorOverrideViolation.report(
+                "Only data descriptors typed as class variables can be bound."
+            )
+            return False
         elif value is None:
             if not self.nullable:
-                raise ValueError("Non-nullable data field cannot be bound to None.")
+                DeclaratorNullabilityViolation.report(
+                    "Non-nullable data field cannot be bound to None."
+                )
         elif self.type is not None:
             if not isinstance(value, self.type):
                 if not (isinstance(value, type) and issubclass(value, self.type)):
-                    raise TypeError("Cannot bind data field of incompatible type.")
+                    DeclaratorTypeConstraintViolation.report(
+                        "Cannot bind data field of incompatible type."
+                    )
         return True
 
     @classproperty
@@ -1118,21 +1243,31 @@ class LinkProtodescriptor(AssignableFieldProtodescriptor, RelationProtodescripto
         self._validate_value_type("key", self.key, bool)
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
-        raise AttributeError("Link fields are not prototype-bindable.")
+        DeclaratorOverrideViolation.report("Link fields are not prototype-bindable.")
+        return previous
 
     def __override__(self, override: Declarator) -> None:
         """Allow overrides that tighten link constraints only."""
         if type(override) is not type(self):
-            raise AttributeError("Link protodescriptors can only be overridden by the same class.")
+            DeclaratorOverrideViolation.report(
+                "Link protodescriptors can only be overridden by the same class."
+            )
+            return
         if override == self:
             return
         self._validate_override_common(override)
         for attr in ("required", "key", "unique"):
             if not _tighten_bool(getattr(self, attr), getattr(override, attr)):
-                raise AttributeError(f"Link protodescriptor '{attr}' cannot be loosened.")
+                DeclaratorOverrideViolation.report(
+                    f"Link protodescriptor '{attr}' cannot be loosened."
+                )
+                return
         order = {"cascade": 0, "set_null": 1, "restrict": 2}
         if order.get(override.on_delete, 0) < order.get(self.on_delete, 0):
-            raise AttributeError("Link protodescriptor on_delete cannot be loosened.")
+            DeclaratorOverrideViolation.report(
+                "Link protodescriptor on_delete cannot be loosened."
+            )
+            return
 
     @classproperty
     def typename(cls) -> str:
@@ -1155,25 +1290,36 @@ class BackLinkProtodescriptor(IdentifiableDeclarator, RelationProtodescriptor):
             self._validate_value_type("limit", self.limit, int)
 
     def __bind__(self, value: Any, previous: Any = MISSING) -> None:
-        raise AttributeError("Backlink fields are not prototype-bindable.")
+        DeclaratorOverrideViolation.report("Backlink fields are not prototype-bindable.")
+        return previous
 
     def __override__(self, override: Declarator) -> None:
         """Allow overrides that tighten backlink constraints only."""
         if type(override) is not type(self):
-            raise AttributeError(
+            DeclaratorOverrideViolation.report(
                 "Backlink protodescriptors can only be overridden by the same class."
             )
+            return
         if override == self:
             return
         self._validate_override_common(override)
         if not _tighten_bool(self.unique, override.unique):
-            raise AttributeError("Backlink protodescriptor 'unique' cannot be loosened.")
+            DeclaratorOverrideViolation.report(
+                "Backlink protodescriptor 'unique' cannot be loosened."
+            )
+            return
         if is_not_missing(self.via) and is_not_missing(override.via):
             if override.via != self.via:
-                raise AttributeError("Backlink protodescriptor 'via' cannot be overridden.")
+                DeclaratorOverrideViolation.report(
+                    "Backlink protodescriptor 'via' cannot be overridden."
+                )
+                return
         if is_not_missing(self.limit) and is_not_missing(override.limit):
             if override.limit > self.limit:
-                raise AttributeError("Backlink protodescriptor limit cannot be loosened.")
+                DeclaratorOverrideViolation.report(
+                    "Backlink protodescriptor limit cannot be loosened."
+                )
+                return
 
     @classproperty
     def typename(cls) -> str:
@@ -1215,7 +1361,7 @@ class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator[Calla
         }
 
         if len(present_callables) > 1:
-            raise TypeError(
+            DeclaratorTypeConstraintViolation.report(
                 "SelectionProtodescriptor: callable, sql, and ibis are mutually exclusive."
             )
 
@@ -1235,7 +1381,7 @@ class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator[Calla
                 self._validate_value_type("kind", self.kind, str)
         else:
             if is_not_missing(self.kind):
-                raise TypeError(
+                DeclaratorTypeConstraintViolation.report(
                     "SelectionProtodescriptor.kind is only valid when a callable is supplied."
                 )
 
@@ -1256,7 +1402,7 @@ class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator[Calla
         )
         forms_used = sum((has_callable, has_fx, has_frame))
         if forms_used != 1:
-            raise TypeError(
+            DeclaratorTypeConstraintViolation.report(
                 "SelectionProtodescriptor must declare exactly one selection form: "
                 "callable-based, fx-based, or frame-based."
             )
@@ -1268,7 +1414,9 @@ class SelectionProtodescriptor(RelationProtodescriptor, CallableDeclarator[Calla
             if is_not_missing(self.sort):
                 if isinstance(self.sort, list):
                     if any(not isinstance(s, str) for s in self.sort):
-                        raise TypeError("SelectionProtodescriptor.sort must be strings.")
+                        DeclaratorTypeConstraintViolation.report(
+                            "SelectionProtodescriptor.sort must be strings."
+                        )
                 else:
                     self._validate_value_type("sort", self.sort, str)
             if is_not_missing(self.limit):
@@ -1342,7 +1490,10 @@ class StateProtodescriptor(RelationProtodescriptor):
         if is_not_missing(self.min_observations):
             self._validate_value_type("min_observations", self.min_observations, int)
             if self.min_observations < 1:
-                raise ValueError("state.min_observations must be >= 1.")
+                DeclaratorTypeConstraintViolation.report(
+                    "state.min_observations must be >= 1."
+                )
+                return
 
     @classproperty
     def typename(cls) -> str:
@@ -1359,7 +1510,10 @@ class FieldExpressionProtodescriptor(FieldProtodescriptor, CallableDeclarator[Ca
     def __validate__(self) -> None:
         super().__validate__()
         if is_missing(self.callable) and is_missing(self.ref):
-            raise TypeError("FieldExpressionProtodescriptor requires either a 'callable' or 'ref' attribute.")  # noqa
+            DeclaratorTypeConstraintViolation.report(
+                "FieldExpressionProtodescriptor requires either a 'callable' or 'ref' attribute."
+            )
+            return
         if is_not_missing(self.ref):
             self._validate_value_type("ref", self.ref, str)
         if is_not_missing(self.callable):
@@ -1379,7 +1533,10 @@ class FieldGroupProtodescriptor(FieldProtodescriptor, FieldEnumeration):
     def __validate__(self) -> None:
         super().__validate__()
         if not self.members:
-            raise ValueError("FieldGroupProtodescriptor must have at least one member.")
+            DeclaratorTypeConstraintViolation.report(
+                "FieldGroupProtodescriptor must have at least one member."
+            )
+            return
 
     @classproperty
     def typename(cls) -> str:
@@ -1507,18 +1664,33 @@ class SortDeclarator(FieldEnumeration, SchemaDeclarator):
     def __validate__(self) -> None:
         super().__validate__()
         if not self.members:
-            raise ValueError("SortDeclarator must have at least one member.")
+            DeclaratorTypeConstraintViolation.report(
+                "SortDeclarator must have at least one member."
+            )
+            return
         if is_not_missing(self.sort_directions):
             if not isinstance(self.sort_directions, (str, list)):
-                raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc' or a list thereof.")  # noqa
+                DeclaratorTypeConstraintViolation.report(
+                    "SortDeclarator.sort_directions must be 'asc' or 'desc' or a list thereof."
+                )
+                return
             if isinstance(self.sort_directions, str):
                 if self.sort_directions not in {"asc", "desc"}:
-                    raise ValueError("SortDeclarator.sort_directions must be 'asc' or 'desc'.")
+                    DeclaratorTypeConstraintViolation.report(
+                        "SortDeclarator.sort_directions must be 'asc' or 'desc'."
+                    )
+                    return
             else:
                 invalid = [v for v in self.sort_directions if v not in {"asc", "desc"}]
                 if invalid:
-                    raise TypeError("SortDeclarator.sort_directions must be 'asc' or 'desc'.")
+                    DeclaratorTypeConstraintViolation.report(
+                        "SortDeclarator.sort_directions must be 'asc' or 'desc'."
+                    )
+                    return
                 if not len(self.sort_directions) == len(self.members):
-                    raise ValueError("SortDeclarator.sort_directions length must match members length.")  # noqa
+                    DeclaratorTypeConstraintViolation.report(
+                        "SortDeclarator.sort_directions length must match members length."
+                    )
+                    return
 
 # endregion

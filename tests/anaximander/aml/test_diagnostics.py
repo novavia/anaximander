@@ -16,11 +16,15 @@ import pytest
 from anaximander.aml.diagnostics import (
     AMLCompilationError,
     DECLARATOR_DIAGNOSTICS,
+    DeclaratorDiagnosticBag,
     MODULE_DIAGNOSTICS,
     PROJECT_DIAGNOSTICS,
     PROTOTYPE_DIAGNOSTICS,
     Diagnostic,
     DiagnosticBag,
+    ModuleDiagnosticBag,
+    ProjectDiagnosticBag,
+    PrototypeDiagnosticBag,
     diagnostic_context,
 )
 
@@ -67,7 +71,7 @@ class FatalDiagnostic(Diagnostic):
 @pytest.fixture()
 def warning_bag() -> DiagnosticBag:
     """Provide a diagnostic bag bound to a dummy owner."""
-    return DiagnosticBag(DummyOwner())
+    return DeclaratorDiagnosticBag(DummyOwner())
 
 # endregion
 
@@ -102,9 +106,9 @@ def test_fatal_diagnostic_escalates(warning_bag):
 
 def test_context_precedence_selects_declarator(warning_bag):
     """Declarator diagnostics should override broader context bags."""
-    proto_bag = DiagnosticBag(DummyOwner())
-    module_bag = DiagnosticBag(DummyOwner())
-    project_bag = DiagnosticBag(DummyOwner())
+    proto_bag = PrototypeDiagnosticBag(DummyOwner())
+    module_bag = ModuleDiagnosticBag(DummyOwner())
+    project_bag = ProjectDiagnosticBag(DummyOwner())
     token_project = PROJECT_DIAGNOSTICS.set(project_bag)
     token_module = MODULE_DIAGNOSTICS.set(module_bag)
     token_proto = PROTOTYPE_DIAGNOSTICS.set(proto_bag)
@@ -124,10 +128,10 @@ def test_context_precedence_selects_declarator(warning_bag):
 
 def test_diagnostic_context_overrides_project(warning_bag):
     """Diagnostic context should override broader project scope."""
-    project_bag = DiagnosticBag(DummyOwner())
+    project_bag = ProjectDiagnosticBag(DummyOwner())
     token_project = PROJECT_DIAGNOSTICS.set(project_bag)
     try:
-        with diagnostic_context(warning_bag, MODULE_DIAGNOSTICS):
+        with diagnostic_context(warning_bag):
             diag = WarningDiagnostic.report(name="gamma")
     finally:
         PROJECT_DIAGNOSTICS.reset(token_project)
@@ -137,14 +141,14 @@ def test_diagnostic_context_overrides_project(warning_bag):
 
 def test_diagnostic_context_nested_precedence(warning_bag):
     """Nested diagnostic contexts should select the most specific bag."""
-    proto_bag = DiagnosticBag(DummyOwner())
-    module_bag = DiagnosticBag(DummyOwner())
-    project_bag = DiagnosticBag(DummyOwner())
+    proto_bag = PrototypeDiagnosticBag(DummyOwner())
+    module_bag = ModuleDiagnosticBag(DummyOwner())
+    project_bag = ProjectDiagnosticBag(DummyOwner())
     token_project = PROJECT_DIAGNOSTICS.set(project_bag)
     try:
-        with diagnostic_context(module_bag, MODULE_DIAGNOSTICS):
-            with diagnostic_context(proto_bag, PROTOTYPE_DIAGNOSTICS):
-                with diagnostic_context(warning_bag, DECLARATOR_DIAGNOSTICS):
+        with diagnostic_context(module_bag):
+            with diagnostic_context(proto_bag):
+                with diagnostic_context(warning_bag):
                     diag = WarningDiagnostic.report(name="delta")
     finally:
         PROJECT_DIAGNOSTICS.reset(token_project)
