@@ -34,6 +34,7 @@ astpretty = "^3.0.0"
 ibis = "^3.3.0"
 pydantic = "^2.12.4"
 pandera = "^0.27.0"
+loguru = "^0.7.3"
 
 [tool.poetry.group.test.dependencies]
 pytest = "*"

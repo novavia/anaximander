@@ -15,13 +15,15 @@ import ast
 import shutil
 import sys
 from importlib import import_module
+import pkgutil
 from pathlib import Path
 from typing import cast
 
 import attrs
 from cookiecutter.main import cookiecutter
 
-from .aml.modules import NxModuleType
+from .aml.diagnostics import DiagnosticBag, PROJECT_DIAGNOSTICS, raise_on_errors
+from .aml.modules import NxModuleType, finalize_module
 from .utils import Config, private_field
 from .utils.funcs import workdir
 
@@ -73,9 +75,11 @@ class Project:
 
     path: Path = attrs.field(converter=Path)
     _config: ProjectConfig | None = private_field(default=None)
+    __diagnostics__: DiagnosticBag = private_field()
 
     def __attrs_post_init__(self):
         """Finalize initialization by registering the import path."""
+        self.__diagnostics__ = DiagnosticBag(self)
         self.set_import_path()
 
     @classmethod
@@ -261,6 +265,27 @@ class Project:
         package = "domain"
         modules = self._import_from_directory(self.domain_source_path, package=package)
         return modules
+
+    def load_domain(self) -> list[NxModuleType]:
+        """Import and finalize all modules in the project's domain package."""
+        if not self.domain_source_path.exists():
+            relative_path = self.domain_source_path.relative_to(self.path)
+            msg = f"Project {self.name} does not contain the requisite {relative_path} directory."
+            raise FileNotFoundError(msg)
+        token = PROJECT_DIAGNOSTICS.set(self.__diagnostics__)
+        try:
+            self.set_import_path()
+            domain_pkg = import_module("domain")
+            modules: list[NxModuleType] = [cast(NxModuleType, domain_pkg)]
+            for module_info in pkgutil.walk_packages(domain_pkg.__path__, prefix="domain."):
+                module = cast(NxModuleType, import_module(module_info.name))
+                modules.append(module)
+            for module in modules:
+                finalize_module(module)
+            raise_on_errors(self.__diagnostics__)
+            return modules
+        finally:
+            PROJECT_DIAGNOSTICS.reset(token)
 
     def compile(self, *compilations: str, **kwargs):
         """Compile the project using the specified compilers."""

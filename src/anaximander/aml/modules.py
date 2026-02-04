@@ -33,6 +33,26 @@ import yaml
 from ..utils.funcs import unwrap_classvar_type, unwrap_optional_type
 from ..utils.yaml import NX_YAML_TYPES, nx_register_constructor
 from .data import Data
+from .diagnostics import (
+    BindingInvalidValue,
+    DECLARATOR_DIAGNOSTICS,
+    DiagnosticBag,
+    DisallowedModuleStatement,
+    EnumerationInvalid,
+    InvalidTypeRole,
+    MODULE_DIAGNOSTICS,
+    ModuleSourceMissing,
+    PROTOTYPE_DIAGNOSTICS,
+    PrototypeMetadescriptorForbidden,
+    PrototypeValidatorFailed,
+    ReferenceInvalid,
+    ReferenceKindInvalid,
+    ReferenceMissingOwnerMember,
+    TypeHintResolutionFailed,
+    ValidatorFailed,
+    diagnostic_context,
+    raise_on_errors,
+)
 from .declarators import (
     MISSING,
     AnnotatableDeclarator,
@@ -60,6 +80,7 @@ class NxModuleType(ModuleType):
     """A type hint for Anaximander AML declarative modules."""
 
     __ast__: ast.Module  # Holds the module's parsed abstract syntax tree
+    __diagnostics__: DiagnosticBag  # Holds module-scoped diagnostics
     __prototypes__: list[prototype]  # Holds the module's declared types
     __finalized__: bool  # Whether the module has been finalized
 
@@ -162,21 +183,23 @@ def _resolve_prototype(name: str, *, project: str | None = None, module: str | N
     return PROTOTYPES.resolve_type(name, project=project, module=module)
 
 
-def _resolve_tagged_reference(ref: str, kind: str) -> object:
+def _resolve_tagged_reference(ref: str, kind: str) -> object | None:
     if kind == "prototype":
         project, module, name = _parse_reference(ref)
         return _resolve_prototype(name, project=project, module=module)
     if kind in {"data field", "field", "metadata", "option", "nxfield", "schema", "constructor"}:
         owner_ref, member = _split_owner(ref)
         if member is None:
-            raise KeyError(f"Declarator reference '{ref} {kind}' must include owner and member.")
+            ReferenceMissingOwnerMember.report(reference=f"{ref} {kind}")
+            return None
         project, module, owner_name = _parse_reference(owner_ref)
         owner = _resolve_prototype(owner_name, project=project, module=module)
         return getattr(owner, member)
     if kind == "callable":
         owner_ref, member = _split_owner(ref)
         if member is None:
-            raise KeyError(f"Callable reference '{ref} {kind}' must include owner and member.")
+            ReferenceMissingOwnerMember.report(reference=f"{ref} {kind}")
+            return None
         project, module, owner_name = _parse_reference(owner_ref)
         owner = _resolve_prototype(owner_name, project=project, module=module)
         return getattr(owner, member)
@@ -187,12 +210,14 @@ def _resolve_tagged_reference(ref: str, kind: str) -> object:
         if name in NX_YAML_TYPES:
             return NX_YAML_TYPES[name]
         if project is None and module is None:
-            raise KeyError(f"Unknown type reference '{ref} {kind}'.")
+            ReferenceKindInvalid.report(kind=f"{ref} {kind}")
+            return None
         return _resolve_prototype(name, project=project, module=module)
-    raise KeyError(f"Unknown reference kind '{kind}'.")
+    ReferenceKindInvalid.report(kind=kind or "<none>")
+    return None
 
 
-def _resolve_reference(value: str) -> object:
+def _resolve_reference(value: str) -> object | None:
     match = _REF_PATTERN.match(value)
     if not match:
         if value == "MISSING":
@@ -205,7 +230,8 @@ def _resolve_reference(value: str) -> object:
     if "." in body:
         owner_ref, member = _split_owner(body)
         if member is None:
-            raise KeyError(f"Invalid reference '{body}'.")
+            ReferenceInvalid.report(reference=body)
+            return None
         project, module, owner_name = _parse_reference(owner_ref)
         owner = _resolve_prototype(owner_name, project=project, module=module)
         return getattr(owner, member)
@@ -228,7 +254,8 @@ def _construct_prototype(loader, node):
     body = match.group("body") if match else value
     ref, kind = _split_kind(body)
     if kind is not None and kind != "prototype":
-        raise KeyError(f"Expected prototype reference, got '{value}'.")
+        ReferenceInvalid.report(reference=value)
+        return None
     project, module, name = _parse_reference(ref)
     return _resolve_prototype(name, project=project, module=module)
 
@@ -303,14 +330,17 @@ def _iter_allowed_body(
     for node in body:
         # Enforce statement type restrictions first.
         if not isinstance(node, allowed):
-            raise SyntaxError(f"AML disallows statement: {node.__class__.__name__}.")
+            DisallowedModuleStatement.report(statement=node.__class__.__name__)
+            return
         # Only module docstrings are allowed as bare expressions.
         if isinstance(node, ast.Expr) and not _is_docstring_expr(node):
-            raise SyntaxError("AML only allows docstring expressions at module scope.")
+            DisallowedModuleStatement.report(statement="module expression")
+            return
         # Allow TYPE_CHECKING guards and validate their nested bodies.
         if isinstance(node, ast.If):
             if not _is_type_checking_guard(node):
-                raise SyntaxError("AML only allows TYPE_CHECKING guards at module scope.")
+                DisallowedModuleStatement.report(statement="TYPE_CHECKING guard")
+                return
             _iter_allowed_body(node.body, allowed=allowed, class_allowed=class_allowed)
             _iter_allowed_body(node.orelse, allowed=allowed, class_allowed=class_allowed)
         # Recurse into class bodies to validate class-level statements.
@@ -334,7 +364,8 @@ def _module_path(module: NxModuleType) -> Path:
     origin = spec.origin if spec is not None else None
     origin = origin or getattr(module, "__file__", None)
     if not origin or origin == "built-in":
-        raise RuntimeError(f"Module {module.__name__} has no file origin to parse.")
+        ModuleSourceMissing.report(module=module)
+        return Path()
     return Path(origin)
 
 
@@ -403,7 +434,8 @@ def _assign_declarator_ast(cls: prototype, class_def: ast.ClassDef) -> None:
         if (name := declarator.name) is None:
             continue
         if name in assignments:
-            declarator.__set_ast__(assignments[name])
+            with diagnostic_context(declarator.__diagnostics__, DECLARATOR_DIAGNOSTICS):
+                declarator.__set_ast__(assignments[name])
 
 
 def _backfill_annotation_types(cls: prototype, module: NxModuleType) -> None:
@@ -415,10 +447,14 @@ def _backfill_annotation_types(cls: prototype, module: NxModuleType) -> None:
     """
     try:
         hints = get_type_hints(
-            cls, globalns=module.__dict__, localns=module.__dict__, include_extras=True
+            cls,
+            globalns={**module.__dict__, "DiagnosticBag": DiagnosticBag},
+            localns=module.__dict__,
+            include_extras=True,
         )
     except Exception as exc:  # noqa: BLE001
-        raise TypeError(f"Failed to resolve type hints for {cls.__name__}: {exc}") from exc
+        TypeHintResolutionFailed.report(prototype=cls, error=exc)
+        return
     for declarator in cls.__raw_declarators__.values():
         if not isinstance(declarator, AnnotatableDeclarator):
             continue
@@ -432,26 +468,31 @@ def _backfill_annotation_types(cls: prototype, module: NxModuleType) -> None:
         hint_value, classvar = unwrap_classvar(hint_value)
         hint_value, nullable = unwrap_optional(hint_value)
         hint = hint_value if isinstance(hint_value, type) else None
-        declarator.__set_type__(
-            declarator.annotation, hint, nullable, classvar, hint=hint_value
-        )
+        with diagnostic_context(declarator.__diagnostics__, DECLARATOR_DIAGNOSTICS):
+            declarator.__set_type__(
+                declarator.annotation, hint, nullable, classvar, hint=hint_value
+            )
 
 
 def _validate_type_role(cls: prototype) -> None:
     """Validate archetype/trait/prototype role invariants."""
     if is_archetype(cls):
         if cls.__archetype__ is not cls:
-            raise TypeError(f"Archetype {cls.__name__} must reference itself as __archetype__.")
+            InvalidTypeRole.report(prototype=cls, role="ARCHETYPE")
+            return
         if cls.__role__ is not TypeRole.ARCHETYPE:
-            raise TypeError(f"Archetype {cls.__name__} must have role ARCHETYPE.")
+            InvalidTypeRole.report(prototype=cls, role="ARCHETYPE")
+            return
         return
     if is_trait(cls):
         if cls.__role__ is not TypeRole.TRAIT:
-            raise TypeError(f"Trait {cls.__name__} must have role TRAIT.")
+            InvalidTypeRole.report(prototype=cls, role="TRAIT")
+            return
         return
     if is_prototype(cls):
         if cls.__role__ is not TypeRole.PROTOTYPE:
-            raise TypeError(f"Prototype {cls.__name__} must have role PROTOTYPE.")
+            InvalidTypeRole.report(prototype=cls, role="PROTOTYPE")
+            return
         # Pure prototypes cannot declare metadescriptors locally.
         metadescriptors = [
             registry
@@ -459,9 +500,11 @@ def _validate_type_role(cls: prototype) -> None:
             if handle in ("metadata", "nxfield", "option", "metavalidator")
         ]
         if any(registry for registry in metadescriptors):
-            raise TypeError("Prototypes cannot declare metadescriptors.")
+            PrototypeMetadescriptorForbidden.report()
+            return
         return
-    raise TypeError(f"AML type {cls.__name__} is not a valid archetype, trait, or prototype.")
+    InvalidTypeRole.report(prototype=cls, role="ARCHETYPE/TRAIT/PROTOTYPE")
+    return
 
 
 def _validate_declarators(cls: prototype) -> None:
@@ -482,10 +525,16 @@ def _validate_bindings(cls: prototype) -> None:
     for binding_registry in (bindings.metadata, bindings.option):
         for name, value in binding_registry.items():
             declarator: Declarator = binding_registry.declarators[name]
-            if not declarator.__validate_binding__(cls, value):
-                msg = (f"Binding '{name}' with value '{value}' is not valid "
-                       f"for {declarator.typename} in prototype '{cls.__name__}'.")
-                raise ValueError(msg)
+            with diagnostic_context(declarator.__diagnostics__, DECLARATOR_DIAGNOSTICS):
+                is_valid = declarator.__validate_binding__(cls, value)
+            if not is_valid:
+                BindingInvalidValue.report(
+                    name=name,
+                    value=value,
+                    declarator=declarator,
+                    prototype=cls,
+                )
+                continue
     # -------------------------
     # 2) Run attribute-level validators (metadata/option/nxfield validators).
     # -------------------------
@@ -498,10 +547,16 @@ def _validate_bindings(cls: prototype) -> None:
             for member in validator.members:
                 if member in binding_registry:
                     value = binding_registry[member]
-                    if not validator.callable(cls, value):
-                        msg = (f"Binding '{member}' with value '{value}' failed validation by "
-                               f"'{validator}' in prototype '{cls.__name__}'.")
-                        raise ValueError(msg)
+                    with diagnostic_context(validator.__diagnostics__, DECLARATOR_DIAGNOSTICS):
+                        is_valid = validator.callable(cls, value)
+                    if not is_valid:
+                        ValidatorFailed.report(
+                            name=member,
+                            value=value,
+                            validator=validator,
+                            prototype=cls,
+                        )
+                        continue
     # -------------------------
     # 3) Data parsing/validation is deferred to runtime.
 
@@ -521,14 +576,16 @@ def _validate_enumerations(cls: prototype) -> None:
         if not declarator.members:
             msg = (f"Enumeration declarator '{declarator.name}' in prototype "
                    f"'{cls.__name__}' must specify at least one member.")
-            raise ValueError(msg)
+            EnumerationInvalid.report(message=msg)
+            continue
         target_handle = declarator.__handle__.removesuffix("_validator")
         target_registry = merged_declarators.get(target_handle, {})
         for member in declarator.members:
             if member not in target_registry:
                 msg = (f"Enumeration member '{member}' not found for declarator "
                        f"'{declarator.name}' in prototype '{cls.__name__}'.")
-                raise ValueError(msg)
+                EnumerationInvalid.report(message=msg)
+                continue
     # Next we validate any parsers or validators that are possible enumerations.
     constructor_registry = local_declarators.constructor
     for declarator in constructor_registry.values():
@@ -537,7 +594,8 @@ def _validate_enumerations(cls: prototype) -> None:
             # Data prototypes cannot have enumeration parsers/validators.
             if declarator.members:
                 msg = (f"{declarator} cannot have members in a Data prototype.")
-                raise ValueError(msg)
+                EnumerationInvalid.report(message=msg)
+                continue
         elif issubclass(cls, Model):
             # Model prototypes implement both targeted and model-wide parsers/validators.
             if not declarator.members:
@@ -550,33 +608,38 @@ def _validate_enumerations(cls: prototype) -> None:
                     if member not in target_registry:
                         msg = (f"Enumeration member '{member}' not found for declarator "
                                f"'{declarator.name}' in prototype '{cls.__name__}'.")
-                        raise ValueError(msg)
+                        EnumerationInvalid.report(message=msg)
+                        continue
     # Next we validate field groups
     field_groups = [d for d in local_declarators.field.values() if isinstance(d, FieldGroupProtodescriptor)]  # noqa
     for field_group in field_groups:
         if not field_group.members:
             msg = (f"Field group '{field_group.name}' in prototype "
                    f"'{cls.__name__}' must specify at least one member.")
-            raise ValueError(msg)
+            EnumerationInvalid.report(message=msg)
+            continue
         target_registry = merged_declarators.field
         for member in field_group.members:
             if member not in target_registry:
                 msg = (f"Field group member '{member}' not found for declarator "
                        f"'{field_group.name}' in prototype '{cls.__name__}'.")
-                raise ValueError(msg)
+                EnumerationInvalid.report(message=msg)
+                continue
     # Finally, we validate any schema declarator
     schema_declarators = [d for d in local_declarators.schema.values() if isinstance(d, EnumerationCallableDeclarator)]  # noqa
     for declarator in schema_declarators:
         if not declarator.members:
             msg = (f"Enumeration declarator '{declarator.name}' in prototype "
                    f"'{cls.__name__}' must specify at least one member.")
-            raise ValueError(msg)
+            EnumerationInvalid.report(message=msg)
+            continue
         target_registry = merged_declarators.field
         for member in declarator.members:
             if member not in target_registry:
                 msg = (f"Enumeration member '{member}' not found for declarator "
                        f"'{declarator.name}' in prototype '{cls.__name__}'.")
-                raise ValueError(msg)
+                EnumerationInvalid.report(message=msg)
+                continue
 
 # endregion
 
@@ -609,33 +672,50 @@ def finalize_module(
     # Finalization is idempotent per module.
     if getattr(module, "__finalized__", False):
         return
-    module_ast = _ensure_module_ast(module)
-    if strict:
-        # Enforce import safety and declarative-only module/class bodies.
-        _validate_ast_allow_list(module_ast, module_allowed=module_allowed, class_allowed=class_allowed)  # noqa
-    # Collect prototypes and bind their AST nodes.
-    prototypes = _collect_module_types(module, module_ast)
-    class_defs = {node.name: node for node in module_ast.body if isinstance(node, ast.ClassDef)}
-    for cls in prototypes:
-        if (class_def := class_defs.get(cls.__name__)) is not None:
-            cls.__ast__ = class_def
-            _assign_declarator_ast(cls, class_def)
-        # Resolve forward references and validate type roles/enumerations.
-        _backfill_annotation_types(cls, module)
-        _validate_type_role(cls)
-        _validate_declarators(cls)
-        _validate_enumerations(cls)
-    for cls in prototypes:
-        _validate_bindings(cls)
-        validators = cls.__merged_declarators__.metavalidator.values()
-        prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]
-        for validator in prototype_validators:
-            if is_not_missing(validator.callable):
-                if not validator.callable(cls):
-                    msg = f"Prototype '{cls.__name__}' failed validation by '{validator}'."
-                    raise ValueError(msg)
-    PROTOTYPES.register_module(module, prototypes)
-    # Mark module as finalized to avoid rework.
-    setattr(module, "__finalized__", True)
+    # Ensure the module owns a diagnostic bag.
+    if not hasattr(module, "__diagnostics__"):
+        module.__diagnostics__ = DiagnosticBag(module)
+    token = MODULE_DIAGNOSTICS.set(module.__diagnostics__)
+    try:
+        module_ast = _ensure_module_ast(module)
+        if strict:
+            # Enforce import safety and declarative-only module/class bodies.
+            _validate_ast_allow_list(
+                module_ast,
+                module_allowed=module_allowed,
+                class_allowed=class_allowed,
+            )
+        # Collect prototypes and bind their AST nodes.
+        prototypes = _collect_module_types(module, module_ast)
+        class_defs = {node.name: node for node in module_ast.body if isinstance(node, ast.ClassDef)}
+        for cls in prototypes:
+            with diagnostic_context(cls.__diagnostics__, PROTOTYPE_DIAGNOSTICS):
+                if (class_def := class_defs.get(cls.__name__)) is not None:
+                    cls.__ast__ = class_def
+                    _assign_declarator_ast(cls, class_def)
+                # Resolve forward references and validate type roles/enumerations.
+                _backfill_annotation_types(cls, module)
+                _validate_type_role(cls)
+                _validate_declarators(cls)
+                _validate_enumerations(cls)
+        for cls in prototypes:
+            with diagnostic_context(cls.__diagnostics__, PROTOTYPE_DIAGNOSTICS):
+                _validate_bindings(cls)
+                validators = cls.__merged_declarators__.metavalidator.values()
+                prototype_validators = [v for v in validators if isinstance(v, PrototypeValidator)]
+                for validator in prototype_validators:
+                    if is_not_missing(validator.callable):
+                        with diagnostic_context(validator.__diagnostics__, DECLARATOR_DIAGNOSTICS):
+                            is_valid = validator.callable(cls)
+                        if not is_valid:
+                            PrototypeValidatorFailed.report(prototype=cls, validator=validator)
+                            continue
+        PROTOTYPES.register_module(module, prototypes)
+        # Mark module as finalized to avoid rework.
+        setattr(module, "__finalized__", True)
+        # Phase boundary: escalate any collected errors.
+        raise_on_errors(module.__diagnostics__)
+    finally:
+        MODULE_DIAGNOSTICS.reset(token)
 
 # endregion

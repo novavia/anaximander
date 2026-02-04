@@ -57,6 +57,7 @@ from ..utils.yaml import (
     nx_yaml_dump,
 )
 from .basetypes import is_metadata_type
+from .diagnostics import DECLARATOR_DIAGNOSTICS, DiagnosticBag
 
 # endregion
 
@@ -349,6 +350,7 @@ class Declarator(ABC):
     # Init-time fields (immutable)
     doc: str | Missing = field(default=MISSING, z=900)  # Optional documentation string # noqa
     config: Mapping[str, ConfigValue] | Missing = field(factory=dict, z=910)  # Extraneous declarator configuration # noqa
+    __diagnostics__: DiagnosticBag = field(init=False, default=None, z=999)  # noqa
 
     @property
     def __key__(self) -> DeclaratorKey:
@@ -387,6 +389,9 @@ class Declarator(ABC):
         # Freeze config to prevent accidental mutation.
         if isinstance(self.config, Mapping):
             object.__setattr__(self, "config", MappingProxyType(dict(self.config)))
+        # Attach diagnostics immediately for IDE-visible availability.
+        if self.__diagnostics__ is None:
+            self._set_once("__diagnostics__", DiagnosticBag(self), treat_none_as_unset=True)
 
     def __init_subclass__(cls):
         super().__init_subclass__()
@@ -457,6 +462,9 @@ class Declarator(ABC):
 
     def __set_name__(self, owner: type, name: str):
         """Attach the name and owner class to this declarator."""
+        if self.__diagnostics__ is None:
+            self._set_once("__diagnostics__", DiagnosticBag(self), treat_none_as_unset=True)
+        token = DECLARATOR_DIAGNOSTICS.set(self.__diagnostics__)
         self._validate_value_type("name", name, str)
         self._validate_value_type("owner", owner, type)
         forbidden_names = {
@@ -473,6 +481,7 @@ class Declarator(ABC):
             raise ValueError(msg)
         self._set_once("name", name, treat_none_as_unset=True)
         self._set_once("owner", owner, treat_none_as_unset=True)
+        DECLARATOR_DIAGNOSTICS.reset(token)
 
     def __set_ast__(self, node: ast.AST | None) -> None:
         """Attach the AST node that declared this declarator (if any)."""
